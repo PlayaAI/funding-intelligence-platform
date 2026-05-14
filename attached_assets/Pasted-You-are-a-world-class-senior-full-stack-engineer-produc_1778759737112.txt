@@ -1,0 +1,761 @@
+You are a world-class senior full-stack engineer, product designer, UX strategist, SaaS dashboard architect, grant operations expert, and AI product builder.
+
+You are working on a real product called `grant-os`.
+
+PROJECT:
+grant-os is a proof-driven public website plus an internal grant intelligence dashboard inspired by Instrumentl.
+
+The goal is not to copy Instrumentl’s branding, logo, exact UI, or proprietary content. The goal is to learn from the product structure and workflow patterns shown in the provided screenshots, then build our own cleaner, modern, mission-control-style grant operating system.
+
+I will provide:
+1. A `/docs` folder with full product blueprints.
+2. Instrumentl dashboard screenshots as visual/UX reference.
+3. Seed data and feature scope docs.
+
+Before coding, you must read every file inside `/docs`.
+
+Treat `/docs` as the source of truth:
+- PROJECT_BRIEF.md
+- PRD.md
+- ARCHITECTURE.md
+- DATABASE_SCHEMA.md
+- ROUTES.md
+- USER_ROLES.md
+- FEATURE_PHASES.md
+- AI_WORKFLOWS.md
+- DESIGN_SYSTEM.md
+- QA_CHECKLIST.md
+- DATA_INGESTION.md
+- AGENT_BUILD_STRATEGY.md
+- SEED_DATA.md
+- MVP_SCOPE.md
+
+Do not invent a different product.
+Do not overbuild.
+Do not add features outside the docs unless required to complete the MVP shell.
+
+## PRODUCT CONTEXT
+
+This product was inspired by a grant strategy meeting where the team reviewed Instrumentl and decided to build their own internal grant intelligence platform.
+
+The product has two connected layers:
+
+### 1. Public Proof Website
+
+A public-facing website that proves the organization/community is credible and grant-ready.
+
+It should show:
+- Who the organization/community is
+- What projects have been built
+- What workshops happened
+- What tools and experiments exist
+- What impact/proof already exists
+- Why funders should trust the team
+- Which initiatives are grant-ready
+
+The public site is proof-driven, not AI-hype-driven.
+
+### 2. Internal Grant Intelligence Dashboard
+
+A private dashboard that helps the team:
+- Add projects
+- Add grant opportunities
+- Match projects to grants
+- Track deadlines
+- Research funders
+- Research peer organizations
+- Manage applications
+- Link Google Docs / Google Drive folders
+- Assign tasks
+- Build reusable proof packages
+- Prioritize the top 3 grants
+- Avoid last-minute grant chaos
+- Use AI later for summaries, fit scoring, drafting, and proof suggestions
+
+## INSTRUMENTL UX REFERENCE
+
+Use the provided Instrumentl screenshots as workflow inspiration.
+
+Important patterns to preserve conceptually:
+
+### Sidebar Navigation Pattern
+
+The sidebar should include:
+- Global search / quick find
+- Dashboard
+- Tracker
+- Matches
+- Funders
+- Peers
+- Applications
+- Calendar
+- Tasks
+- Documents
+- Proof Library
+- Reports
+- Projects list
+- Settings
+
+The Instrumentl screenshots show a persistent left sidebar, a project list, quick find, and core navigation. Our version should use a similar operational layout but with our own cleaner visual identity.
+
+### Tracker Pattern
+
+The tracker should feel similar in structure to the screenshots:
+- Status summary cards
+- Goal / funding target card
+- Tabs such as View All, Researching, Applications
+- Year/date filter
+- Search
+- Add new button
+- Export CSV button
+- Large table of opportunities
+
+Core table columns:
+- Opportunity name
+- Owner
+- Project
+- Deadline
+- Status
+- Amount
+- Next task
+- Notes
+
+Our version should additionally support:
+- Fit score
+- Priority score
+- Proof readiness
+- Application readiness
+- Top 3 focus flag
+
+### Matches Pattern
+
+The screenshots show:
+- Select a project to view matching opportunities
+- Project search
+- Project cards with match counts
+- Project-level opportunity matches
+- Funder matches
+- Hidden/archived matches
+- Split view with list on the left and detail panel on the right
+
+Build a similar pattern:
+- `/dashboard/matches`
+- Project selector
+- Opportunity Matches tab
+- Funder Matches tab
+- Hidden tab
+- Left list of matches
+- Right detail panel
+
+### Peers Pattern
+
+The screenshots show a peer organization list and a detail panel with 990/contact/funding information.
+
+Build:
+- Peer organization list
+- Add peer button
+- Assets/location summary
+- Detail panel with:
+  - Contact info
+  - EIN
+  - Website
+  - 990 snapshot placeholder
+  - Saved opportunities
+  - Related funders
+  - Notes
+
+### Project-Level Pattern
+
+The screenshots show project-specific tabs:
+- Tracker
+- Awards
+- Calendar
+- Tasks
+- Matches
+
+Build project detail pages with tabs:
+- Overview
+- Tracker
+- Matches
+- Proof
+- Applications
+- Tasks
+- Documents
+
+### Match Detail Pattern
+
+The screenshots show:
+- Opportunity detail
+- Funder tab
+- 990 report tab
+- Deadline
+- Key details
+- Cause areas
+- Applicant type
+- Funding uses
+- Location rules
+- 990 snapshot
+- Overview
+- Notes
+- Save / hide actions
+
+Build our version with:
+- Opportunity detail
+- Funder detail
+- AI notes placeholder
+- Fit analysis placeholder
+- Proof suggestions placeholder
+- Save to tracker action
+- Hide/archive action
+
+## DESIGN PERSONALITY
+
+The internal dashboard should feel:
+- Calm
+- Operational
+- Trustworthy
+- Clean
+- Data-rich but not overwhelming
+- Grant mission-control
+- Lightweight
+- Modern
+- Professional
+- Useful for a real grant team
+
+The public proof website should feel:
+- Credible
+- Human
+- Clear
+- Grant-ready
+- Proof-driven
+- Community-oriented
+- Thoughtful
+- Not generic AI startup hype
+
+## DESIGN WARNINGS
+
+Do not copy Instrumentl’s:
+- Logo
+- Exact colors
+- Exact typography
+- Exact brand styling
+- Proprietary wording
+- Exact layout pixel-for-pixel
+
+Use the screenshots only as:
+- UX structure reference
+- Workflow reference
+- Table/detail layout reference
+- Navigation pattern reference
+- Dashboard density reference
+
+Avoid:
+- Generic SaaS templates
+- Excessive gradients
+- Startup AI hype
+- Fake metrics
+- Fake funder data presented as real
+- Complex automations in V1
+- Overdesigned dashboards
+- Dark mode unless already specified
+- Huge animated effects
+- Confusing nested navigation
+- Building features not in `/docs`
+
+Use:
+- Clean light dashboard UI
+- Calm neutrals
+- Subtle accent colors
+- Clear tables
+- Useful badges
+- Strong empty states
+- Compact cards
+- Split-pane layouts where useful
+- Project-color dots
+- Clear status labels
+- Scannable grant information
+- Accessible forms and navigation
+
+## TECHNICAL TASK
+
+Build the MVP shell first using mock data only.
+
+Before coding:
+1. Inspect the existing file structure.
+2. Identify the framework being used.
+3. Preserve routing/build conventions.
+4. Read `/docs`.
+5. Use `/docs/ROUTES.md` and `/docs/MVP_SCOPE.md` as implementation boundaries.
+6. Use `/docs/SEED_DATA.md` for mock data.
+7. Use `/docs/DESIGN_SYSTEM.md` for visual direction.
+
+Do not:
+- Connect Supabase yet unless explicitly instructed.
+- Connect real AI yet.
+- Build scraping.
+- Build Google Drive API integration.
+- Build email automation.
+- Build auto-submission.
+- Build payment/subscription features.
+- Build post-award management beyond placeholders.
+
+## STACK
+
+Use the existing project stack if already created.
+
+Preferred stack:
+- Next.js
+- TypeScript
+- Tailwind CSS
+- shadcn/ui if available
+- Local mock data in TypeScript files
+- Clean reusable components
+
+If this is React/Vite instead:
+- Preserve Vite conventions.
+- Use React Router if already present.
+- Keep components clean and typed.
+
+## PUBLIC WEBSITE ROUTES TO BUILD
+
+Build these public routes:
+
+### `/`
+
+Homepage sections:
+1. Hero
+2. What this organization does
+3. Featured projects
+4. Proof / impact highlights
+5. Workshops and community activity
+6. Grant-ready credibility
+7. Team/network preview
+8. CTA: Partner / fund / collaborate
+
+### `/projects`
+
+Project listing with cards for:
+- Connect App
+- Ikigai App
+- Burning Man Packing List
+- Biohack Your Burn
+- Oracle Art Demo
+- Relationship / Contact Support Tool
+- Workshops / hackathons
+- Agentic workflow experiments
+
+Each card should show:
+- Name
+- Summary
+- Status
+- Category
+- Grant relevance
+- Related proof count
+
+### `/projects/connect-app`
+
+Case study page for Connect App.
+
+It should explain:
+- What it is
+- The social problem it addresses
+- How it works
+- Why it matters
+- Current stage
+- Community usage placeholder
+- Proof items
+- Grant relevance
+- Next evolution
+
+### `/workshops`
+
+Workshop listing and outcomes.
+
+### `/proof`
+
+Proof / Impact library public page.
+
+### `/team`
+
+Team/network page.
+
+### `/contact`
+
+Contact/collaboration form.
+
+## INTERNAL DASHBOARD ROUTES TO BUILD
+
+Build these dashboard routes:
+
+### `/dashboard`
+
+Dashboard home.
+
+Must show:
+- Top 3 priority grants
+- Upcoming deadlines
+- Active applications
+- Tasks due this week
+- Grants needing review
+- Proof gaps
+- Recent activity
+- Quick actions
+
+### `/dashboard/tracker`
+
+Instrumentl-inspired tracker table.
+
+Must include:
+- Goal/status cards
+- Tabs: View All, Researching, Applications
+- Search
+- Filters
+- Year filter
+- Add new opportunity
+- Export CSV button placeholder
+- Table columns:
+  - Name
+  - Owner
+  - Project
+  - Deadline
+  - Status
+  - Amount
+  - Next task
+  - Notes
+
+### `/dashboard/grants`
+
+Grant opportunities list.
+
+### `/dashboard/grants/[id]`
+
+Grant detail page.
+
+Must show:
+- Summary
+- Funder
+- Deadline
+- Amount
+- Status
+- Project match
+- Fit analysis placeholder
+- Application requirements
+- Related tasks
+- Related documents
+- Related proof items
+- Notes
+- Save/top 3/archive actions
+
+### `/dashboard/matches`
+
+Project selector view.
+
+Must show:
+- Search by project
+- Project cards
+- Match counts
+- Select project action
+
+### `/dashboard/matches/[projectId]`
+
+Project-specific matches.
+
+Must show:
+- Opportunity Matches tab
+- Funder Matches tab
+- Hidden tab
+- Left-side list
+- Right-side detail panel
+- Save to tracker
+- Hide from project
+- Notes
+
+### `/dashboard/funders`
+
+Funder list.
+
+### `/dashboard/funders/[id]`
+
+Funder detail page.
+
+Must show:
+- Overview
+- Contact info
+- EIN
+- Website
+- Assets placeholder
+- Annual giving placeholder
+- Median grant amount placeholder
+- Past grantees placeholder
+- Related opportunities
+- Related peer organizations
+- Notes
+
+### `/dashboard/peers`
+
+Peer organization research.
+
+Must show:
+- Peer organization list
+- Assets/location summary
+- Add peer button
+- Selected peer detail panel
+- 990 snapshot placeholder
+- Related funders
+- Saved opportunities
+- Notes
+
+### `/dashboard/projects`
+
+Project list.
+
+### `/dashboard/projects/[id]`
+
+Project detail with tabs:
+- Overview
+- Tracker
+- Matches
+- Proof
+- Applications
+- Tasks
+- Documents
+
+### `/dashboard/applications`
+
+Application workspaces list.
+
+### `/dashboard/applications/[id]`
+
+Application workspace.
+
+Must show:
+- Grant
+- Project
+- Status
+- Owner
+- Google Doc URL placeholder
+- Drive folder URL placeholder
+- Application questions
+- Draft answer placeholder
+- Final answer placeholder
+- Required documents checklist
+- Tasks
+- Notes
+
+### `/dashboard/tasks`
+
+Task list/board.
+
+### `/dashboard/documents`
+
+Documents placeholder.
+
+### `/dashboard/proof-items`
+
+Internal proof library.
+
+### `/dashboard/reports`
+
+Reports placeholder.
+
+### `/dashboard/settings`
+
+Settings placeholder.
+
+## MOCK DATA
+
+Use realistic mock data from `/docs/SEED_DATA.md`.
+
+Include examples inspired by the meeting:
+- Playa AI Art / Science
+- Playa AI Decommodified Dataset
+- Playa AI Democracy 2.0 Initiatives
+- Playa AI Foundation
+- Playa AI Tech for Human Flourishing
+
+Example proof/project items:
+- Connect App
+- Ikigai App
+- Burning Man Packing List
+- Biohack Your Burn
+- Oracle Art Demo
+- Relationship / Contact Support Tool
+- Workshops / hackathons
+
+Example peer organizations:
+- Center for Humane Technology
+- AI Now Policy Institute
+- Burning Man Project
+- Data & Society Research Institute
+- Future of Life Institute
+
+Example opportunity categories:
+- Human flourishing
+- Arts and culture
+- AI safety / responsible AI
+- Democracy / civic technology
+- Public health
+- Community technology
+- Research and education
+
+Make clear that all data is mock/demo unless otherwise stated.
+
+## COMPONENTS TO CREATE
+
+Create reusable components such as:
+
+- AppSidebar
+- DashboardShell
+- PageHeader
+- StatCard
+- StatusBadge
+- ProjectDot
+- DataTable
+- TrackerTable
+- GrantCard
+- GrantDetailPanel
+- MatchList
+- MatchDetailPanel
+- FunderProfilePanel
+- PeerList
+- ProofItemCard
+- ApplicationWorkspace
+- TaskList
+- EmptyState
+- SearchInput
+- FilterBar
+- Tabs
+- ActionButton
+
+Keep components clean and reusable.
+
+## VISUAL SYSTEM
+
+Dashboard:
+- Light background
+- White cards
+- Fine borders
+- Subtle shadows only when useful
+- Compact table rows
+- Clear hierarchy
+- Soft accent color
+- Status badges:
+  - Planned
+  - Researching
+  - Applying
+  - Submitted
+  - Awarded
+  - Declined
+  - Archived
+- Project color dots
+- Good horizontal scrolling behavior for dense tables
+- Split-pane layout for match detail pages
+
+Public website:
+- Editorial, proof-driven
+- Strong typography
+- Human and credible
+- Not AI-hype
+- Not overdesigned
+- Clear CTA hierarchy
+
+## MOBILE REQUIREMENTS
+
+Mobile must work.
+
+Dashboard mobile:
+- Sidebar collapses
+- Tables become cards or scroll horizontally
+- Detail panels stack below lists
+- Filters remain usable
+- Actions remain tappable
+
+Public site mobile:
+- Hero is readable immediately
+- Project cards stack cleanly
+- Proof sections remain scannable
+- Contact form is comfortable to use
+
+## UX REQUIREMENTS
+
+The product should make it obvious:
+
+1. What grant opportunities are being tracked.
+2. Which projects they match.
+3. What deadlines are coming.
+4. What the top 3 priority grants are.
+5. What proof exists.
+6. What applications are active.
+7. What tasks need attention.
+8. Which funders/peers are worth researching.
+9. What is mock/demo data.
+10. What is placeholder functionality for later.
+
+## AI PLACEHOLDERS
+
+Do not connect real AI yet.
+
+But include placeholder buttons/sections for:
+- Summarize grant
+- Analyze fit
+- Suggest proof
+- Draft answer
+- Summarize funder
+- Extract application questions
+
+When clicked, these can show a disabled state, toast, or placeholder message:
+“AI workflow will be connected in a later phase.”
+
+## IMPLEMENTATION PRIORITIES
+
+Implement in this order:
+
+1. App shell and routing
+2. Sidebar and dashboard layout
+3. Mock data layer
+4. Public website pages
+5. Tracker page
+6. Matches project selector
+7. Project-specific matches split view
+8. Peers page split view
+9. Grant detail page
+10. Project detail page
+11. Application workspace
+12. Proof library
+13. Tasks
+14. Empty states and responsive polish
+
+## QUALITY BAR
+
+Before finishing, self-audit:
+
+- Did you read `/docs`?
+- Does the app match the product plan?
+- Does it avoid copying Instrumentl branding?
+- Does it capture the useful Instrumentl workflow patterns?
+- Does the public site feel proof-driven?
+- Does the dashboard feel like grant mission control?
+- Are all MVP routes implemented?
+- Is mock data realistic and consistent?
+- Are tables usable?
+- Are split panels usable?
+- Are empty states present?
+- Is mobile acceptable?
+- Is the code componentized and maintainable?
+- Did you avoid overbuilding real AI/scraping/database integrations?
+
+## DELIVERABLE
+
+Build the MVP shell directly in the codebase.
+
+After implementation, summarize:
+
+1. Files changed
+2. Routes implemented
+3. Components created
+4. Mock data created
+5. Key design decisions
+6. Assumptions made
+7. What is still placeholder
+8. How to run/test the app
+9. Recommended next implementation tickets

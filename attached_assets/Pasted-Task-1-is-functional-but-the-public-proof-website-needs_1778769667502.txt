@@ -1,0 +1,52 @@
+Task #1 is functional, but the public proof website needs stronger visual polish before we move to the dashboard.
+
+Do not start Task #2 yet.
+
+Improve the public website design and presentation while keeping the same routes and mock data.
+
+Main issues to fix:
+1. The pages feel too plain and empty.
+2. The layout needs stronger visual hierarchy.
+3. The homepage and proof pages should feel more grant-ready and credible.
+4. Project cards, proof cards, and workshop cards need more visual weight.
+5. Add better section rhythm, spacing, and editorial structure.
+6. Improve the hero sections so they feel intentional and premium, not like simple text blocks.
+7. Add subtle background treatments, section dividers, and proof-focused callout panels.
+8. Make the site feel like a serious credibility/proof website for funders, not a basic internal document.
+9. Keep the tone human, calm, proof-driven, and professional.
+10. Do not add emojis.
+11. Do not add fake metrics unless clearly labeled as demo/mock.
+12. Do not build dashboard routes yet.
+13. Do not add backend, auth, AI, or integrations.
+
+Specific improvements:
+- Homepage: make hero stronger, add a better proof highlights strip, stronger featured project cards, and a clearer grant-ready credibility section.
+- Projects page: make project cards more compelling, with clearer status, category, proof count, and grant relevance.
+- Connect App page: make it feel like a real case study with stronger sections, visual placeholders, process flow, and grant relevance.
+- Workshops page: improve workshop cards and “by the numbers” section.
+- Proof page: fix any weird overflow/screenshot artifact on the right side; proof cards should align cleanly and not get cut off.
+- Team page: cards are okay but need better spacing and more refined presentation.
+- Contact page: improve form layout and right-side info cards. Make success/validation states clear.
+
+Design direction:
+- Editorial
+- Clean
+- Credible
+- Grant-ready
+- More premium spacing
+- Better cards
+- Stronger typography hierarchy
+- Subtle blue/teal accents
+- Calm off-white background
+- No generic AI hype
+
+After polishing, run QA:
+- All 7 public routes still work.
+- Mobile navigation works.
+- No horizontal overflow.
+- Proof page cards are not cut off.
+- Contact form validates.
+- All links work.
+- No dashboard routes are visible yet.
+
+Then summarize what changed.

@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Grant OS"
+version = "1.0.0"
+id = "artifacts/grant-os"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24429
+
+[services.development]
+run = "pnpm --filter @workspace/grant-os run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/grant-os", "run", "build" ]
+publicDir = "artifacts/grant-os/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24429"
+BASE_PATH = "/"

@@ -1,0 +1,131 @@
+Proceed with Task #1: Public Proof Website only.
+
+Use the plan titled “#1 - Public Proof Website” as the implementation scope.
+
+Important boundaries:
+- Build only the public-facing React + Vite proof website.
+- Do not build Task #2 yet.
+- Do not build dashboard pages.
+- Do not build authentication.
+- Do not build protected routes.
+- Do not connect a real backend/database.
+- Do not connect AI.
+- Do not build Google Drive API.
+- Do not build CSV import/export.
+- Do not build scraping.
+- Do not build real form submission.
+
+The goal is to create the first public credibility layer of Grant OS.
+
+Build these routes:
+- /
+- /projects
+- /projects/connect-app
+- /workshops
+- /proof
+- /team
+- /contact
+
+Use the attached blueprint files as the source of truth:
+- SEED_DATA
+- DESIGN_SYSTEM
+- ROUTES
+- PROJECT_BRIEF
+- MVP_SCOPE
+- PRD
+
+Use realistic mock data only.
+
+The website should feel:
+- editorial
+- proof-driven
+- credible
+- human
+- grant-ready
+- clean
+- professional
+
+It should NOT feel:
+- like generic AI startup hype
+- like a dashboard
+- like a SaaS template
+- overdesigned
+- full of fake metrics
+- full of exaggerated claims
+
+No emojis in the UI.
+
+Implementation requirements:
+1. Set up React Router for the 7 public routes.
+2. Set up Tailwind and the design system.
+3. Create reusable components:
+   - Button
+   - Badge
+   - Card
+   - StatusBadge
+   - EmptyState
+   - PageHeader
+   - SectionWrapper
+   - ProjectCard
+   - ProofItemCard
+   - WorkshopCard
+   - TeamMemberCard
+   - ContactForm
+4. Create typed mock data under src/data:
+   - projects.ts
+   - proofItems.ts
+   - workshops.ts
+   - team.ts
+   - site.ts
+5. Build the homepage with:
+   - hero
+   - what we build
+   - featured projects
+   - proof highlights
+   - workshops/community activity
+   - grant-ready credibility
+   - team preview
+   - CTA section
+6. Build /projects with cards for:
+   - Connect App
+   - Ikigai App
+   - Burning Man Packing List
+   - Biohack Your Burn
+   - Oracle Art Demo
+   - Relationship / Contact Support Tool
+7. Build /projects/connect-app as a serious case study page with:
+   - problem
+   - guided interaction concept
+   - how it works
+   - community usage placeholders
+   - screenshot/media placeholder
+   - grant relevance
+   - next evolution
+8. Build /workshops, /proof, /team, and /contact using mock data.
+9. Contact form should have client-side validation and success state only.
+10. Add global navigation with a mobile hamburger menu.
+11. Add footer with demo-only/demo-data label.
+12. Make all pages fully mobile responsive.
+
+Before finishing, self-audit:
+- Are all 7 public routes working?
+- Is the homepage clear and grant-ready?
+- Is the site proof-driven rather than AI-hype-driven?
+- Is Connect App presented as a strong case study?
+- Does /proof organize proof items clearly?
+- Does /team avoid overclaiming credentials?
+- Does /contact validate correctly?
+- Are there no dashboard routes?
+- Are there no auth/backend/AI integrations?
+- Is the code clean, componentized, and ready for Task #2 later?
+
+After implementation, summarize:
+1. Files changed
+2. Routes implemented
+3. Components created
+4. Mock data created
+5. Design decisions
+6. Assumptions made
+7. What is placeholder/demo
+8. How to run/test
+9. Recommended next task

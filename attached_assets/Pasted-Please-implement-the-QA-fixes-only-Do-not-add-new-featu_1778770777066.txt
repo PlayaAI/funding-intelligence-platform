@@ -1,0 +1,75 @@
+Please implement the QA fixes only. Do not add new features or redesign the app.
+
+Fix these issues:
+
+1. Add a persistent sidebar nav item for Grants
+File: src/components/dashboard/DashboardShell.tsx
+- Add "Grants" to navItems.
+- Link it to /dashboard/grants.
+- Use an appropriate icon.
+- Keep ordering logical, preferably near Tracker/Matches/Funders.
+
+2. Remove dead orphan file
+File: src/pages/dashboard/DashboardProofPage.tsx
+- Delete this file if it is truly unused.
+- Confirm no imports reference it.
+
+3. Add missing peer detail route
+Files:
+- src/App.tsx
+- src/pages/dashboard/DashboardPeersPage.tsx
+- Register /dashboard/peers/:id to render DashboardPeerDetailPage.
+- Add navigation from peer rows/cards in DashboardPeersPage to the relevant peer detail page.
+
+4. Remove fake inflated match count
+File: src/pages/dashboard/DashboardMatchesPage.tsx
+- Remove matchCount * 30.
+- Display the real match count only.
+- If the count is zero, show 0.
+- Do not inflate or fake metrics.
+
+5. Add mobile sidebar close button
+File: src/components/dashboard/DashboardShell.tsx
+- The X icon is already imported.
+- Render a clear close button inside the mobile sidebar drawer.
+- It should close the sidebar when clicked.
+- Keep backdrop close behavior too.
+
+6. Fix or remove Quick Find
+File: src/components/dashboard/DashboardShell.tsx
+Preferred fix:
+- Make Quick Find filter the visible sidebar/project items.
+Alternative:
+- Remove the input if filtering is not worth implementing now.
+Do not leave a dead input.
+
+7. Replace hardcoded sidebar badge counts if simple
+File: src/components/dashboard/DashboardShell.tsx
+- If possible, derive counts from mock data.
+- If that creates unnecessary complexity, remove the badges for now.
+- Do not leave misleading hardcoded numbers.
+
+8. Add relatedProjectSlug to g7
+File: src/data/grants.ts
+- Add a relevant relatedProjectSlug to g7 so it can appear in project matches.
+- Use the most appropriate existing project slug from the mock data.
+
+9. Standardize Proof Library naming
+File: src/pages/dashboard/DashboardProofItemsPage.tsx
+- Make the page heading match the sidebar label: "Proof Library".
+- Keep subtitle clear, such as "Evidence database for grant applications."
+
+After fixes:
+- Run TypeScript/checks.
+- Confirm no broken imports.
+- Confirm /dashboard/grants is reachable from sidebar.
+- Confirm /dashboard/peers/:id works.
+- Confirm mobile sidebar has an X close button.
+- Confirm Quick Find is functional or removed.
+- Confirm no fake match counts remain.
+
+Return:
+1. Files changed
+2. Bugs fixed
+3. Any files deleted
+4. QA confirmation
