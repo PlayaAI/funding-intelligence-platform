@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useRoute, Link, useLocation } from "wouter";
 import { useProject, useUpdateProject, useArchiveProject, useDeleteProject } from "@/hooks/useProjects";
-import { proofItems } from "@/data/proofItems";
+import { useProofItems, useCreateProofItem } from "@/hooks/useProofItems";
 import { grants, PROJECT_COLORS } from "@/data/grants";
 import { applications } from "@/data/applications";
 import { tasks } from "@/data/tasks";
 import { documents } from "@/data/documents";
+import ProofItemFormDialog, { PROOF_TYPE_LABELS, parseTagsString, type ProofItemFormValues } from "@/components/dashboard/ProofItemFormDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,10 +35,8 @@ const PROOF_TYPE_COLORS: Record<string, string> = {
   document: "bg-slate-100 text-slate-700 border-slate-200",
   metric: "bg-green-50 text-green-700 border-green-200",
   testimonial: "bg-amber-50 text-amber-700 border-amber-200",
-};
-const PROOF_LABELS: Record<string, string> = {
-  workshop: "Workshop", app_demo: "App Demo", document: "Document",
-  metric: "Metric", testimonial: "Testimonial",
+  case_study: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  media: "bg-pink-50 text-pink-700 border-pink-200",
 };
 const STATUS_COLORS: Record<string, string> = {
   Active: "bg-green-50 text-green-700 border-green-200",
@@ -54,11 +53,17 @@ export default function DashboardProjectDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [proofDialogOpen, setProofDialogOpen] = useState(false);
 
   const { data: project, isLoading, isError, error } = useProject(params?.slug);
   const updateProject = useUpdateProject();
   const archiveProject = useArchiveProject();
   const deleteProject = useDeleteProject();
+  const { data: relatedProof = [], isLoading: proofLoading } = useProofItems(
+    project?.id,
+    { requireProjectId: true }
+  );
+  const createProofItem = useCreateProofItem();
 
   if (isLoading) {
     return (
@@ -97,13 +102,37 @@ export default function DashboardProjectDetailPage() {
     );
   }
 
-  const relatedProof = proofItems.filter((p) => p.projectSlug === project.slug);
   const relatedGrants = grants.filter((g) => g.relatedProjectSlug === project.slug);
   const relatedApps = applications.filter((a) => a.projectSlug === project.slug);
   const relatedTasks = tasks.filter((t) => t.relatedProjectSlug === project.slug);
   const relatedDocs = documents.filter((d) => d.relatedProjectSlug === project.slug);
   const color = PROJECT_COLORS[project.slug] ?? "#94a3b8";
   const stage = project.stage ?? "Unknown";
+
+  async function handleAddProofItem(values: ProofItemFormValues) {
+    try {
+      await createProofItem.mutateAsync({
+        title: values.title,
+        type: values.type,
+        project_id: project!.id,
+        description: values.description || null,
+        date: values.date || null,
+        tags: parseTagsString(values.tags ?? ""),
+        grant_relevance: values.grant_relevance || null,
+        media_url: values.media_url || null,
+        document_url: values.document_url || null,
+        public_visibility: values.public_visibility ?? true,
+      });
+      setProofDialogOpen(false);
+      toast({ title: "Proof item added", description: `"${values.title}" linked to ${project!.name}.` });
+    } catch (err) {
+      toast({
+        title: "Failed to add proof item",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }
 
   const handleAI = (a: string) =>
     toast({ title: a, description: "AI workflow will be connected in a later phase." });
@@ -242,7 +271,7 @@ export default function DashboardProjectDetailPage() {
           <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
           <TabsTrigger value="tracker" className="text-xs">Tracker ({relatedGrants.length})</TabsTrigger>
           <TabsTrigger value="matches" className="text-xs">Matches</TabsTrigger>
-          <TabsTrigger value="proof" className="text-xs">Proof ({relatedProof.length})</TabsTrigger>
+          <TabsTrigger value="proof" className="text-xs">Proof ({proofLoading ? "…" : relatedProof.length})</TabsTrigger>
           <TabsTrigger value="applications" className="text-xs">Applications ({relatedApps.length})</TabsTrigger>
           <TabsTrigger value="tasks" className="text-xs">Tasks ({relatedTasks.length})</TabsTrigger>
           <TabsTrigger value="documents" className="text-xs">Documents ({relatedDocs.length})</TabsTrigger>
@@ -347,33 +376,44 @@ export default function DashboardProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="proof" className="mt-4 space-y-3">
-          {relatedProof.map((item) => (
-            <Card key={item.id} className="border-slate-200">
-              <CardContent className="pt-3 pb-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium text-sm text-slate-800">{item.title}</div>
-                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">{item.description}</p>
-                    {item.date && <div className="text-xs text-slate-400 mt-1">{item.date}</div>}
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {item.tags.map((t) => (
-                        <span key={t} className="text-[11px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{t}</span>
-                      ))}
+          {proofLoading ? (
+            <div className="flex items-center gap-2 py-8 text-slate-400 text-sm justify-center">
+              <Loader2 size={14} className="animate-spin" />
+              Loading proof items…
+            </div>
+          ) : (
+            <>
+              {relatedProof.map((item) => (
+                <Card key={item.id} className="border-slate-200">
+                  <CardContent className="pt-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm text-slate-800">{item.title}</div>
+                        {item.description && (
+                          <p className="text-xs text-slate-500 mt-1 line-clamp-2">{item.description}</p>
+                        )}
+                        {item.date && <div className="text-xs text-slate-400 mt-1">{item.date}</div>}
+                        {item.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {item.tags.map((t) => (
+                              <span key={t} className="text-[11px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${PROOF_TYPE_COLORS[item.type] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                        {PROOF_TYPE_LABELS[item.type] ?? item.type}
+                      </span>
                     </div>
-                  </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${PROOF_TYPE_COLORS[item.type]}`}>
-                    {PROOF_LABELS[item.type]}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {relatedProof.length === 0 && (
-            <div className="text-center py-10 text-slate-400 text-sm">No proof items linked.</div>
+                  </CardContent>
+                </Card>
+              ))}
+              {relatedProof.length === 0 && (
+                <div className="text-center py-10 text-slate-400 text-sm">No proof items linked to this project.</div>
+              )}
+            </>
           )}
-          <Button size="sm" variant="outline" className="gap-2 text-xs" onClick={() =>
-            toast({ title: "Add proof item", description: "Proof item creation coming in a later phase." })
-          }>
+          <Button size="sm" variant="outline" className="gap-2 text-xs" onClick={() => setProofDialogOpen(true)}>
             <Plus size={12} />
             Add proof item
           </Button>
@@ -472,6 +512,16 @@ export default function DashboardProjectDetailPage() {
         title="Edit project"
         submitLabel="Save changes"
         loading={updateProject.isPending}
+      />
+
+      <ProofItemFormDialog
+        open={proofDialogOpen}
+        onOpenChange={setProofDialogOpen}
+        onSubmit={handleAddProofItem}
+        lockedProjectId={project.id}
+        title="Add proof item"
+        submitLabel="Add proof item"
+        loading={createProofItem.isPending}
       />
 
       <AlertDialog open={archiveOpen} onOpenChange={setArchiveOpen}>

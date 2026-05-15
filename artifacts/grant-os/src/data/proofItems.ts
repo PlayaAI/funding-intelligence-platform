@@ -1,4 +1,11 @@
-export type ProofItemType = "workshop" | "app_demo" | "document" | "metric" | "testimonial";
+export type ProofItemType =
+  | "workshop"
+  | "app_demo"
+  | "document"
+  | "metric"
+  | "testimonial"
+  | "case_study"
+  | "media";
 
 export interface ProofItem {
   id: string;
@@ -132,4 +139,6 @@ export const proofTypeLabels: Record<ProofItemType, string> = {
   document: "Document",
   metric: "Metric",
   testimonial: "Testimonial",
+  case_study: "Case Study",
+  media: "Media",
 };
