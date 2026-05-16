@@ -1,7 +1,17 @@
 import { useState } from "react";
-import { useRoute, Link } from "wouter";
-import { grants } from "@/data/grants";
+import { useRoute, Link, useLocation } from "wouter";
 import { funders } from "@/data/funders";
+import {
+  useMappedGrant,
+  useUpdateGrant,
+  useArchiveGrant,
+  useDeleteGrant,
+  useSetGrantTopThree,
+} from "@/hooks/useGrants";
+import { useProjects } from "@/hooks/useProjects";
+import GrantFormDialog, { type GrantFormValues } from "@/components/dashboard/GrantFormDialog";
+import { grantFormValuesToInsert } from "@/lib/grantFormUtils";
+import { legacyGrantIdFromUuid } from "@/lib/grantIds";
 import { applications } from "@/data/applications";
 import { tasks } from "@/data/tasks";
 import { documents } from "@/data/documents";
@@ -12,6 +22,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
 import ScoreBar from "@/components/dashboard/ScoreBar";
 import { toast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
   Star,
@@ -25,7 +45,12 @@ import {
   Eye,
   EyeOff,
   StarOff,
+  Pencil,
+  Archive,
+  Trash2,
+  Loader2,
 } from "lucide-react";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -41,30 +66,121 @@ type WatchStatus = "Apply" | "Watch" | "Ignore" | null;
 
 export default function DashboardGrantDetailPage() {
   const [, params] = useRoute("/dashboard/grants/:id");
+  const [, navigate] = useLocation();
   const [watchStatus, setWatchStatus] = useState<WatchStatus>(null);
-  const [isTop3, setIsTop3] = useState<boolean | null>(null);
-  const grant = grants.find((g) => g.id === params?.id);
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const grantId = params?.id;
+  const { grant, grantRow, isLoading, isError, error } = useMappedGrant(grantId);
+  const { data: projectRows = [] } = useProjects();
+  const updateGrant = useUpdateGrant();
+  const archiveGrant = useArchiveGrant();
+  const deleteGrant = useDeleteGrant();
+  const setTopThree = useSetGrantTopThree();
 
   const handleAI = (action: string) =>
     toast({ title: action, description: "AI workflow will be connected in a later phase." });
 
-  if (!grant) {
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="p-8 text-center text-amber-700 text-sm">Configure Supabase to view grant details.</div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm">
+        <Loader2 size={16} className="animate-spin" />
+        Loading grant…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-8 text-center text-red-600 text-sm">
+        Could not load grant: {error instanceof Error ? error.message : String(error)}
+      </div>
+    );
+  }
+
+  if (!grant || !grantRow) {
     return (
       <div className="p-8 text-center text-slate-500">
         <p>Grant not found.</p>
         <Link href="/dashboard/grants">
-          <Button variant="ghost" className="mt-4 gap-2"><ArrowLeft size={14} />Back to tracker</Button>
+          <Button variant="ghost" className="mt-4 gap-2">
+            <ArrowLeft size={14} />
+            Back to grants
+          </Button>
         </Link>
       </div>
     );
   }
 
+  const legacyId = legacyGrantIdFromUuid(grant.id);
   const funder = funders.find((f) => f.id === grant.funderId);
-  const relatedApps = applications.filter((a) => a.grantId === grant.id);
-  const relatedTasks = tasks.filter((t) => t.relatedGrantId === grant.id);
-  const relatedDocs = documents.filter((d) => d.relatedGrantId === grant.id);
+  const relatedApps = applications.filter(
+    (a) => a.grantId === grant.id || (legacyId != null && a.grantId === legacyId)
+  );
+  const relatedTasks = tasks.filter(
+    (t) => t.relatedGrantId === grant.id || (legacyId != null && t.relatedGrantId === legacyId)
+  );
+  const relatedDocs = documents.filter(
+    (d) => d.relatedGrantId === grant.id || (legacyId != null && d.relatedGrantId === legacyId)
+  );
   const days = daysUntil(grant.deadline);
-  const top3 = isTop3 !== null ? isTop3 : grant.isTop3;
+  const top3 = grant.isTop3;
+
+  const handleEdit = async (values: GrantFormValues) => {
+    try {
+      await updateGrant.mutateAsync({
+        id: grant.id,
+        updates: grantFormValuesToInsert(values, projectRows),
+      });
+      toast({ title: "Grant updated", description: values.title });
+      setEditOpen(false);
+    } catch (e) {
+      toast({
+        title: "Failed to update grant",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+      throw e;
+    }
+  };
+
+  const handleArchive = async () => {
+    try {
+      await archiveGrant.mutateAsync(grant.id);
+      toast({ title: "Grant archived", description: grant.title });
+      setConfirmArchive(false);
+      navigate("/dashboard/grants");
+    } catch (e) {
+      toast({
+        title: "Failed to archive grant",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await deleteGrant.mutateAsync(grant.id);
+      toast({ title: "Grant deleted", description: grant.title });
+      setConfirmDelete(false);
+      navigate("/dashboard/grants");
+    } catch (e) {
+      toast({
+        title: "Failed to delete grant",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
@@ -132,15 +248,56 @@ export default function DashboardGrantDetailPage() {
         </Button>
         <Button
           size="sm"
+          variant="outline"
+          className="gap-1.5 text-xs"
+          onClick={() => setEditOpen(true)}
+        >
+          <Pencil size={12} />
+          Edit
+        </Button>
+        <Button
+          size="sm"
           variant={top3 ? "default" : "outline"}
           className="gap-1.5 text-xs"
-          onClick={() => {
-            setIsTop3(!top3);
-            toast({ title: top3 ? "Removed from Top 3" : "Added to Top 3", description: top3 ? "Grant removed from Top 3 Focus." : "Grant added to Top 3 Focus." });
+          disabled={setTopThree.isPending}
+          onClick={async () => {
+            try {
+              await setTopThree.mutateAsync({ id: grant.id, isTopThree: !top3 });
+              toast({
+                title: top3 ? "Removed from Top 3" : "Added to Top 3",
+                description: top3
+                  ? "Grant removed from Top 3 Focus."
+                  : "Grant added to Top 3 Focus.",
+              });
+            } catch (e) {
+              toast({
+                title: "Failed to update Top 3",
+                description: e instanceof Error ? e.message : "Unknown error",
+                variant: "destructive",
+              });
+            }
           }}
         >
           {top3 ? <StarOff size={12} /> : <Star size={12} />}
           {top3 ? "Remove from Top 3" : "Add to Top 3"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 text-xs"
+          onClick={() => setConfirmArchive(true)}
+        >
+          <Archive size={12} />
+          Archive
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50"
+          onClick={() => setConfirmDelete(true)}
+        >
+          <Trash2 size={12} />
+          Delete
         </Button>
         {grant.applicationUrl && (
           <a href={grant.applicationUrl} target="_blank" rel="noopener noreferrer">
@@ -412,6 +569,48 @@ export default function DashboardGrantDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <GrantFormDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSubmit={handleEdit}
+        defaultValues={grantRow}
+        title="Edit grant"
+        submitLabel="Save changes"
+        loading={updateGrant.isPending}
+      />
+
+      <AlertDialog open={confirmArchive} onOpenChange={setConfirmArchive}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive this grant?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &quot;{grant.title}&quot; will be archived and hidden from the main grants list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleArchive}>Archive</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Permanently delete this grant?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &quot;{grant.title}&quot; will be removed from the database. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

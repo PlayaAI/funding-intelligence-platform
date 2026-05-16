@@ -1,4 +1,4 @@
-import { FileText, Presentation, BarChart3, Monitor, MessageSquare } from "lucide-react";
+import { FileText, Presentation, BarChart3, Monitor, MessageSquare, Image, BookOpen } from "lucide-react";
 import { ProofItem, ProofItemType, proofTypeLabels } from "@/data/proofItems";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,8 @@ const typeIcons: Record<ProofItemType, React.ReactNode> = {
   document: <FileText className="w-4 h-4" />,
   metric: <BarChart3 className="w-4 h-4" />,
   testimonial: <MessageSquare className="w-4 h-4" />,
+  case_study: <BookOpen className="w-4 h-4" />,
+  media: <Image className="w-4 h-4" />,
 };
 
 const typeColors: Record<ProofItemType, string> = {
@@ -16,6 +18,8 @@ const typeColors: Record<ProofItemType, string> = {
   document: "bg-slate-100 text-slate-600 border-slate-200",
   metric: "bg-emerald-50 text-emerald-600 border-emerald-200",
   testimonial: "bg-amber-50 text-amber-600 border-amber-200",
+  case_study: "bg-cyan-50 text-cyan-600 border-cyan-200",
+  media: "bg-pink-50 text-pink-600 border-pink-200",
 };
 
 const typeLabelColors: Record<ProofItemType, string> = {
@@ -24,6 +28,8 @@ const typeLabelColors: Record<ProofItemType, string> = {
   document: "text-slate-600 bg-slate-100 border-slate-200",
   metric: "text-emerald-700 bg-emerald-50 border-emerald-200",
   testimonial: "text-amber-700 bg-amber-50 border-amber-200",
+  case_study: "text-cyan-700 bg-cyan-50 border-cyan-200",
+  media: "text-pink-700 bg-pink-50 border-pink-200",
 };
 
 interface ProofItemCardProps {

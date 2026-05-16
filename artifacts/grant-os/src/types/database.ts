@@ -110,6 +110,87 @@ export type ProofItemInsert = {
 export type ProofItemUpdate = Partial<ProofItemInsert>;
 
 // ============================================================
+// Grants
+// ============================================================
+
+export type GrantDbStatus =
+  | "Planned"
+  | "Researching"
+  | "Applying"
+  | "Submitted"
+  | "Awarded"
+  | "Declined"
+  | "Archived";
+
+export interface GrantRow {
+  id: string;
+  title: string;
+  funder_id: string | null;
+  funder_name: string | null;
+  related_project_id: string | null;
+  related_project_slug: string | null;
+  deadline: string | null;
+  next_deadline: string | null;
+  amount_min: number | null;
+  amount_max: number | null;
+  amount_display: string | null;
+  focus_areas: string[];
+  geography: string | null;
+  eligibility: string | null;
+  application_url: string | null;
+  source_url: string | null;
+  required_documents: string[];
+  application_questions: Json | null;
+  status: GrantDbStatus;
+  priority: string | null;
+  fit_score: number | null;
+  priority_score: number | null;
+  difficulty_score: number | null;
+  proof_readiness: string | null;
+  application_readiness: string | null;
+  is_top_three: boolean;
+  notes: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type GrantInsert = {
+  id?: string;
+  title: string;
+  funder_id?: string | null;
+  funder_name?: string | null;
+  related_project_id?: string | null;
+  related_project_slug?: string | null;
+  deadline?: string | null;
+  next_deadline?: string | null;
+  amount_min?: number | null;
+  amount_max?: number | null;
+  amount_display?: string | null;
+  focus_areas?: string[];
+  geography?: string | null;
+  eligibility?: string | null;
+  application_url?: string | null;
+  source_url?: string | null;
+  required_documents?: string[];
+  application_questions?: Json | null;
+  status?: GrantDbStatus;
+  priority?: string | null;
+  fit_score?: number | null;
+  priority_score?: number | null;
+  difficulty_score?: number | null;
+  proof_readiness?: string | null;
+  application_readiness?: string | null;
+  is_top_three?: boolean;
+  notes?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type GrantUpdate = Partial<GrantInsert>;
+
+// ============================================================
 // Supabase Database shape (used by createClient<Database>)
 // ============================================================
 
@@ -130,6 +211,19 @@ export interface Database {
           {
             foreignKeyName: "proof_items_project_id_fkey";
             columns: ["project_id"];
+            referencedRelation: "projects";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      grants: {
+        Row: GrantRow;
+        Insert: GrantInsert;
+        Update: GrantUpdate;
+        Relationships: [
+          {
+            foreignKeyName: "grants_related_project_id_fkey";
+            columns: ["related_project_id"];
             referencedRelation: "projects";
             referencedColumns: ["id"];
           }

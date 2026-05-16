@@ -5,7 +5,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useProjects } from "@/hooks/useProjects";
-import { grants, PROJECT_COLORS } from "@/data/grants";
+import { PROJECT_COLORS } from "@/data/grants";
+import { useMappedGrants } from "@/hooks/useGrants";
 import { tasks } from "@/data/tasks";
 import { applications } from "@/data/applications";
 import {
@@ -91,6 +92,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const { data: projects = [] } = useProjects();
+  const { grants } = useMappedGrants();
 
   const openTasksCount = tasks.filter((t) => t.status !== "Complete").length;
   const activeAppsCount = applications.filter((a) => a.status !== "Submitted").length;

@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { grants, type GrantStatus, grantStatusColors, PROJECT_COLORS } from "@/data/grants";
+import { type GrantStatus, PROJECT_COLORS } from "@/data/grants";
+import { useMappedGrants, useCreateGrant } from "@/hooks/useGrants";
+import { useProjects } from "@/hooks/useProjects";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
+import GrantFormDialog, { type GrantFormValues } from "@/components/dashboard/GrantFormDialog";
+import { grantFormValuesToInsert } from "@/lib/grantFormUtils";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Search, Download, Trophy, Clock, AlertCircle, XCircle, Star } from "lucide-react";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import { Plus, Search, Download, Trophy, Clock, AlertCircle, XCircle, Star, Loader2 } from "lucide-react";
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -24,13 +29,18 @@ export default function DashboardTrackerPage() {
   const [tab, setTab] = useState<Tab>("All");
   const [search, setSearch] = useState("");
   const [year, setYear] = useState("2026");
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const { grants, isLoading, isError, error } = useMappedGrants();
+  const { data: projectRows = [] } = useProjects();
+  const createGrant = useCreateGrant();
 
   const awarded = grants.filter((g) => g.status === "Awarded");
   const submitted = grants.filter((g) => g.status === "Submitted");
   const declined = grants.filter((g) => g.status === "Declined");
   const active = grants.filter((g) => !["Awarded", "Declined", "Archived"].includes(g.status));
 
-  const filtered = grants.filter((g) => {
+  const filtered = useMemo(() => grants.filter((g) => {
     const matchesSearch =
       !search ||
       g.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -40,9 +50,51 @@ export default function DashboardTrackerPage() {
       tab === "All" ||
       (tab === "Researching" && g.status === "Researching") ||
       (tab === "Applications" && ["Applying", "Submitted", "Awarded", "Declined"].includes(g.status));
-    const matchesYear = new Date(g.deadline).getFullYear().toString() === year;
+    const matchesYear = g.deadline
+      ? new Date(g.deadline).getFullYear().toString() === year
+      : true;
     return matchesSearch && matchesTab && matchesYear;
-  });
+  }), [grants, search, tab, year]);
+
+  const handleCreate = async (values: GrantFormValues) => {
+    try {
+      await createGrant.mutateAsync(grantFormValuesToInsert(values, projectRows));
+      toast({ title: "Grant created", description: values.title });
+      setDialogOpen(false);
+    } catch (e) {
+      toast({
+        title: "Failed to create grant",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+      throw e;
+    }
+  };
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl">
+        Configure Supabase to use the grant tracker.
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto flex items-center justify-center py-24 gap-2 text-slate-400 text-sm">
+        <Loader2 size={16} className="animate-spin" />
+        Loading grants…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto text-sm text-red-700">
+        Could not load grants: {error instanceof Error ? error.message : String(error)}
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
@@ -58,9 +110,7 @@ export default function DashboardTrackerPage() {
             <Download size={13} />
             Export CSV
           </Button>
-          <Button size="sm" className="gap-2 text-xs" onClick={() =>
-            toast({ title: "Add grant", description: "Grant creation form coming in next phase." })
-          }>
+          <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
             <Plus size={14} />
             Add new
           </Button>
@@ -232,6 +282,15 @@ export default function DashboardTrackerPage() {
           </tbody>
         </table>
       </div>
+
+      <GrantFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onSubmit={handleCreate}
+        title="Add grant"
+        submitLabel="Create grant"
+        loading={createGrant.isPending}
+      />
     </div>
   );
 }

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRoute, Link } from "wouter";
-import { projects } from "@/data/projects";
-import { grants, PROJECT_COLORS } from "@/data/grants";
+import { PROJECT_COLORS } from "@/data/grants";
+import { useProject } from "@/hooks/useProjects";
+import { useMappedGrants } from "@/hooks/useGrants";
 import { funders as funderList } from "@/data/funders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
 import ScoreBar from "@/components/dashboard/ScoreBar";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Sparkles, Star, ExternalLink, EyeOff, BookmarkPlus } from "lucide-react";
+import { ArrowLeft, Sparkles, Star, ExternalLink, EyeOff, BookmarkPlus, Loader2 } from "lucide-react";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -26,16 +28,45 @@ export default function DashboardMatchesProjectPage() {
   const [selectedGrantId, setSelectedGrantId] = useState<string | null>(null);
   const [matchTab, setMatchTab] = useState<MatchTab>("Opportunity Matches");
 
-  const project = projects.find((p) => p.slug === params?.projectId);
-  const projectGrants = grants.filter((g) => g.relatedProjectSlug === params?.projectId);
+  const slug = params?.projectId;
+  const { data: project, isLoading: projectLoading } = useProject(slug);
+  const { grants, isLoading: grantsLoading, isError } = useMappedGrants();
+
+  const projectGrants = useMemo(
+    () => grants.filter((g) => g.relatedProjectSlug === slug),
+    [grants, slug]
+  );
   const archivedGrants = projectGrants.filter((g) => g.status === "Archived");
   const activeGrants = projectGrants.filter((g) => g.status !== "Archived");
 
-  const displayGrants =
-    matchTab === "Hidden" ? archivedGrants : activeGrants;
+  const displayGrants = matchTab === "Hidden" ? archivedGrants : activeGrants;
 
-  const selectedGrant = grants.find((g) => g.id === selectedGrantId) ?? displayGrants[0];
+  const selectedGrant =
+    projectGrants.find((g) => g.id === selectedGrantId) ?? displayGrants[0];
   const selectedFunder = funderList.find((f) => f.id === selectedGrant?.funderId);
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="p-8 text-center text-amber-700 text-sm">
+        Configure Supabase to view grant matches.
+      </div>
+    );
+  }
+
+  if (projectLoading || grantsLoading) {
+    return (
+      <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm">
+        <Loader2 size={16} className="animate-spin" />
+        Loading matches…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-8 text-center text-red-600 text-sm">Could not load grants.</div>
+    );
+  }
 
   if (!project) {
     return (

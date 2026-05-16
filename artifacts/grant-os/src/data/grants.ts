@@ -33,6 +33,9 @@ export interface Grant {
   isTop3: boolean;
 }
 
+/**
+ * @deprecated After V0.3 for dashboard grant data. Kept temporarily for fallback/compatibility.
+ */
 export const grants: Grant[] = [
   {
     id: "g1",

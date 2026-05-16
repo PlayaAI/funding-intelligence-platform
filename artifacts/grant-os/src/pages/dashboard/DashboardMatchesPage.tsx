@@ -1,19 +1,55 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { projects } from "@/data/projects";
-import { grants, PROJECT_COLORS } from "@/data/grants";
+import { PROJECT_COLORS } from "@/data/grants";
+import { useProjects } from "@/hooks/useProjects";
+import { useMappedGrants } from "@/hooks/useGrants";
 import { Input } from "@/components/ui/input";
-import { Search, Sparkles, ChevronRight } from "lucide-react";
+import { Search, ChevronRight, Loader2, AlertCircle } from "lucide-react";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 export default function DashboardMatchesPage() {
   const [search, setSearch] = useState("");
+  const { data: projects = [], isLoading: projectsLoading, isError: projectsError, error: projectsErr } = useProjects();
+  const { grants, isLoading: grantsLoading, isError: grantsError, error: grantsErr } = useMappedGrants();
 
-  const filtered = projects.filter(
+  const isLoading = projectsLoading || grantsLoading;
+  const isError = projectsError || grantsError;
+
+  const filtered = useMemo(() => projects.filter(
     (p) =>
       !search ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.category.toLowerCase().includes(search.toLowerCase())
-  );
+      (p.category ?? "").toLowerCase().includes(search.toLowerCase())
+  ), [projects, search]);
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl">
+        Configure Supabase to view grant matches.
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto flex items-center justify-center py-24 gap-2 text-slate-400 text-sm">
+        <Loader2 size={16} className="animate-spin" />
+        Loading…
+      </div>
+    );
+  }
+
+  if (isError) {
+    const msg =
+      (projectsErr instanceof Error ? projectsErr.message : "") ||
+      (grantsErr instanceof Error ? grantsErr.message : "Unknown error");
+    return (
+      <div className="p-6 max-w-4xl mx-auto text-sm text-red-700 flex gap-2">
+        <AlertCircle size={16} />
+        Could not load matches: {msg}
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-5">
@@ -60,7 +96,9 @@ export default function DashboardMatchesPage() {
                       <div className="font-semibold text-slate-800 group-hover:text-primary transition-colors">
                         {p.name}
                       </div>
-                      <div className="text-xs text-slate-400 mt-0.5">{p.category}</div>
+                      
+                      
+                      <div className="text-xs text-slate-400 mt-0.5">{p.category ?? "—"}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-6 flex-shrink-0 ml-4">
@@ -84,7 +122,7 @@ export default function DashboardMatchesPage() {
                   </div>
                 </div>
                 <div className="mt-3 pt-3 border-t border-slate-100">
-                  <p className="text-xs text-slate-500 line-clamp-2">{p.grantRelevance}</p>
+                  <p className="text-xs text-slate-500 line-clamp-2">{p.grant_relevance ?? ""}</p>
                 </div>
               </div>
             </Link>
@@ -94,3 +132,4 @@ export default function DashboardMatchesPage() {
     </div>
   );
 }
+
