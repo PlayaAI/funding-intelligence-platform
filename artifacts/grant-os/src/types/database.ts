@@ -191,6 +191,153 @@ export type GrantInsert = {
 export type GrantUpdate = Partial<GrantInsert>;
 
 // ============================================================
+// Funders
+// ============================================================
+
+export type FunderRelationshipStatus =
+  | "None"
+  | "Researching"
+  | "Contacted"
+  | "In Conversation"
+  | "Active Relationship";
+
+export interface FunderRow {
+  id: string;
+  legacy_id: string | null;
+  name: string;
+  slug: string | null;
+  website: string | null;
+  ein: string | null;
+  location: string | null;
+  address: string | null;
+  phone: string | null;
+  contact_info: string | null;
+  key_people: Json | null;
+  assets: number | null;
+  annual_giving: number | null;
+  median_grant_amount: number | null;
+  giving_areas: string[];
+  openness_to_new_grantees: string | null;
+  relationship_status: string | null;
+  past_grantees: string[];
+  open_applications: boolean;
+  notes: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type FunderInsert = {
+  id?: string;
+  legacy_id?: string | null;
+  name: string;
+  slug?: string | null;
+  website?: string | null;
+  ein?: string | null;
+  location?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  contact_info?: string | null;
+  key_people?: Json | null;
+  assets?: number | null;
+  annual_giving?: number | null;
+  median_grant_amount?: number | null;
+  giving_areas?: string[];
+  openness_to_new_grantees?: string | null;
+  relationship_status?: string | null;
+  past_grantees?: string[];
+  open_applications?: boolean;
+  notes?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type FunderUpdate = Partial<FunderInsert>;
+
+// ============================================================
+// Peer Organizations
+// ============================================================
+
+export interface PeerOrganizationRow {
+  id: string;
+  legacy_id: string | null;
+  name: string;
+  slug: string | null;
+  website: string | null;
+  ein: string | null;
+  location: string | null;
+  address: string | null;
+  description: string | null;
+  assets: number | null;
+  annual_revenue: number | null;
+  focus_areas: string[];
+  relevance: string | null;
+  key_people: Json | null;
+  saved_opportunities: Json | null;
+  notes: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PeerOrganizationInsert = {
+  id?: string;
+  legacy_id?: string | null;
+  name: string;
+  slug?: string | null;
+  website?: string | null;
+  ein?: string | null;
+  location?: string | null;
+  address?: string | null;
+  description?: string | null;
+  assets?: number | null;
+  annual_revenue?: number | null;
+  focus_areas?: string[];
+  relevance?: string | null;
+  key_people?: Json | null;
+  saved_opportunities?: Json | null;
+  notes?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type PeerOrganizationUpdate = Partial<PeerOrganizationInsert>;
+
+// ============================================================
+// Peer Funding Records
+// ============================================================
+
+export interface PeerFundingRecordRow {
+  id: string;
+  peer_organization_id: string;
+  funder_id: string | null;
+  funder_name: string | null;
+  year: number | null;
+  amount: number | null;
+  source_url: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PeerFundingRecordInsert = {
+  id?: string;
+  peer_organization_id: string;
+  funder_id?: string | null;
+  funder_name?: string | null;
+  year?: number | null;
+  amount?: number | null;
+  source_url?: string | null;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type PeerFundingRecordUpdate = Partial<PeerFundingRecordInsert>;
+
+// ============================================================
 // Supabase Database shape (used by createClient<Database>)
 // ============================================================
 
@@ -225,6 +372,37 @@ export interface Database {
             foreignKeyName: "grants_related_project_id_fkey";
             columns: ["related_project_id"];
             referencedRelation: "projects";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      funders: {
+        Row: FunderRow;
+        Insert: FunderInsert;
+        Update: FunderUpdate;
+        Relationships: [];
+      };
+      peer_organizations: {
+        Row: PeerOrganizationRow;
+        Insert: PeerOrganizationInsert;
+        Update: PeerOrganizationUpdate;
+        Relationships: [];
+      };
+      peer_funding_records: {
+        Row: PeerFundingRecordRow;
+        Insert: PeerFundingRecordInsert;
+        Update: PeerFundingRecordUpdate;
+        Relationships: [
+          {
+            foreignKeyName: "peer_funding_records_peer_organization_id_fkey";
+            columns: ["peer_organization_id"];
+            referencedRelation: "peer_organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "peer_funding_records_funder_id_fkey";
+            columns: ["funder_id"];
+            referencedRelation: "funders";
             referencedColumns: ["id"];
           }
         ];

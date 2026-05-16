@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRoute, Link, useLocation } from "wouter";
-import { funders } from "@/data/funders";
+import { useMappedFunders } from "@/hooks/useFunders";
+import { resolveFunderForGrant, funderDetailPath } from "@/lib/funderMappers";
 import {
   useMappedGrant,
   useUpdateGrant,
@@ -74,11 +75,17 @@ export default function DashboardGrantDetailPage() {
 
   const grantId = params?.id;
   const { grant, grantRow, isLoading, isError, error } = useMappedGrant(grantId);
+  const { funders } = useMappedFunders();
   const { data: projectRows = [] } = useProjects();
   const updateGrant = useUpdateGrant();
   const archiveGrant = useArchiveGrant();
   const deleteGrant = useDeleteGrant();
   const setTopThree = useSetGrantTopThree();
+
+  const funder = useMemo(() => {
+    if (!grant) return null;
+    return resolveFunderForGrant(grant, funders);
+  }, [grant, funders]);
 
   const handleAI = (action: string) =>
     toast({ title: action, description: "AI workflow will be connected in a later phase." });
@@ -121,7 +128,6 @@ export default function DashboardGrantDetailPage() {
   }
 
   const legacyId = legacyGrantIdFromUuid(grant.id);
-  const funder = funders.find((f) => f.id === grant.funderId);
   const relatedApps = applications.filter(
     (a) => a.grantId === grant.id || (legacyId != null && a.grantId === legacyId)
   );
@@ -352,7 +358,16 @@ export default function DashboardGrantDetailPage() {
             <Card className="border-slate-200">
               <CardHeader className="pb-2"><CardTitle className="text-sm">Grant Details</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
-                <div><span className="text-slate-500 text-xs">Funder</span><div className="font-medium text-slate-800 mt-0.5">{grant.funderName}</div></div>
+                <div>
+                  <span className="text-slate-500 text-xs">Funder</span>
+                  {funder ? (
+                    <Link href={funderDetailPath(funder)}>
+                      <div className="font-medium text-primary mt-0.5 hover:underline">{grant.funderName}</div>
+                    </Link>
+                  ) : (
+                    <div className="font-medium text-slate-800 mt-0.5">{grant.funderName}</div>
+                  )}
+                </div>
                 <div><span className="text-slate-500 text-xs">Amount Range</span><div className="font-medium text-slate-800 mt-0.5">{fmt(grant.amountMin)} – {fmt(grant.amountMax)}</div></div>
                 <div><span className="text-slate-500 text-xs">Deadline</span><div className="font-medium text-slate-800 mt-0.5">{formatDate(grant.deadline)}</div></div>
                 <div><span className="text-slate-500 text-xs">Geography</span><div className="font-medium text-slate-800 mt-0.5">{grant.geography}</div></div>

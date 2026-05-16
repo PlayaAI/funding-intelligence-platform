@@ -1,11 +1,46 @@
-import { useRoute, Link } from "wouter";
-import { peerOrgs } from "@/data/peers";
+import { useState } from "react";
+import { useRoute, Link, useLocation } from "wouter";
+import {
+  useMappedPeer,
+  useUpdatePeerOrganization,
+  useArchivePeerOrganization,
+  useDeletePeerOrganization,
+  useCreatePeerFundingRecord,
+} from "@/hooks/usePeers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PeerOrganizationFormDialog, {
+  type PeerOrganizationFormValues,
+} from "@/components/dashboard/PeerOrganizationFormDialog";
+import PeerFundingRecordFormDialog, {
+  type PeerFundingRecordFormValues,
+} from "@/components/dashboard/PeerFundingRecordFormDialog";
+import { peerFormValuesToInsert } from "@/lib/peerFormUtils";
+import { peerFundingRecordFormValuesToInsert } from "@/lib/peerFundingRecordFormUtils";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Sparkles, ExternalLink, Network, Plus } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  ArrowLeft,
+  Sparkles,
+  ExternalLink,
+  Network,
+  Plus,
+  Pencil,
+  Archive,
+  Trash2,
+  Loader2,
+} from "lucide-react";
 
 function fmtAmount(n: number) {
   return n >= 1000000 ? `$${(n / 1000000).toFixed(1)}M` : `$${(n / 1000).toFixed(0)}K`;
@@ -13,9 +48,36 @@ function fmtAmount(n: number) {
 
 export default function DashboardPeerDetailPage() {
   const [, params] = useRoute("/dashboard/peers/:id");
-  const peer = peerOrgs.find((p) => p.id === params?.id);
+  const [, navigate] = useLocation();
+  const [editOpen, setEditOpen] = useState(false);
+  const [recordDialogOpen, setRecordDialogOpen] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  if (!peer) {
+  const { peer, peerRow, isLoading, isError, error } = useMappedPeer(params?.id);
+  const updatePeer = useUpdatePeerOrganization();
+  const archivePeer = useArchivePeerOrganization();
+  const deletePeer = useDeletePeerOrganization();
+  const createRecord = useCreatePeerFundingRecord();
+
+  if (isLoading) {
+    return (
+      <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm">
+        <Loader2 size={16} className="animate-spin" />
+        Loading peer organization…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-8 text-center text-red-600 text-sm">
+          Could not load peer: {error instanceof Error ? error.message : String(error)}
+        </div>
+    );
+  }
+
+  if (!peer || !peerRow) {
     return (
       <div className="p-8 text-center text-slate-500">
         <p>Peer organization not found.</p>
@@ -28,6 +90,69 @@ export default function DashboardPeerDetailPage() {
 
   const handleAI = (action: string) =>
     toast({ title: action, description: "AI workflow will be connected in a later phase." });
+
+  const handleEdit = async (values: PeerOrganizationFormValues) => {
+    try {
+      await updatePeer.mutateAsync({
+        id: peer.id,
+        updates: peerFormValuesToInsert(values),
+      });
+      toast({ title: "Peer updated", description: values.name });
+      setEditOpen(false);
+    } catch (e) {
+      toast({
+        title: "Failed to update peer",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+      throw e;
+    }
+  };
+
+  const handleArchive = async () => {
+    try {
+      await archivePeer.mutateAsync(peer.id);
+      toast({ title: "Peer archived", description: peer.name });
+      setConfirmArchive(false);
+      navigate("/dashboard/peers");
+    } catch (e) {
+      toast({
+        title: "Failed to archive peer",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await deletePeer.mutateAsync(peer.id);
+      toast({ title: "Peer deleted", description: peer.name });
+      setConfirmDelete(false);
+      navigate("/dashboard/peers");
+    } catch (e) {
+      toast({
+        title: "Failed to delete peer",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddRecord = async (values: PeerFundingRecordFormValues) => {
+    try {
+      await createRecord.mutateAsync(peerFundingRecordFormValuesToInsert(peer.id, values));
+      toast({ title: "Funding record added" });
+      setRecordDialogOpen(false);
+    } catch (e) {
+      toast({
+        title: "Failed to add record",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+      throw e;
+    }
+  };
 
   const uniqueFunders = [...new Set(peer.fundingRecords.map((r) => r.funderName))];
   const totalFunding = peer.fundingRecords.reduce((s, r) => s + r.amount, 0);
@@ -69,6 +194,23 @@ export default function DashboardPeerDetailPage() {
         <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleAI("Recommend Funders")}>
           <Sparkles size={12} />
           Recommend Funders to Pursue
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
+          <Pencil size={12} />
+          Edit
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}>
+          <Archive size={12} />
+          Archive
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50"
+          onClick={() => setConfirmDelete(true)}
+        >
+          <Trash2 size={12} />
+          Delete
         </Button>
       </div>
 
@@ -150,9 +292,7 @@ export default function DashboardPeerDetailPage() {
               </CardContent>
             </Card>
           ))}
-          <Button size="sm" variant="outline" className="gap-2 text-xs mt-2" onClick={() =>
-            toast({ title: "Add funding record", description: "Funding record creation coming in next phase." })
-          }>
+          <Button size="sm" variant="outline" className="gap-2 text-xs mt-2" onClick={() => setRecordDialogOpen(true)}>
             <Plus size={12} />
             Add funding record
           </Button>
@@ -166,15 +306,64 @@ export default function DashboardPeerDetailPage() {
               ) : (
                 <p className="text-sm text-slate-400">No notes yet.</p>
               )}
-              <Button size="sm" variant="outline" className="gap-2 text-xs mt-4" onClick={() =>
-                toast({ title: "Edit notes", description: "Note editing coming in next phase." })
-              }>
+              <Button size="sm" variant="outline" className="gap-2 text-xs mt-4" onClick={() => setEditOpen(true)}>
                 Edit Notes
               </Button>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <PeerOrganizationFormDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSubmit={handleEdit}
+        defaultValues={peerRow}
+        title="Edit peer organization"
+        submitLabel="Save changes"
+        loading={updatePeer.isPending}
+      />
+
+      <PeerFundingRecordFormDialog
+        open={recordDialogOpen}
+        onOpenChange={setRecordDialogOpen}
+        onSubmit={handleAddRecord}
+        title="Add funding record"
+        submitLabel="Add record"
+        loading={createRecord.isPending}
+      />
+
+      <AlertDialog open={confirmArchive} onOpenChange={setConfirmArchive}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive this peer organization?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &quot;{peer.name}&quot; will be archived and hidden from the peers list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleArchive}>Archive</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Permanently delete this peer?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &quot;{peer.name}&quot; will be removed from the database. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

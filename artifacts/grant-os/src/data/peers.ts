@@ -15,6 +15,8 @@ export interface SavedOpportunity {
 
 export interface PeerOrg {
   id: string;
+  /** Route-friendly legacy id (e.g. po1) when seeded from mock data */
+  legacyId?: string;
   name: string;
   ein?: string;
   website?: string;
@@ -30,6 +32,9 @@ export interface PeerOrg {
   savedOpportunities?: SavedOpportunity[];
 }
 
+/**
+ * @deprecated Use Supabase via `useMappedPeers` / `peersService`. Kept for static fallbacks and tests.
+ */
 export const peerOrgs: PeerOrg[] = [
   {
     id: "po1",

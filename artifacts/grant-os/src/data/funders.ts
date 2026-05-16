@@ -1,5 +1,7 @@
 export interface Funder {
   id: string;
+  /** Route-friendly legacy id (e.g. f4) when seeded from mock data */
+  legacyId?: string;
   name: string;
   ein?: string;
   website?: string;
@@ -19,6 +21,9 @@ export interface Funder {
   contactTitle?: string;
 }
 
+/**
+ * @deprecated Use Supabase via `useMappedFunders` / `fundersService`. Kept for static fallbacks and tests.
+ */
 export const funders: Funder[] = [
   {
     id: "f1",

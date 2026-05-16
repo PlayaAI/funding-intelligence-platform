@@ -1,14 +1,44 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { peerOrgs, type PeerOrg } from "@/data/peers";
+import type { FundingRecord, PeerOrg } from "@/data/peers";
+import {
+  useMappedPeers,
+  useCreatePeerOrganization,
+  useCreatePeerFundingRecord,
+  useUpdatePeerFundingRecord,
+  useDeletePeerFundingRecord,
+} from "@/hooks/usePeers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import PeerOrganizationFormDialog, {
+  type PeerOrganizationFormValues,
+} from "@/components/dashboard/PeerOrganizationFormDialog";
+import PeerFundingRecordFormDialog, {
+  type PeerFundingRecordFormValues,
+} from "@/components/dashboard/PeerFundingRecordFormDialog";
+import { peerFormValuesToInsert } from "@/lib/peerFormUtils";
+import { peerFundingRecordFormValuesToInsert } from "@/lib/peerFundingRecordFormUtils";
+import { peerDetailPath } from "@/lib/funderMappers";
 import { toast } from "@/hooks/use-toast";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import {
-  Plus, Search, Network, ExternalLink, Sparkles,
-  Mail, User, Hash, FileBarChart2, Bookmark, ArrowRight,
+  Plus,
+  Search,
+  Network,
+  ExternalLink,
+  Sparkles,
+  Mail,
+  User,
+  Hash,
+  FileBarChart2,
+  Bookmark,
+  ArrowRight,
+  Loader2,
+  AlertCircle,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 
 function fmtAmount(n: number) {
@@ -17,14 +47,128 @@ function fmtAmount(n: number) {
 
 export default function DashboardPeersPage() {
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<PeerOrg>(peerOrgs[0]);
+  const [selected, setSelected] = useState<PeerOrg | null>(null);
+  const [peerDialogOpen, setPeerDialogOpen] = useState(false);
+  const [recordDialogOpen, setRecordDialogOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<FundingRecord | null>(null);
 
-  const filtered = peerOrgs.filter(
-    (p) =>
-      !search ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.focusAreas.some((a) => a.toLowerCase().includes(search.toLowerCase()))
+  const { peers, isLoading, isError, error } = useMappedPeers();
+  const createPeer = useCreatePeerOrganization();
+  const createRecord = useCreatePeerFundingRecord();
+  const updateRecord = useUpdatePeerFundingRecord();
+  const deleteRecord = useDeletePeerFundingRecord();
+
+  const filtered = useMemo(
+    () =>
+      peers.filter(
+        (p) =>
+          !search ||
+          p.name.toLowerCase().includes(search.toLowerCase()) ||
+          p.focusAreas.some((a) => a.toLowerCase().includes(search.toLowerCase()))
+      ),
+    [peers, search]
   );
+
+  useEffect(() => {
+    if (peers.length === 0) {
+      setSelected(null);
+      return;
+    }
+    if (!selected || !peers.some((p) => p.id === selected.id)) {
+      setSelected(peers[0]);
+    }
+  }, [peers, selected]);
+
+  const handleCreatePeer = async (values: PeerOrganizationFormValues) => {
+    try {
+      await createPeer.mutateAsync(peerFormValuesToInsert(values));
+      toast({ title: "Peer organization created", description: values.name });
+      setPeerDialogOpen(false);
+      setSelected(null);
+    } catch (e) {
+      toast({
+        title: "Failed to create peer",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+      throw e;
+    }
+  };
+
+  const handleSaveRecord = async (values: PeerFundingRecordFormValues) => {
+    if (!selected) return;
+    try {
+      if (editingRecord) {
+        await updateRecord.mutateAsync({
+          id: editingRecord.id,
+          updates: peerFundingRecordFormValuesToInsert(selected.id, values),
+        });
+        toast({ title: "Funding record updated" });
+      } else {
+        await createRecord.mutateAsync(
+          peerFundingRecordFormValuesToInsert(selected.id, values)
+        );
+        toast({ title: "Funding record added" });
+      }
+      setRecordDialogOpen(false);
+      setEditingRecord(null);
+    } catch (e) {
+      toast({
+        title: "Failed to save funding record",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+      throw e;
+    }
+  };
+
+  const handleDeleteRecord = async (recordId: string) => {
+    try {
+      await deleteRecord.mutateAsync(recordId);
+      toast({ title: "Funding record deleted" });
+    } catch (e) {
+      toast({
+        title: "Failed to delete record",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="p-6">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          Configure Supabase to load peer organizations.
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-slate-400 text-sm">
+        <Loader2 size={16} className="animate-spin" />
+        Loading peers…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-2 text-sm text-red-700">
+          <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Could not load peer organizations</p>
+            <p className="text-xs mt-1 font-mono">
+              {error instanceof Error ? error.message : String(error)}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -36,7 +180,7 @@ export default function DashboardPeersPage() {
               size="sm"
               variant="ghost"
               className="h-6 text-xs px-2 gap-1"
-              onClick={() => toast({ title: "Add peer org", description: "Peer org creation form coming in next phase." })}
+              onClick={() => setPeerDialogOpen(true)}
             >
               <Plus size={11} />
               Add
@@ -56,7 +200,7 @@ export default function DashboardPeersPage() {
         <div className="flex-1 overflow-y-auto">
           {filtered.map((p) => {
             const totalFunding = p.fundingRecords.reduce((s, r) => s + r.amount, 0);
-            const isSelected = selected.id === p.id;
+            const isSelected = selected?.id === p.id;
             return (
               <div
                 key={p.id}
@@ -111,7 +255,7 @@ export default function DashboardPeersPage() {
                       </Button>
                     </a>
                   )}
-                  <Link href={`/dashboard/peers/${selected.id}`}>
+                  <Link href={peerDetailPath(selected)}>
                     <Button size="sm" variant="outline" className="gap-1 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5">
                       Full profile
                       <ArrowRight size={11} />
@@ -221,9 +365,15 @@ export default function DashboardPeersPage() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm">Funding History</CardTitle>
-                  <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 px-2" onClick={() =>
-                    toast({ title: "Add funding record", description: "Funding record creation coming in next phase." })
-                  }>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-xs gap-1 px-2"
+                    onClick={() => {
+                      setEditingRecord(null);
+                      setRecordDialogOpen(true);
+                    }}
+                  >
                     <Plus size={11} />
                     Add
                   </Button>
@@ -237,6 +387,7 @@ export default function DashboardPeersPage() {
                       <th className="text-left py-1.5 text-xs font-semibold text-slate-400">Year</th>
                       <th className="text-right py-1.5 text-xs font-semibold text-slate-400">Amount</th>
                       <th className="text-left py-1.5 text-xs font-semibold text-slate-400 pl-3">Notes</th>
+                      <th className="w-16" />
                     </tr>
                   </thead>
                   <tbody>
@@ -246,6 +397,27 @@ export default function DashboardPeersPage() {
                         <td className="py-2 text-xs text-slate-500">{r.year}</td>
                         <td className="py-2 text-xs font-semibold text-slate-700 text-right">{fmtAmount(r.amount)}</td>
                         <td className="py-2 text-xs text-slate-400 pl-3">{r.notes ?? "—"}</td>
+                        <td className="py-2 text-right">
+                          <div className="flex justify-end gap-1">
+                            <button
+                              type="button"
+                              className="p-1 text-slate-400 hover:text-slate-600"
+                              onClick={() => {
+                                setEditingRecord(r);
+                                setRecordDialogOpen(true);
+                              }}
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="p-1 text-slate-400 hover:text-red-600"
+                              onClick={() => handleDeleteRecord(r.id)}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -308,6 +480,37 @@ export default function DashboardPeersPage() {
           </div>
         )}
       </div>
+
+      <PeerOrganizationFormDialog
+        open={peerDialogOpen}
+        onOpenChange={setPeerDialogOpen}
+        onSubmit={handleCreatePeer}
+        title="Add peer organization"
+        submitLabel="Create organization"
+        loading={createPeer.isPending}
+      />
+
+      <PeerFundingRecordFormDialog
+        open={recordDialogOpen}
+        onOpenChange={(open) => {
+          setRecordDialogOpen(open);
+          if (!open) setEditingRecord(null);
+        }}
+        onSubmit={handleSaveRecord}
+        defaultValues={
+          editingRecord
+            ? {
+                funder_name: editingRecord.funderName,
+                year: editingRecord.year,
+                amount: editingRecord.amount,
+                notes: editingRecord.notes ?? "",
+              }
+            : undefined
+        }
+        title={editingRecord ? "Edit funding record" : "Add funding record"}
+        submitLabel={editingRecord ? "Save changes" : "Add record"}
+        loading={createRecord.isPending || updateRecord.isPending}
+      />
     </div>
   );
 }
