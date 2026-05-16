@@ -3,8 +3,8 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useProject, useUpdateProject, useArchiveProject, useDeleteProject } from "@/hooks/useProjects";
 import { useProofItems, useCreateProofItem } from "@/hooks/useProofItems";
 import { grants, PROJECT_COLORS } from "@/data/grants";
-import { applications } from "@/data/applications";
-import { tasks } from "@/data/tasks";
+import { useApplicationsByProject } from "@/hooks/useApplications";
+import { useTasksByProject } from "@/hooks/useTasks";
 import { documents } from "@/data/documents";
 import ProofItemFormDialog, { PROOF_TYPE_LABELS, parseTagsString, type ProofItemFormValues } from "@/components/dashboard/ProofItemFormDialog";
 import { Button } from "@/components/ui/button";
@@ -103,8 +103,8 @@ export default function DashboardProjectDetailPage() {
   }
 
   const relatedGrants = grants.filter((g) => g.relatedProjectSlug === project.slug);
-  const relatedApps = applications.filter((a) => a.projectSlug === project.slug);
-  const relatedTasks = tasks.filter((t) => t.relatedProjectSlug === project.slug);
+  const { data: relatedApps = [] } = useApplicationsByProject(project.id);
+  const { data: relatedTasks = [] } = useTasksByProject(project.id);
   const relatedDocs = documents.filter((d) => d.relatedProjectSlug === project.slug);
   const color = PROJECT_COLORS[project.slug] ?? "#94a3b8";
   const stage = project.stage ?? "Unknown";
@@ -426,8 +426,8 @@ export default function DashboardProjectDetailPage() {
                 <CardContent className="pt-3 pb-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-medium text-sm text-slate-800">{a.grantTitle}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">{a.owner}</div>
+                      <div className="font-medium text-sm text-slate-800">{a.title}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{a.owner_name ?? "Unassigned"}</div>
                     </div>
                     <Badge variant="secondary" className="text-xs">{a.status}</Badge>
                   </div>
@@ -447,10 +447,10 @@ export default function DashboardProjectDetailPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-medium text-sm text-slate-800">{t.title}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">{t.owner} · Due {new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{t.owner_name ?? "Unassigned"} · {t.due_date ? `Due ${new Date(t.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "No due date"}</div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={t.priority === "High" ? "destructive" : "secondary"} className="text-xs">{t.priority}</Badge>
+                    <Badge variant={t.priority === "High" || t.priority === "Urgent" ? "destructive" : "secondary"} className="text-xs">{t.priority}</Badge>
                     <Badge variant="outline" className="text-xs">{t.status}</Badge>
                   </div>
                 </div>
@@ -461,7 +461,7 @@ export default function DashboardProjectDetailPage() {
             <div className="text-center py-10 text-slate-400 text-sm">No tasks linked.</div>
           )}
           <Button size="sm" variant="outline" className="gap-2 text-xs mt-2" onClick={() =>
-            toast({ title: "Add task", description: "Task creation coming in a later phase." })
+            toast({ title: "Add task", description: "Task creation from project detail coming soon." })
           }>
             <Plus size={12} />
             Add task

@@ -10,12 +10,15 @@ import {
   useSetGrantTopThree,
 } from "@/hooks/useGrants";
 import { useProjects } from "@/hooks/useProjects";
+import { useApplicationsByGrant } from "@/hooks/useApplications";
+import { useTasksByGrant, useCreateTask } from "@/hooks/useTasks";
 import GrantFormDialog, { type GrantFormValues } from "@/components/dashboard/GrantFormDialog";
+import ApplicationFormDialog, { type ApplicationFormValues } from "@/components/dashboard/ApplicationFormDialog";
+import TaskFormDialog, { type TaskFormValues } from "@/components/dashboard/TaskFormDialog";
 import { grantFormValuesToInsert } from "@/lib/grantFormUtils";
-import { legacyGrantIdFromUuid } from "@/lib/grantIds";
-import { applications } from "@/data/applications";
-import { tasks } from "@/data/tasks";
+import { useCreateApplication } from "@/hooks/useApplications";
 import { documents } from "@/data/documents";
+import type { ApplicationDbStatus, TaskDbStatus, TaskDbPriority } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +75,8 @@ export default function DashboardGrantDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [createAppOpen, setCreateAppOpen] = useState(false);
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
 
   const grantId = params?.id;
   const { grant, grantRow, isLoading, isError, error } = useMappedGrant(grantId);
@@ -81,6 +86,10 @@ export default function DashboardGrantDetailPage() {
   const archiveGrant = useArchiveGrant();
   const deleteGrant = useDeleteGrant();
   const setTopThree = useSetGrantTopThree();
+  const { data: relatedApps = [] } = useApplicationsByGrant(grantRow?.id);
+  const { data: relatedTasks = [] } = useTasksByGrant(grantRow?.id);
+  const createApp = useCreateApplication();
+  const createTask = useCreateTask();
 
   const funder = useMemo(() => {
     if (!grant) return null;
@@ -127,18 +136,55 @@ export default function DashboardGrantDetailPage() {
     );
   }
 
-  const legacyId = legacyGrantIdFromUuid(grant.id);
-  const relatedApps = applications.filter(
-    (a) => a.grantId === grant.id || (legacyId != null && a.grantId === legacyId)
-  );
-  const relatedTasks = tasks.filter(
-    (t) => t.relatedGrantId === grant.id || (legacyId != null && t.relatedGrantId === legacyId)
-  );
   const relatedDocs = documents.filter(
-    (d) => d.relatedGrantId === grant.id || (legacyId != null && d.relatedGrantId === legacyId)
+    (d) => {
+      const legacyId = (grant as any).legacyId;
+      return d.relatedGrantId === grant.id || (legacyId != null && d.relatedGrantId === legacyId);
+    }
   );
   const days = daysUntil(grant.deadline);
   const top3 = grant.isTop3;
+
+  const handleCreateApp = async (values: ApplicationFormValues) => {
+    try {
+      await createApp.mutateAsync({
+        title: values.title,
+        status: (values.status as ApplicationDbStatus) ?? "Drafting",
+        owner_name: values.owner_name || null,
+        grant_id: grant.id,
+        project_id: values.project_id || null,
+        google_doc_url: values.google_doc_url || null,
+        drive_folder_url: values.drive_folder_url || null,
+        portal_url: values.portal_url || null,
+        notes: values.notes || null,
+      });
+      toast({ title: "Application created", description: values.title });
+      setCreateAppOpen(false);
+    } catch (e) {
+      toast({ title: "Failed to create application", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
+
+  const handleCreateTask = async (values: TaskFormValues) => {
+    try {
+      await createTask.mutateAsync({
+        title: values.title,
+        description: values.description || null,
+        owner_name: values.owner_name || null,
+        status: (values.status as TaskDbStatus) ?? "Not Started",
+        priority: (values.priority as TaskDbPriority) ?? "Medium",
+        due_date: values.due_date || null,
+        related_grant_id: grant.id,
+        related_project_id: values.related_project_id || null,
+        related_application_id: values.related_application_id || null,
+        notes: values.notes || null,
+      });
+      toast({ title: "Task created", description: values.title });
+      setAddTaskOpen(false);
+    } catch (e) {
+      toast({ title: "Failed to create task", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
 
   const handleEdit = async (values: GrantFormValues) => {
     try {
@@ -246,9 +292,7 @@ export default function DashboardGrantDetailPage() {
           <Sparkles size={12} />
           Suggest Proof
         </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() =>
-          toast({ title: "Create application", description: "Application workspace creation coming in next phase." })
-        }>
+        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setCreateAppOpen(true)}>
           <Plus size={12} />
           Create Application
         </Button>
@@ -458,8 +502,8 @@ export default function DashboardGrantDetailPage() {
                     <CardContent className="pt-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium text-slate-800">{a.grantTitle}</div>
-                          <div className="text-xs text-slate-500 mt-0.5">{a.projectName} · {a.owner}</div>
+                          <div className="font-medium text-slate-800">{a.title}</div>
+                          <div className="text-xs text-slate-500 mt-0.5">{a.owner_name ?? "Unassigned"}</div>
                         </div>
                         <Badge variant="secondary">{a.status}</Badge>
                       </div>
@@ -472,9 +516,7 @@ export default function DashboardGrantDetailPage() {
             <Card className="border-slate-200">
               <CardContent className="pt-6 pb-6 text-center">
                 <p className="text-sm text-slate-500 mb-4">No application workspace yet. Create one to start drafting.</p>
-                <Button size="sm" className="gap-2 text-xs" onClick={() =>
-                  toast({ title: "Create application", description: "Application workspace creation coming in next phase." })
-                }>
+                <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateAppOpen(true)}>
                   <Plus size={12} />
                   Create Application Workspace
                 </Button>
@@ -493,11 +535,11 @@ export default function DashboardGrantDetailPage() {
                       <div>
                         <div className="font-medium text-sm text-slate-800">{t.title}</div>
                         <div className="text-xs text-slate-400 mt-0.5">
-                          {t.owner} · Due {new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          {t.owner_name ?? "Unassigned"} · {t.due_date ? `Due ${new Date(t.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "No due date"}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant={t.priority === "High" ? "destructive" : "secondary"} className="text-xs">{t.priority}</Badge>
+                        <Badge variant={t.priority === "High" || t.priority === "Urgent" ? "destructive" : "secondary"} className="text-xs">{t.priority}</Badge>
                         <Badge variant="outline" className="text-xs">{t.status}</Badge>
                       </div>
                     </div>
@@ -512,9 +554,7 @@ export default function DashboardGrantDetailPage() {
               </CardContent>
             </Card>
           )}
-          <Button size="sm" variant="outline" className="gap-2 text-xs mt-3" onClick={() =>
-            toast({ title: "Add task", description: "Task creation form coming in next phase." })
-          }>
+          <Button size="sm" variant="outline" className="gap-2 text-xs mt-3" onClick={() => setAddTaskOpen(true)}>
             <Plus size={12} />
             Add task
           </Button>
@@ -593,6 +633,26 @@ export default function DashboardGrantDetailPage() {
         title="Edit grant"
         submitLabel="Save changes"
         loading={updateGrant.isPending}
+      />
+
+      <ApplicationFormDialog
+        open={createAppOpen}
+        onOpenChange={setCreateAppOpen}
+        onSubmit={handleCreateApp}
+        title="New application for this grant"
+        submitLabel="Create application"
+        loading={createApp.isPending}
+        lockedGrantId={grant.id}
+      />
+
+      <TaskFormDialog
+        open={addTaskOpen}
+        onOpenChange={setAddTaskOpen}
+        onSubmit={handleCreateTask}
+        title="Add task for this grant"
+        submitLabel="Create task"
+        loading={createTask.isPending}
+        lockedGrantId={grant.id}
       />
 
       <AlertDialog open={confirmArchive} onOpenChange={setConfirmArchive}>

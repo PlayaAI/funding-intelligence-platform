@@ -1,237 +1,233 @@
-import { useState } from "react";
-import { tasks, type TaskStatus, type TaskPriority } from "@/data/tasks";
-import { grants } from "@/data/grants";
+import { useState, useMemo } from "react";
+import { useTasks, useCreateTask, useUpdateTask, useArchiveTask, useDeleteTask } from "@/hooks/useTasks";
+import { useGrants } from "@/hooks/useGrants";
+import { useProjects } from "@/hooks/useProjects";
+import TaskFormDialog, { type TaskFormValues } from "@/components/dashboard/TaskFormDialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Search, CheckCircle2, Circle, Clock, AlertCircle, ArrowUpDown } from "lucide-react";
+import { Plus, Loader2, AlertCircle, CheckSquare, Archive, Trash2 } from "lucide-react";
+import type { TaskDbStatus, TaskDbPriority } from "@/types/database";
 
-const STATUS_COLORS: Record<TaskStatus, string> = {
-  "Not Started": "bg-slate-100 text-slate-600 border-slate-200",
-  "In Progress": "bg-blue-50 text-blue-700 border-blue-200",
-  Waiting: "bg-amber-50 text-amber-700 border-amber-200",
-  "Needs Review": "bg-violet-50 text-violet-700 border-violet-200",
-  Complete: "bg-green-50 text-green-700 border-green-200",
+const ALL_STATUSES: TaskDbStatus[] = ["Not Started", "In Progress", "Waiting", "Needs Review", "Complete"];
+const ALL_PRIORITIES: TaskDbPriority[] = ["Urgent", "High", "Medium", "Low"];
+
+const STATUS_COLORS: Record<string, string> = {
+  "Not Started": "bg-slate-100 text-slate-600",
+  "In Progress": "bg-blue-50 text-blue-700",
+  Waiting: "bg-amber-50 text-amber-700",
+  "Needs Review": "bg-violet-50 text-violet-700",
+  Complete: "bg-green-50 text-green-700",
+  Archived: "bg-gray-100 text-gray-500",
 };
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const PRIORITY_DOTS: Record<string, string> = {
+  Urgent: "bg-red-500", High: "bg-red-400", Medium: "bg-amber-400", Low: "bg-slate-300",
+};
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
-function daysUntil(d: string) {
-  return Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
+
+function daysUntil(dateStr: string) {
+  return Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000);
 }
-
-const ALL_STATUSES: (TaskStatus | "All")[] = ["All", "Not Started", "In Progress", "Waiting", "Needs Review", "Complete"];
-const ALL_OWNERS = ["All", ...Array.from(new Set(tasks.map((t) => t.owner)))];
-const GRANT_OPTIONS = ["All", ...Array.from(new Set(tasks.filter((t) => t.relatedGrantTitle).map((t) => t.relatedGrantTitle!)))];
-
-const DUE_DATE_OPTIONS = [
-  { label: "Any due date", days: Infinity },
-  { label: "Overdue", days: -1 },
-  { label: "Due today", days: 0 },
-  { label: "Next 7 days", days: 7 },
-  { label: "Next 30 days", days: 30 },
-];
-
-type SortField = "dueDate" | "priority";
-type SortDir = "asc" | "desc";
-
-const PRIORITY_ORDER: Record<TaskPriority, number> = { High: 0, Medium: 1, Low: 2 };
 
 export default function DashboardTasksPage() {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<TaskStatus | "All">("All");
-  const [priorityFilter, setPriorityFilter] = useState<TaskPriority | "All">("All");
-  const [ownerFilter, setOwnerFilter] = useState("All");
-  const [grantFilter, setGrantFilter] = useState("All");
-  const [dueDateFilter, setDueDateFilter] = useState(0);
-  const [sortField, setSortField] = useState<SortField>("dueDate");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"due_date" | "priority" | "status">("due_date");
 
-  const dueDateOpt = DUE_DATE_OPTIONS[dueDateFilter];
+  const { data: allTasks = [], isLoading, isError, error } = useTasks();
+  const { data: grants = [] } = useGrants();
+  const { data: projects = [] } = useProjects();
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) setSortDir(sortDir === "asc" ? "desc" : "asc");
-    else { setSortField(field); setSortDir("asc"); }
+  const createTask = useCreateTask();
+  const updateTask = useUpdateTask();
+  const archiveTask = useArchiveTask();
+  const deleteTask = useDeleteTask();
+
+  const grantMap = useMemo(() => new Map(grants.map((g) => [g.id, g])), [grants]);
+  const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+
+  const priorityOrder: Record<string, number> = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
+  const statusOrder: Record<string, number> = { "Not Started": 0, "In Progress": 1, Waiting: 2, "Needs Review": 3, Complete: 4 };
+
+  const filtered = useMemo(() => {
+    let list = allTasks;
+    if (filterStatus !== "all") list = list.filter((t) => t.status === filterStatus);
+    if (filterPriority !== "all") list = list.filter((t) => t.priority === filterPriority);
+
+    return [...list].sort((a, b) => {
+      if (sortBy === "due_date") {
+        if (!a.due_date && !b.due_date) return 0;
+        if (!a.due_date) return 1;
+        if (!b.due_date) return -1;
+        return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+      }
+      if (sortBy === "priority") return (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9);
+      return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+    });
+  }, [allTasks, filterStatus, filterPriority, sortBy]);
+
+  const handleCreate = async (values: TaskFormValues) => {
+    try {
+      await createTask.mutateAsync({
+        title: values.title,
+        description: values.description || null,
+        owner_name: values.owner_name || null,
+        status: (values.status as TaskDbStatus) ?? "Not Started",
+        priority: (values.priority as TaskDbPriority) ?? "Medium",
+        due_date: values.due_date || null,
+        related_grant_id: values.related_grant_id || null,
+        related_project_id: values.related_project_id || null,
+        related_application_id: values.related_application_id || null,
+        notes: values.notes || null,
+      });
+      toast({ title: "Task created", description: values.title });
+      setCreateOpen(false);
+    } catch (e) {
+      toast({ title: "Failed to create task", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
   };
 
-  const filtered = tasks
-    .filter((t) => {
-      const matchesSearch =
-        !search ||
-        t.title.toLowerCase().includes(search.toLowerCase()) ||
-        (t.relatedGrantTitle ?? "").toLowerCase().includes(search.toLowerCase()) ||
-        (t.relatedProjectName ?? "").toLowerCase().includes(search.toLowerCase());
-      const matchesStatus = statusFilter === "All" || t.status === statusFilter;
-      const matchesPriority = priorityFilter === "All" || t.priority === priorityFilter;
-      const matchesOwner = ownerFilter === "All" || t.owner === ownerFilter;
-      const matchesGrant = grantFilter === "All" || (t.relatedGrantTitle ?? "") === grantFilter;
-      const days = daysUntil(t.dueDate);
-      const matchesDue =
-        dueDateOpt.days === Infinity ? true :
-        dueDateOpt.days === -1 ? days < 0 :
-        dueDateOpt.days === 0 ? days === 0 :
-        days >= 0 && days <= dueDateOpt.days;
-      return matchesSearch && matchesStatus && matchesPriority && matchesOwner && matchesGrant && matchesDue;
-    })
-    .sort((a, b) => {
-      let cmp = 0;
-      if (sortField === "dueDate") cmp = new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-      else cmp = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-      return sortDir === "asc" ? cmp : -cmp;
-    });
+  const handleEdit = async (values: TaskFormValues) => {
+    if (!editId) return;
+    try {
+      await updateTask.mutateAsync({
+        id: editId,
+        updates: {
+          title: values.title,
+          description: values.description || null,
+          owner_name: values.owner_name || null,
+          status: (values.status as TaskDbStatus),
+          priority: (values.priority as TaskDbPriority),
+          due_date: values.due_date || null,
+          related_grant_id: values.related_grant_id || null,
+          related_project_id: values.related_project_id || null,
+          related_application_id: values.related_application_id || null,
+          notes: values.notes || null,
+        },
+      });
+      toast({ title: "Task updated" });
+      setEditId(null);
+    } catch (e) {
+      toast({ title: "Update failed", variant: "destructive" });
+    }
+  };
 
-  const incomplete = filtered.filter((t) => t.status !== "Complete");
-  const complete = filtered.filter((t) => t.status === "Complete");
+  if (isLoading) {
+    return <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" /> Loading tasks…</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4 text-sm">
+          <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-red-700">Failed to load tasks</p>
+            <p className="text-red-600 mt-0.5">{error instanceof Error ? error.message : String(error)}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const editingTask = editId ? allTasks.find((t) => t.id === editId) : null;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-5">
+    <div className="p-6 max-w-6xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Tasks</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            {tasks.filter((t) => t.status !== "Complete").length} open · {tasks.filter((t) => t.status === "Complete").length} complete
-          </p>
+          <p className="text-slate-500 text-sm mt-0.5">{allTasks.length} tasks · {allTasks.filter((t) => t.status !== "Complete").length} open</p>
         </div>
-        <Button size="sm" className="gap-2 text-xs" onClick={() =>
-          toast({ title: "Add task", description: "Task creation form coming in next phase." })
-        }>
-          <Plus size={14} />
-          Add task
+        <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}>
+          <Plus size={14} /> Add task
         </Button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap gap-2 items-center">
-        <div className="relative">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <Input
-            placeholder="Search tasks..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8 text-sm w-48"
-          />
-        </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "All")}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 h-8"
-        >
-          {ALL_STATUSES.map((s) => <option key={s} value={s}>{s === "All" ? "All statuses" : s}</option>)}
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+          <option value="all">All statuses</option>
+          {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | "All")}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 h-8"
-        >
-          {(["All", "High", "Medium", "Low"] as const).map((p) => <option key={p} value={p}>{p === "All" ? "All priorities" : p}</option>)}
+        <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+          <option value="all">All priorities</option>
+          {ALL_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select
-          value={ownerFilter}
-          onChange={(e) => setOwnerFilter(e.target.value)}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 h-8"
-        >
-          {ALL_OWNERS.map((o) => <option key={o} value={o}>{o === "All" ? "All owners" : o}</option>)}
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+          <option value="due_date">Sort by due date</option>
+          <option value="priority">Sort by priority</option>
+          <option value="status">Sort by status</option>
         </select>
-        <select
-          value={grantFilter}
-          onChange={(e) => setGrantFilter(e.target.value)}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 h-8"
-        >
-          {GRANT_OPTIONS.map((g) => <option key={g} value={g}>{g === "All" ? "All grants" : g}</option>)}
-        </select>
-        <select
-          value={dueDateFilter}
-          onChange={(e) => setDueDateFilter(Number(e.target.value))}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 h-8"
-        >
-          {DUE_DATE_OPTIONS.map((o, i) => <option key={o.label} value={i}>{o.label}</option>)}
-        </select>
-        <div className="flex items-center gap-2 ml-auto">
-          <button
-            onClick={() => handleSort("dueDate")}
-            className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1 transition-colors ${
-              sortField === "dueDate" ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            <ArrowUpDown size={11} />
-            Due date
-          </button>
-          <button
-            onClick={() => handleSort("priority")}
-            className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1 transition-colors ${
-              sortField === "priority" ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            <ArrowUpDown size={11} />
-            Priority
-          </button>
-        </div>
       </div>
 
-      {incomplete.length > 0 && (
-        <div className="space-y-2">
-          {incomplete.map((t) => {
-            const days = daysUntil(t.dueDate);
-            const isOverdue = days < 0;
-            return (
-              <div key={t.id} className="bg-white border border-slate-200 rounded-lg p-3.5 flex items-start gap-3">
-                <div className="mt-0.5 flex-shrink-0">
-                  <Circle size={16} className="text-slate-300" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium text-sm text-slate-800">{t.title}</div>
-                  {t.description && <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{t.description}</p>}
-                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                    <span className="text-xs text-slate-400">{t.owner}</span>
-                    {t.relatedGrantTitle && (
-                      <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{t.relatedGrantTitle}</span>
-                    )}
-                    {t.relatedProjectName && (
-                      <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{t.relatedProjectName}</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex-shrink-0 flex flex-col items-end gap-1.5">
-                  <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_COLORS[t.status]}`}>{t.status}</span>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${
-                    t.priority === "High" ? "bg-red-50 text-red-600" :
-                    t.priority === "Medium" ? "bg-amber-50 text-amber-600" :
-                    "bg-slate-100 text-slate-500"
-                  }`}>{t.priority}</span>
-                  <div className={`text-[11px] font-medium flex items-center gap-1 ${isOverdue ? "text-red-500" : days <= 3 ? "text-amber-500" : "text-slate-400"}`}>
-                    {isOverdue && <AlertCircle size={10} />}
-                    <Clock size={10} />
-                    {isOverdue ? "Overdue" : formatDate(t.dueDate)}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {complete.length > 0 && (statusFilter === "All" || statusFilter === "Complete") && (
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle2 size={14} className="text-green-500" />
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Completed</span>
-            <span className="text-xs text-slate-400">({complete.length})</span>
-          </div>
-          <div className="space-y-2">
-            {complete.map((t) => (
-              <div key={t.id} className="bg-slate-50 border border-slate-100 rounded-lg p-3 flex items-center gap-3 opacity-70">
-                <CheckCircle2 size={16} className="text-green-400 flex-shrink-0" />
-                <span className="text-sm text-slate-600 line-through">{t.title}</span>
-                <span className="ml-auto text-xs text-slate-400">{t.owner}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
+      {/* Task list */}
       {filtered.length === 0 && (
-        <div className="text-center py-16 text-slate-400 text-sm">No tasks match your filters.</div>
+        <div className="text-center py-16 text-slate-400 text-sm">No tasks match the current filters.</div>
+      )}
+
+      <div className="space-y-2">
+        {filtered.map((t) => {
+          const grant = t.related_grant_id ? grantMap.get(t.related_grant_id) : null;
+          const project = t.related_project_id ? projectMap.get(t.related_project_id) : null;
+          const days = t.due_date ? daysUntil(t.due_date) : null;
+
+          return (
+            <Card key={t.id} className="border-slate-200 hover:border-primary/40 transition-all hover:shadow-sm cursor-pointer" onClick={() => setEditId(t.id)}>
+              <CardContent className="pt-3 pb-3">
+                <div className="flex items-start gap-3">
+                  <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${PRIORITY_DOTS[t.priority] ?? "bg-slate-300"}`} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-sm font-medium leading-snug ${t.status === "Complete" ? "line-through text-slate-400" : "text-slate-800"}`}>{t.title}</div>
+                        <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+                          {t.owner_name && <span>{t.owner_name}</span>}
+                          {grant && <span>· {grant.title}</span>}
+                          {project && <span>· {project.name}</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {t.due_date && (
+                          <div className={`text-xs font-medium ${days !== null && days <= 3 ? "text-red-600" : days !== null && days <= 7 ? "text-amber-600" : "text-slate-500"}`}>
+                            {formatDate(t.due_date)}
+                          </div>
+                        )}
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[t.status] ?? ""}`}>{t.status}</span>
+                        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-slate-400 hover:text-amber-600" onClick={async (e) => {
+                          e.stopPropagation();
+                          try { await archiveTask.mutateAsync(t.id); toast({ title: "Task archived" }); } catch { toast({ title: "Archive failed", variant: "destructive" }); }
+                        }}><Archive size={12} /></Button>
+                        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-slate-400 hover:text-red-600" onClick={async (e) => {
+                          e.stopPropagation();
+                          try { await deleteTask.mutateAsync(t.id); toast({ title: "Task deleted" }); } catch { toast({ title: "Delete failed", variant: "destructive" }); }
+                        }}><Trash2 size={12} /></Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <TaskFormDialog
+        open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate}
+        title="New task" submitLabel="Create task" loading={createTask.isPending}
+      />
+
+      {editingTask && (
+        <TaskFormDialog
+          open onOpenChange={(o) => { if (!o) setEditId(null); }} onSubmit={handleEdit}
+          defaultValues={editingTask} title="Edit task" submitLabel="Save" loading={updateTask.isPending}
+        />
       )}
     </div>
   );

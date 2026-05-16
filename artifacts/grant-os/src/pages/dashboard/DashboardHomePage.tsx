@@ -1,8 +1,8 @@
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { grants } from "@/data/grants";
-import { tasks } from "@/data/tasks";
-import { applications } from "@/data/applications";
+import { useApplications } from "@/hooks/useApplications";
+import { useTasks } from "@/hooks/useTasks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
@@ -65,19 +65,25 @@ const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
 
 export default function DashboardHomePage() {
   const { user } = useAuth();
+  const { data: applications = [] } = useApplications();
+  const { data: allTasks = [] } = useTasks();
 
   const top3 = grants.filter((g) => g.isTop3);
   const upcoming = grants
     .filter((g) => !["Awarded", "Declined", "Archived"].includes(g.status))
     .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
     .slice(0, 5);
-  const activeApps = applications.filter((a) => !["Submitted", "Won", "Rejected"].includes(a.status));
-  const dueTasks = tasks
+  const activeApps = applications.filter((a) => !["Submitted", "Awarded", "Declined", "Archived"].includes(a.status));
+  const dueTasks = allTasks
     .filter((t) => t.status !== "Complete")
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    .sort((a, b) => {
+      if (!a.due_date && !b.due_date) return 0;
+      if (!a.due_date) return 1;
+      if (!b.due_date) return -1;
+      return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+    })
     .slice(0, 5);
   const needsReview = grants.filter((g) => g.status === "Researching");
-  const blocked = applications.filter((a) => a.requiredDocs.some((d) => d.status === "Missing"));
 
   const handleAI = () => {
     toast({ title: "AI workflow coming soon", description: "AI workflow will be connected in a later phase." });
@@ -146,7 +152,7 @@ export default function DashboardHomePage() {
               <span className="text-xs text-slate-500 font-medium">Open Tasks</span>
             </div>
             <div className="text-2xl font-bold text-slate-900">
-              {tasks.filter((t) => t.status !== "Complete").length}
+              {allTasks.filter((t) => t.status !== "Complete").length}
             </div>
             <div className="text-xs text-slate-500 mt-0.5">need action</div>
           </CardContent>
@@ -263,32 +269,19 @@ export default function DashboardHomePage() {
             </CardHeader>
             <CardContent className="space-y-2 pt-0">
               {activeApps.length > 0 ? activeApps.map((a) => {
-                const days = daysUntil(a.deadline);
-                const completedQs = a.questions.filter((q) => ["Draft Ready", "Reviewed"].includes(q.status)).length;
                 return (
                   <Link href={`/dashboard/applications/${a.id}`} key={a.id}>
                     <div className="flex items-start justify-between p-3 rounded-lg border border-slate-100 hover:border-primary/30 hover:bg-slate-50 cursor-pointer transition-colors">
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium text-sm text-slate-800 truncate">{a.grantTitle}</div>
-                        <div className="text-xs text-slate-400 mt-0.5">{a.projectName} · {a.owner}</div>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <div className="flex items-center gap-1">
-                            <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
-                              <div className="h-full bg-blue-400 rounded-full" style={{ width: `${a.questions.length > 0 ? Math.round((completedQs / a.questions.length) * 100) : 0}%` }} />
-                            </div>
-                            <span className="text-[11px] text-slate-400">{completedQs}/{a.questions.length} Q's</span>
-                          </div>
-                        </div>
+                        <div className="font-medium text-sm text-slate-800 truncate">{a.title}</div>
+                        <div className="text-xs text-slate-400 mt-0.5">{a.owner_name ?? "Unassigned"}</div>
                       </div>
                       <div className="ml-3 flex flex-col items-end gap-1 flex-shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                          a.status === "Writing" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                          a.status === "Drafting" ? "bg-blue-50 text-blue-700 border-blue-200" :
                           a.status === "Internal Review" ? "bg-violet-50 text-violet-700 border-violet-200" :
                           "bg-slate-100 text-slate-600 border-slate-200"
                         }`}>{a.status}</span>
-                        <div className={`text-[11px] font-medium ${days <= 7 ? "text-red-500" : days <= 14 ? "text-amber-500" : "text-slate-400"}`}>
-                          Due {formatDate(a.deadline)}
-                        </div>
                       </div>
                     </div>
                   </Link>
@@ -380,11 +373,11 @@ export default function DashboardHomePage() {
               {dueTasks.map((t) => (
                 <div key={t.id} className="flex items-start gap-2 py-1.5">
                   <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                    t.priority === "High" ? "bg-red-400" : t.priority === "Medium" ? "bg-amber-400" : "bg-slate-300"
+                    t.priority === "High" || t.priority === "Urgent" ? "bg-red-400" : t.priority === "Medium" ? "bg-amber-400" : "bg-slate-300"
                   }`} />
                   <div className="min-w-0">
                     <div className="text-xs font-medium text-slate-700 leading-snug">{t.title}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">Due {formatDate(t.dueDate)}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">{t.due_date ? `Due ${formatDate(t.due_date)}` : "No due date"}</div>
                   </div>
                 </div>
               ))}
@@ -409,24 +402,7 @@ export default function DashboardHomePage() {
             </Card>
           )}
 
-          {blocked.length > 0 && (
-            <Card className="border-red-200 bg-red-50/50">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-red-800">
-                  <AlertCircle size={14} className="text-red-500" />
-                  Applications Blocked
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 space-y-2">
-                {blocked.map((a) => (
-                  <Link href={`/dashboard/applications/${a.id}`} key={a.id}>
-                    <div className="text-xs font-medium text-red-800 hover:text-red-900 cursor-pointer py-1 leading-snug">{a.grantTitle}</div>
-                  </Link>
-                ))}
-                <div className="text-[11px] text-red-500">Missing required documents</div>
-              </CardContent>
-            </Card>
-          )}
+
 
           <Card className="border-slate-200">
             <CardHeader className="pb-2">
@@ -438,7 +414,7 @@ export default function DashboardHomePage() {
             <CardContent className="pt-0 space-y-2">
               {applications.filter((a) => a.status === "Submitted").map((a) => (
                 <Link href={`/dashboard/applications/${a.id}`} key={a.id}>
-                  <div className="text-xs font-medium text-slate-700 hover:text-slate-900 cursor-pointer py-1 leading-snug">{a.grantTitle}</div>
+                  <div className="text-xs font-medium text-slate-700 hover:text-slate-900 cursor-pointer py-1 leading-snug">{a.title}</div>
                 </Link>
               ))}
               <div className="text-[11px] text-slate-400">Awaiting decision</div>

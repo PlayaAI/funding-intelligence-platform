@@ -1,383 +1,523 @@
 import { useState } from "react";
-import { useRoute, Link } from "wouter";
-import { applications } from "@/data/applications";
-import { proofItems } from "@/data/proofItems";
+import { useParams, useLocation } from "wouter";
+import {
+  useApplication, useUpdateApplication, useArchiveApplication, useDeleteApplication,
+  useApplicationQuestions, useCreateApplicationQuestion, useUpdateApplicationQuestion, useDeleteApplicationQuestion,
+  useApplicationRequiredDocuments, useCreateApplicationRequiredDocument, useUpdateApplicationRequiredDocument, useDeleteApplicationRequiredDocument,
+} from "@/hooks/useApplications";
+import { useTasksByApplication, useCreateTask } from "@/hooks/useTasks";
+import { useGrant } from "@/hooks/useGrants";
+import { useProject } from "@/hooks/useProjects";
+import ApplicationFormDialog, { type ApplicationFormValues } from "@/components/dashboard/ApplicationFormDialog";
+import ApplicationQuestionFormDialog, { type ApplicationQuestionFormValues } from "@/components/dashboard/ApplicationQuestionFormDialog";
+import ApplicationRequiredDocumentFormDialog, { type ApplicationRequiredDocumentFormValues } from "@/components/dashboard/ApplicationRequiredDocumentFormDialog";
+import TaskFormDialog, { type TaskFormValues } from "@/components/dashboard/TaskFormDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { tasks } from "@/data/tasks";
 import { toast } from "@/hooks/use-toast";
 import {
-  ArrowLeft,
-  Sparkles,
-  ExternalLink,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
-  Plus,
-  Save,
+  ArrowLeft, Edit, Archive, Trash2, Plus, FileText, CheckSquare, ClipboardList,
+  Loader2, AlertCircle, ExternalLink, ChevronsRight, Sparkles,
 } from "lucide-react";
+import type { ApplicationDbStatus, ApplicationQuestionDbStatus, ApplicationRequiredDocumentDbStatus, TaskDbStatus, TaskDbPriority } from "@/types/database";
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-}
+const TABS = ["Questions", "Required Docs", "Tasks", "Proof Package"] as const;
+type Tab = (typeof TABS)[number];
+
+const STATUS_COLORS: Record<string, string> = {
+  "Not Started": "bg-slate-100 text-slate-700 border-slate-200",
+  Drafting: "bg-blue-50 text-blue-700 border-blue-200",
+  "Internal Review": "bg-amber-50 text-amber-700 border-amber-200",
+  "Ready to Submit": "bg-teal-50 text-teal-700 border-teal-200",
+  Submitted: "bg-violet-50 text-violet-700 border-violet-200",
+  Awarded: "bg-green-50 text-green-700 border-green-200",
+  Declined: "bg-red-50 text-red-700 border-red-200",
+  Archived: "bg-gray-100 text-gray-500 border-gray-200",
+};
 
 const Q_STATUS_COLORS: Record<string, string> = {
-  "Not Started": "bg-slate-100 text-slate-600",
-  Drafting: "bg-blue-50 text-blue-700",
-  "Draft Ready": "bg-amber-50 text-amber-700",
-  Reviewed: "bg-green-50 text-green-700",
+  Draft: "bg-slate-100 text-slate-600",
+  "Needs Review": "bg-amber-50 text-amber-700",
+  Approved: "bg-blue-50 text-blue-700",
+  Final: "bg-green-50 text-green-700",
 };
+
 const DOC_STATUS_COLORS: Record<string, string> = {
-  Missing: "bg-red-50 text-red-700 border-red-200",
-  "In Progress": "bg-amber-50 text-amber-700 border-amber-200",
-  Ready: "bg-green-50 text-green-700 border-green-200",
+  Needed: "bg-red-50 text-red-600",
+  "In Progress": "bg-amber-50 text-amber-700",
+  Complete: "bg-green-50 text-green-700",
+  "Not Applicable": "bg-slate-100 text-slate-500",
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  Urgent: "bg-red-400", High: "bg-red-400", Medium: "bg-amber-400", Low: "bg-slate-300",
 };
 
 export default function DashboardApplicationDetailPage() {
-  const [, params] = useRoute("/dashboard/applications/:id");
-  const app = applications.find((a) => a.id === params?.id);
+  const { id } = useParams<{ id: string }>();
+  const [, navigate] = useLocation();
+  const [tab, setTab] = useState<Tab>("Questions");
+  const [editOpen, setEditOpen] = useState(false);
+  const [addQOpen, setAddQOpen] = useState(false);
+  const [editQ, setEditQ] = useState<string | null>(null);
+  const [addDocOpen, setAddDocOpen] = useState(false);
+  const [editDoc, setEditDoc] = useState<string | null>(null);
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
+  const [editTask, setEditTask] = useState<string | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const [googleDocUrl, setGoogleDocUrl] = useState(app?.googleDocUrl ?? "");
-  const [driveFolderUrl, setDriveFolderUrl] = useState(app?.googleDriveFolderUrl ?? "");
-  const [savedUrls, setSavedUrls] = useState(false);
-  const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>(
-    Object.fromEntries((app?.questions ?? []).map((q) => [q.id, q.draftAnswer ?? ""]))
-  );
-  const [finalAnswers, setFinalAnswers] = useState<Record<string, string>>(
-    Object.fromEntries((app?.questions ?? []).map((q) => [q.id, q.finalAnswer ?? ""]))
-  );
+  const { data: app, isLoading, isError, error } = useApplication(id);
+  const { data: grant } = useGrant(app?.grant_id ?? undefined);
+  const projectQuery = useProject(undefined);
+  // We need to find project by id not slug — use a workaround
+  const { data: questions = [] } = useApplicationQuestions(app?.id);
+  const { data: requiredDocs = [] } = useApplicationRequiredDocuments(app?.id);
+  const { data: linkedTasks = [] } = useTasksByApplication(app?.id);
 
-  if (!app) {
+  const updateApp = useUpdateApplication();
+  const archiveApp = useArchiveApplication();
+  const deleteApp = useDeleteApplication();
+  const createQ = useCreateApplicationQuestion();
+  const updateQ = useUpdateApplicationQuestion();
+  const deleteQ = useDeleteApplicationQuestion();
+  const createDoc = useCreateApplicationRequiredDocument();
+  const updateDoc = useUpdateApplicationRequiredDocument();
+  const deleteDoc = useDeleteApplicationRequiredDocument();
+  const createTask = useCreateTask();
+
+  const handleAI = () => { toast({ title: "AI coming soon", description: "AI workflow will be connected in a later phase." }); };
+
+  if (isLoading) {
+    return <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" /> Loading application…</div>;
+  }
+  if (isError || !app) {
     return (
-      <div className="p-8 text-center text-slate-500">
-        <p>Application not found.</p>
-        <Link href="/dashboard/applications">
-          <Button variant="ghost" className="mt-4 gap-2"><ArrowLeft size={14} />Back</Button>
-        </Link>
+      <div className="p-6 max-w-5xl mx-auto">
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4 text-sm">
+          <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-red-700">{isError ? "Failed to load application" : "Application not found"}</p>
+            {isError && <p className="text-red-600 mt-0.5">{error instanceof Error ? error.message : String(error)}</p>}
+          </div>
+        </div>
       </div>
     );
   }
 
-  const handleAI = (action: string) =>
-    toast({ title: action, description: "AI workflow will be connected in a later phase." });
+  const handleEditApp = async (values: ApplicationFormValues) => {
+    try {
+      await updateApp.mutateAsync({
+        id: app.id,
+        updates: {
+          title: values.title,
+          status: (values.status as ApplicationDbStatus),
+          owner_name: values.owner_name || null,
+          grant_id: values.grant_id || null,
+          project_id: values.project_id || null,
+          google_doc_url: values.google_doc_url || null,
+          drive_folder_url: values.drive_folder_url || null,
+          portal_url: values.portal_url || null,
+          notes: values.notes || null,
+        },
+      });
+      toast({ title: "Application updated" });
+      setEditOpen(false);
+    } catch (e) {
+      toast({ title: "Update failed", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
 
-  const linkedProof = proofItems.filter((p) => app.linkedProofItemIds.includes(p.id));
-  const relatedTasks = tasks.filter((t) => t.relatedApplicationId === app.id);
-  const completedDocs = app.requiredDocs.filter((d) => d.status === "Ready").length;
-  const completedQs = app.questions.filter((q) => ["Draft Ready", "Reviewed"].includes(q.status)).length;
-  const isBlocked = app.requiredDocs.some((d) => d.status === "Missing");
+  const handleArchive = async () => {
+    try {
+      await archiveApp.mutateAsync(app.id);
+      toast({ title: "Application archived" });
+      navigate("/dashboard/applications");
+    } catch (e) {
+      toast({ title: "Archive failed", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
 
-  const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+  const handleDelete = async () => {
+    try {
+      await deleteApp.mutateAsync(app.id);
+      toast({ title: "Application deleted" });
+      navigate("/dashboard/applications");
+    } catch (e) {
+      toast({ title: "Delete failed", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
+
+  const handleCreateQuestion = async (values: ApplicationQuestionFormValues) => {
+    try {
+      await createQ.mutateAsync({
+        application_id: app.id,
+        question: values.question,
+        word_limit: values.word_limit ?? null,
+        owner_name: values.owner_name || null,
+        status: (values.status as ApplicationQuestionDbStatus),
+        sort_order: values.sort_order,
+      });
+      toast({ title: "Question added" });
+      setAddQOpen(false);
+    } catch (e) {
+      toast({ title: "Failed to add question", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
+
+  const handleUpdateQuestion = async (questionId: string, values: ApplicationQuestionFormValues) => {
+    try {
+      await updateQ.mutateAsync({
+        id: questionId, applicationId: app.id,
+        updates: {
+          question: values.question,
+          word_limit: values.word_limit ?? null,
+          owner_name: values.owner_name || null,
+          status: (values.status as ApplicationQuestionDbStatus),
+          sort_order: values.sort_order,
+        },
+      });
+      toast({ title: "Question updated" });
+      setEditQ(null);
+    } catch (e) {
+      toast({ title: "Update failed", variant: "destructive" });
+    }
+  };
+
+  const handlePromoteAnswer = async (questionId: string, draftAnswer: string) => {
+    try {
+      await updateQ.mutateAsync({
+        id: questionId, applicationId: app.id,
+        updates: { final_answer: draftAnswer, status: "Final" as ApplicationQuestionDbStatus },
+      });
+      toast({ title: "Draft promoted to final answer" });
+    } catch (e) {
+      toast({ title: "Promote failed", variant: "destructive" });
+    }
+  };
+
+  const handleCreateDoc = async (values: ApplicationRequiredDocumentFormValues) => {
+    try {
+      await createDoc.mutateAsync({
+        application_id: app.id,
+        title: values.title,
+        description: values.description || null,
+        status: (values.status as ApplicationRequiredDocumentDbStatus),
+        url: values.url || null,
+        sort_order: values.sort_order,
+      });
+      toast({ title: "Document added" });
+      setAddDocOpen(false);
+    } catch (e) {
+      toast({ title: "Failed to add document", variant: "destructive" });
+    }
+  };
+
+  const handleUpdateDoc = async (docId: string, values: ApplicationRequiredDocumentFormValues) => {
+    try {
+      await updateDoc.mutateAsync({
+        id: docId, applicationId: app.id,
+        updates: {
+          title: values.title,
+          description: values.description || null,
+          status: (values.status as ApplicationRequiredDocumentDbStatus),
+          url: values.url || null,
+          sort_order: values.sort_order,
+        },
+      });
+      toast({ title: "Document updated" });
+      setEditDoc(null);
+    } catch (e) {
+      toast({ title: "Update failed", variant: "destructive" });
+    }
+  };
+
+  const handleCreateTask = async (values: TaskFormValues) => {
+    try {
+      await createTask.mutateAsync({
+        title: values.title,
+        description: values.description || null,
+        owner_name: values.owner_name || null,
+        status: (values.status as TaskDbStatus),
+        priority: (values.priority as TaskDbPriority),
+        due_date: values.due_date || null,
+        related_grant_id: values.related_grant_id || null,
+        related_project_id: values.related_project_id || null,
+        related_application_id: app.id,
+        notes: values.notes || null,
+      });
+      toast({ title: "Task created" });
+      setAddTaskOpen(false);
+    } catch (e) {
+      toast({ title: "Failed to create task", variant: "destructive" });
+    }
+  };
+
+  const completedQs = questions.filter((q) => ["Approved", "Final"].includes(q.status)).length;
+  const completedDocs = requiredDocs.filter((d) => d.status === "Complete").length;
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
-      <Link href="/dashboard/applications">
-        <Button variant="ghost" size="sm" className="gap-2 text-xs h-8">
-          <ArrowLeft size={14} />
-          Applications
-        </Button>
-      </Link>
-
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">{app.grantTitle}</h1>
-            <div className="flex items-center gap-3 mt-1 text-sm text-slate-500 flex-wrap">
-              <span>{app.projectName}</span>
-              <span>·</span>
-              <span>{app.owner}</span>
-              <span>·</span>
-              <span className="flex items-center gap-1">
-                <Clock size={13} />
-                {app.status === "Submitted" && app.submittedDate
-                  ? `Submitted ${formatDate(app.submittedDate)}`
-                  : `Due ${formatDate(app.deadline)}`}
-              </span>
-            </div>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <button onClick={() => navigate("/dashboard/applications")} className="text-xs text-slate-400 hover:text-primary flex items-center gap-1 mb-2">
+            <ArrowLeft size={12} /> Applications
+          </button>
+          <h1 className="text-xl font-bold text-slate-900 truncate">{app.title}</h1>
+          <div className="text-sm text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_COLORS[app.status] ?? ""}`}>{app.status}</span>
+            {grant && <span>{grant.title}</span>}
+            {app.owner_name && <span>· {app.owner_name}</span>}
           </div>
-          <Badge className={`text-xs px-2.5 py-1 border flex-shrink-0 ${
-            app.status === "Submitted" ? "bg-violet-50 text-violet-700 border-violet-200" :
-            app.status === "Writing" ? "bg-blue-50 text-blue-700 border-blue-200" :
-            "bg-slate-100 text-slate-700 border-slate-200"
-          }`}>
-            {app.status}
-          </Badge>
         </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
+            <Edit size={12} /> Edit
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}>
+            <Archive size={12} /> Archive
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs text-red-600 hover:text-red-700" onClick={() => setConfirmDelete(true)}>
+            <Trash2 size={12} /> Delete
+          </Button>
+        </div>
+      </div>
 
-        {isBlocked && (
-          <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700 mb-4">
-            <AlertCircle size={14} />
-            <span>Missing required documents. Review the docs checklist.</span>
-          </div>
+      {/* Links row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {app.google_doc_url && (
+          <a href={app.google_doc_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+            <ExternalLink size={11} /> Google Doc
+          </a>
         )}
+        {app.drive_folder_url && (
+          <a href={app.drive_folder_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+            <ExternalLink size={11} /> Drive Folder
+          </a>
+        )}
+        {app.portal_url && (
+          <a href={app.portal_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+            <ExternalLink size={11} /> Application Portal
+          </a>
+        )}
+      </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          {[
-            { label: "Questions done", value: `${completedQs}/${app.questions.length}` },
-            { label: "Docs ready", value: `${completedDocs}/${app.requiredDocs.length}` },
-            { label: "Proof items", value: linkedProof.length },
-            { label: "Status", value: isBlocked ? "Blocked" : "On Track", color: isBlocked ? "text-red-500" : "text-green-600" },
-          ].map((s) => (
-            <div key={s.label} className="bg-slate-50 rounded-lg p-3 text-center">
-              <div className={`text-xl font-bold ${s.color ?? "text-slate-900"}`}>{s.value}</div>
-              <div className="text-xs text-slate-400 mt-0.5">{s.label}</div>
-            </div>
-          ))}
-        </div>
+      {/* Notes */}
+      {app.notes && (
+        <div className="bg-amber-50/50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">{app.notes}</div>
+      )}
 
-        <div className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Google Doc URL</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={googleDocUrl}
-                  onChange={(e) => { setGoogleDocUrl(e.target.value); setSavedUrls(false); }}
-                  placeholder="https://docs.google.com/..."
-                  className="h-8 text-xs flex-1"
-                />
-                {googleDocUrl && (
-                  <a href={googleDocUrl} target="_blank" rel="noopener noreferrer">
-                    <Button size="sm" variant="outline" className="h-8 px-2">
-                      <ExternalLink size={13} />
-                    </Button>
-                  </a>
-                )}
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Drive Folder URL</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={driveFolderUrl}
-                  onChange={(e) => { setDriveFolderUrl(e.target.value); setSavedUrls(false); }}
-                  placeholder="https://drive.google.com/..."
-                  className="h-8 text-xs flex-1"
-                />
-                {driveFolderUrl && (
-                  <a href={driveFolderUrl} target="_blank" rel="noopener noreferrer">
-                    <Button size="sm" variant="outline" className="h-8 px-2">
-                      <ExternalLink size={13} />
-                    </Button>
-                  </a>
-                )}
-              </div>
+      {/* Progress summary */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card className="border-slate-200">
+          <CardContent className="pt-4 pb-3 text-center">
+            <div className="text-lg font-bold text-slate-800">{completedQs}/{questions.length}</div>
+            <div className="text-xs text-slate-500">Questions complete</div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-200">
+          <CardContent className="pt-4 pb-3 text-center">
+            <div className="text-lg font-bold text-slate-800">{completedDocs}/{requiredDocs.length}</div>
+            <div className="text-xs text-slate-500">Docs complete</div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-200">
+          <CardContent className="pt-4 pb-3 text-center">
+            <div className="text-lg font-bold text-slate-800">{linkedTasks.filter((t) => t.status === "Complete").length}/{linkedTasks.length}</div>
+            <div className="text-xs text-slate-500">Tasks complete</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {TABS.map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${tab === t ? "border-primary text-primary" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* Questions tab */}
+      {tab === "Questions" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><FileText size={14} /> Application Questions</h2>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={handleAI}><Sparkles size={12} /> AI draft</Button>
+              <Button size="sm" className="gap-1.5 text-xs h-7" onClick={() => setAddQOpen(true)}><Plus size={12} /> Add question</Button>
             </div>
           </div>
-          {!savedUrls && (googleDocUrl !== (app.googleDocUrl ?? "") || driveFolderUrl !== (app.googleDriveFolderUrl ?? "")) && (
-            <Button size="sm" className="gap-2 text-xs h-7" onClick={() => setSavedUrls(true)}>
-              <Save size={11} />
-              Save links
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" className="gap-1.5 text-xs" onClick={() => handleAI("Draft Application Answer")}>
-          <Sparkles size={12} />
-          Draft Answer
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleAI("Suggest Proof Items")}>
-          <Sparkles size={12} />
-          Suggest Proof
-        </Button>
-      </div>
-
-      <Tabs defaultValue="questions">
-        <TabsList className="h-9">
-          <TabsTrigger value="questions" className="text-xs">Questions ({app.questions.length})</TabsTrigger>
-          <TabsTrigger value="docs" className="text-xs">Required Docs ({app.requiredDocs.length})</TabsTrigger>
-          <TabsTrigger value="proof" className="text-xs">Proof Package ({linkedProof.length})</TabsTrigger>
-          <TabsTrigger value="tasks" className="text-xs">Tasks ({relatedTasks.length})</TabsTrigger>
-          <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="questions" className="mt-4 space-y-4">
-          {app.questions.map((q, i) => {
-            const draft = draftAnswers[q.id] ?? "";
-            const wc = wordCount(draft);
-            const overLimit = q.wordLimit && wc > q.wordLimit;
-            return (
-              <Card key={q.id} className="border-slate-200">
-                <CardContent className="pt-4">
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="font-medium text-sm text-slate-800">
-                      <span className="text-slate-400 mr-2">Q{i + 1}.</span>
-                      {q.question}
-                      {q.wordLimit && (
-                        <span className="text-xs text-slate-400 ml-2 font-normal">({q.wordLimit} word limit)</span>
-                      )}
-                    </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${Q_STATUS_COLORS[q.status]}`}>
-                      {q.status}
-                    </span>
+          {questions.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">No questions yet.</div>}
+          {questions.map((q, i) => (
+            <Card key={q.id} className="border-slate-200">
+              <CardContent className="pt-4 pb-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">Q{i + 1}. {q.question}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{q.word_limit ? `${q.word_limit} words` : "No word limit"} · {q.owner_name ?? "Unassigned"}</div>
                   </div>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <Label className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Draft Answer</Label>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1 text-xs h-6 px-2"
-                          onClick={() => handleAI("Draft Answer")}
-                        >
-                          <Sparkles size={11} />
-                          AI Draft
-                        </Button>
-                      </div>
-                      <Textarea
-                        value={draft}
-                        onChange={(e) => setDraftAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                        placeholder="Draft answer..."
-                        className="text-sm min-h-[80px] resize-none bg-slate-50/60"
-                        rows={4}
-                      />
-                      <div className={`text-xs mt-1 ${overLimit ? "text-red-500 font-medium" : "text-slate-400"}`}>
-                        {wc} / {q.wordLimit ?? "—"} words
-                        {overLimit && " — over word limit"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <Label className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Final Answer</Label>
-                        {(() => {
-                          const fa = finalAnswers[q.id] ?? "";
-                          const fwc = wordCount(fa);
-                          const fOver = q.wordLimit && fwc > q.wordLimit;
-                          return fa && (
-                            <span className={`text-xs ${fOver ? "text-red-500 font-medium" : "text-slate-400"}`}>
-                              {fwc} / {q.wordLimit ?? "—"} words
-                              {fOver ? " — over limit" : ""}
-                            </span>
-                          );
-                        })()}
-                      </div>
-                      <Textarea
-                        value={finalAnswers[q.id] ?? ""}
-                        onChange={(e) => setFinalAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                        placeholder="Final approved answer (ready for submission)..."
-                        className="text-sm min-h-[80px] resize-none border-green-200 bg-green-50/20 focus:border-green-400"
-                        rows={4}
-                      />
-                    </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${Q_STATUS_COLORS[q.status] ?? ""}`}>{q.status}</span>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditQ(q.id)}><Edit size={11} /></Button>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-500" onClick={async () => {
+                      try { await deleteQ.mutateAsync({ id: q.id, applicationId: app.id }); toast({ title: "Question deleted" }); } catch { toast({ title: "Delete failed", variant: "destructive" }); }
+                    }}><Trash2 size={11} /></Button>
                   </div>
-                  <div className="flex items-center justify-between mt-1.5">
-                    <span className="text-xs text-slate-400">Owner: {q.owner}</span>
-                    <Button
-                      size="sm"
-                      className="gap-1 text-xs h-6 px-2"
-                      onClick={() => {
-                        if (draftAnswers[q.id]) {
-                          setFinalAnswers((prev) => ({ ...prev, [q.id]: draftAnswers[q.id] }));
-                          toast({ title: "Promoted to final", description: "Draft answer promoted to final answer." });
-                        }
-                      }}
-                    >
-                      Promote draft to final
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-          <Button size="sm" variant="outline" className="gap-2 text-xs" onClick={() =>
-            toast({ title: "Add question", description: "Question creation coming in next phase." })
-          }>
-            <Plus size={12} />
-            Add question
-          </Button>
-        </TabsContent>
-
-        <TabsContent value="docs" className="mt-4 space-y-3">
-          {app.requiredDocs.map((doc) => (
-            <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
-              <div className="flex items-center gap-3">
-                {doc.status === "Ready" ? (
-                  <CheckCircle2 size={16} className="text-green-500 flex-shrink-0" />
-                ) : doc.status === "Missing" ? (
-                  <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
-                ) : (
-                  <Clock size={16} className="text-amber-400 flex-shrink-0" />
-                )}
-                <div>
-                  <div className="text-sm font-medium text-slate-800">{doc.name}</div>
-                  {doc.notes && <div className="text-xs text-slate-400 mt-0.5">{doc.notes}</div>}
                 </div>
+                {q.draft_answer && (
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <div className="text-xs font-medium text-slate-500 mb-1">Draft answer</div>
+                    <div className="text-xs text-slate-700 whitespace-pre-wrap">{q.draft_answer}</div>
+                    {q.status !== "Final" && !q.final_answer && (
+                      <Button variant="outline" size="sm" className="mt-2 gap-1 text-xs h-6" onClick={() => handlePromoteAnswer(q.id, q.draft_answer!)}>
+                        <ChevronsRight size={11} /> Promote to final
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {q.final_answer && (
+                  <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                    <div className="text-xs font-medium text-green-700 mb-1">Final answer</div>
+                    <div className="text-xs text-green-800 whitespace-pre-wrap">{q.final_answer}</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Required Docs tab */}
+      {tab === "Required Docs" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><ClipboardList size={14} /> Required Documents Checklist</h2>
+            <Button size="sm" className="gap-1.5 text-xs h-7" onClick={() => setAddDocOpen(true)}><Plus size={12} /> Add document</Button>
+          </div>
+          {requiredDocs.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">No required documents yet.</div>}
+          {requiredDocs.map((d) => (
+            <div key={d.id} className="flex items-start justify-between gap-3 p-3 rounded-lg border border-slate-200 bg-white">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-slate-800">{d.title}</div>
+                {d.description && <div className="text-xs text-slate-500 mt-0.5">{d.description}</div>}
+                {d.url && <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 flex items-center gap-1 mt-1"><ExternalLink size={10} /> View</a>}
               </div>
-              <span className={`text-xs px-2 py-0.5 rounded-full border ${DOC_STATUS_COLORS[doc.status]}`}>
-                {doc.status}
-              </span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className={`text-xs px-2 py-0.5 rounded-full ${DOC_STATUS_COLORS[d.status] ?? ""}`}>{d.status}</span>
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditDoc(d.id)}><Edit size={11} /></Button>
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-500" onClick={async () => {
+                  try { await deleteDoc.mutateAsync({ id: d.id, applicationId: app.id }); toast({ title: "Document deleted" }); } catch { toast({ title: "Delete failed", variant: "destructive" }); }
+                }}><Trash2 size={11} /></Button>
+              </div>
             </div>
           ))}
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="proof" className="mt-4 space-y-3">
-          {linkedProof.map((item) => (
-            <Card key={item.id} className="border-slate-200">
-              <CardContent className="pt-3 pb-3">
-                <div className="font-medium text-sm text-slate-800">{item.title}</div>
-                <p className="text-xs text-slate-500 mt-1 line-clamp-2">{item.description}</p>
-              </CardContent>
-            </Card>
-          ))}
-          {linkedProof.length === 0 && (
-            <div className="text-center py-10 text-slate-400 text-sm">No proof items linked.</div>
-          )}
-          <Button size="sm" variant="outline" className="gap-2 text-xs" onClick={() => handleAI("Suggest Proof Items")}>
-            <Sparkles size={12} />
-            Suggest proof items
-          </Button>
-        </TabsContent>
-
-        <TabsContent value="tasks" className="mt-4 space-y-2">
-          {relatedTasks.map((t) => (
-            <Card key={t.id} className="border-slate-200">
-              <CardContent className="pt-3 pb-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-sm text-slate-800">{t.title}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      {t.owner} · Due {new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={t.priority === "High" ? "destructive" : "secondary"} className="text-xs">{t.priority}</Badge>
-                    <Badge variant="outline" className="text-xs">{t.status}</Badge>
-                  </div>
+      {/* Tasks tab */}
+      {tab === "Tasks" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><CheckSquare size={14} /> Linked Tasks</h2>
+            <Button size="sm" className="gap-1.5 text-xs h-7" onClick={() => setAddTaskOpen(true)}><Plus size={12} /> Add task</Button>
+          </div>
+          {linkedTasks.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">No linked tasks yet.</div>}
+          {linkedTasks.map((t) => (
+            <div key={t.id} className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-white">
+              <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${PRIORITY_COLORS[t.priority] ?? "bg-slate-300"}`} />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-slate-800">{t.title}</div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  {t.due_date ? `Due ${new Date(t.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "No due date"} · {t.status}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${t.status === "Complete" ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-600"}`}>{t.status}</span>
+            </div>
           ))}
-          {relatedTasks.length === 0 && (
-            <div className="text-center py-8 text-slate-400 text-sm">No tasks linked to this application.</div>
-          )}
-          <Button size="sm" variant="outline" className="gap-2 text-xs mt-2" onClick={() =>
-            toast({ title: "Add task", description: "Task creation coming in next phase." })
-          }>
-            <Plus size={12} />
-            Add task
-          </Button>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="notes" className="mt-4">
-          <Card className="border-slate-200">
-            <CardContent className="pt-4">
-              {app.internalNotes ? (
-                <p className="text-sm text-slate-700">{app.internalNotes}</p>
-              ) : (
-                <p className="text-sm text-slate-400">No internal notes.</p>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* Proof Package tab — placeholder */}
+      {tab === "Proof Package" && (
+        <div className="text-center py-16 text-slate-400 text-sm">
+          <div className="text-base mb-1">📦</div>
+          Proof Package linking will be available in a future phase.
+        </div>
+      )}
+
+      {/* Dialogs */}
+      <ApplicationFormDialog
+        open={editOpen} onOpenChange={setEditOpen} onSubmit={handleEditApp}
+        defaultValues={app} title="Edit application" submitLabel="Save changes" loading={updateApp.isPending}
+      />
+
+      <ApplicationQuestionFormDialog
+        open={addQOpen} onOpenChange={setAddQOpen} onSubmit={handleCreateQuestion}
+        title="Add question" submitLabel="Add" loading={createQ.isPending}
+      />
+
+      {editQ && (() => {
+        const q = questions.find((q) => q.id === editQ);
+        return q ? (
+          <ApplicationQuestionFormDialog
+            open onOpenChange={(o) => { if (!o) setEditQ(null); }}
+            onSubmit={(v) => handleUpdateQuestion(q.id, v)}
+            defaultValues={q} title="Edit question" submitLabel="Save" loading={updateQ.isPending}
+          />
+        ) : null;
+      })()}
+
+      <ApplicationRequiredDocumentFormDialog
+        open={addDocOpen} onOpenChange={setAddDocOpen} onSubmit={handleCreateDoc}
+        title="Add required document" submitLabel="Add" loading={createDoc.isPending}
+      />
+
+      {editDoc && (() => {
+        const d = requiredDocs.find((d) => d.id === editDoc);
+        return d ? (
+          <ApplicationRequiredDocumentFormDialog
+            open onOpenChange={(o) => { if (!o) setEditDoc(null); }}
+            onSubmit={(v) => handleUpdateDoc(d.id, v)}
+            defaultValues={d} title="Edit document" submitLabel="Save" loading={updateDoc.isPending}
+          />
+        ) : null;
+      })()}
+
+      <TaskFormDialog
+        open={addTaskOpen} onOpenChange={setAddTaskOpen} onSubmit={handleCreateTask}
+        title="Add task" submitLabel="Create task" loading={createTask.isPending}
+        lockedApplicationId={app.id} lockedGrantId={app.grant_id ?? undefined}
+      />
+
+      {/* Archive confirmation */}
+      {confirmArchive && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={() => setConfirmArchive(false)}>
+          <div className="bg-white rounded-xl p-6 max-w-sm mx-4 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-slate-800">Archive this application?</h3>
+            <p className="text-xs text-slate-500">The application will be hidden from lists but can be restored later.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setConfirmArchive(false)}>Cancel</Button>
+              <Button size="sm" onClick={handleArchive} disabled={archiveApp.isPending}>{archiveApp.isPending ? "Archiving…" : "Archive"}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={() => setConfirmDelete(false)}>
+          <div className="bg-white rounded-xl p-6 max-w-sm mx-4 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-red-700">Permanently delete this application?</h3>
+            <p className="text-xs text-slate-500">This will also delete all questions, required documents, and linked tasks. This action cannot be undone.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+              <Button size="sm" variant="destructive" onClick={handleDelete} disabled={deleteApp.isPending}>{deleteApp.isPending ? "Deleting…" : "Delete permanently"}</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

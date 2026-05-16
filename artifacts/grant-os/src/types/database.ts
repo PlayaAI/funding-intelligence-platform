@@ -338,6 +338,190 @@ export type PeerFundingRecordInsert = {
 export type PeerFundingRecordUpdate = Partial<PeerFundingRecordInsert>;
 
 // ============================================================
+// Applications
+// ============================================================
+
+export type ApplicationDbStatus =
+  | "Not Started"
+  | "Drafting"
+  | "Internal Review"
+  | "Ready to Submit"
+  | "Submitted"
+  | "Awarded"
+  | "Declined"
+  | "Archived";
+
+export interface ApplicationRow {
+  id: string;
+  grant_id: string | null;
+  project_id: string | null;
+  title: string;
+  status: ApplicationDbStatus;
+  owner_name: string | null;
+  google_doc_url: string | null;
+  drive_folder_url: string | null;
+  portal_url: string | null;
+  submitted_at: string | null;
+  result: string | null;
+  notes: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ApplicationInsert = {
+  id?: string;
+  grant_id?: string | null;
+  project_id?: string | null;
+  title: string;
+  status?: ApplicationDbStatus;
+  owner_name?: string | null;
+  google_doc_url?: string | null;
+  drive_folder_url?: string | null;
+  portal_url?: string | null;
+  submitted_at?: string | null;
+  result?: string | null;
+  notes?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ApplicationUpdate = Partial<ApplicationInsert>;
+
+// ============================================================
+// Application Questions
+// ============================================================
+
+export type ApplicationQuestionDbStatus =
+  | "Draft"
+  | "Needs Review"
+  | "Approved"
+  | "Final";
+
+export interface ApplicationQuestionRow {
+  id: string;
+  application_id: string;
+  question: string;
+  word_limit: number | null;
+  draft_answer: string | null;
+  final_answer: string | null;
+  owner_name: string | null;
+  status: ApplicationQuestionDbStatus;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ApplicationQuestionInsert = {
+  id?: string;
+  application_id: string;
+  question: string;
+  word_limit?: number | null;
+  draft_answer?: string | null;
+  final_answer?: string | null;
+  owner_name?: string | null;
+  status?: ApplicationQuestionDbStatus;
+  sort_order?: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ApplicationQuestionUpdate = Partial<ApplicationQuestionInsert>;
+
+// ============================================================
+// Application Required Documents
+// ============================================================
+
+export type ApplicationRequiredDocumentDbStatus =
+  | "Needed"
+  | "In Progress"
+  | "Complete"
+  | "Not Applicable";
+
+export interface ApplicationRequiredDocumentRow {
+  id: string;
+  application_id: string;
+  title: string;
+  description: string | null;
+  status: ApplicationRequiredDocumentDbStatus;
+  url: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ApplicationRequiredDocumentInsert = {
+  id?: string;
+  application_id: string;
+  title: string;
+  description?: string | null;
+  status?: ApplicationRequiredDocumentDbStatus;
+  url?: string | null;
+  sort_order?: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ApplicationRequiredDocumentUpdate = Partial<ApplicationRequiredDocumentInsert>;
+
+// ============================================================
+// Tasks
+// ============================================================
+
+export type TaskDbStatus =
+  | "Not Started"
+  | "In Progress"
+  | "Waiting"
+  | "Needs Review"
+  | "Complete"
+  | "Archived";
+
+export type TaskDbPriority =
+  | "Low"
+  | "Medium"
+  | "High"
+  | "Urgent";
+
+export interface TaskRow {
+  id: string;
+  title: string;
+  description: string | null;
+  owner_name: string | null;
+  status: TaskDbStatus;
+  priority: TaskDbPriority;
+  due_date: string | null;
+  related_project_id: string | null;
+  related_grant_id: string | null;
+  related_application_id: string | null;
+  related_proof_item_id: string | null;
+  notes: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TaskInsert = {
+  id?: string;
+  title: string;
+  description?: string | null;
+  owner_name?: string | null;
+  status?: TaskDbStatus;
+  priority?: TaskDbPriority;
+  due_date?: string | null;
+  related_project_id?: string | null;
+  related_grant_id?: string | null;
+  related_application_id?: string | null;
+  related_proof_item_id?: string | null;
+  notes?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type TaskUpdate = Partial<TaskInsert>;
+
+// ============================================================
 // Supabase Database shape (used by createClient<Database>)
 // ============================================================
 
@@ -403,6 +587,82 @@ export interface Database {
             foreignKeyName: "peer_funding_records_funder_id_fkey";
             columns: ["funder_id"];
             referencedRelation: "funders";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      applications: {
+        Row: ApplicationRow;
+        Insert: ApplicationInsert;
+        Update: ApplicationUpdate;
+        Relationships: [
+          {
+            foreignKeyName: "applications_grant_id_fkey";
+            columns: ["grant_id"];
+            referencedRelation: "grants";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "applications_project_id_fkey";
+            columns: ["project_id"];
+            referencedRelation: "projects";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      application_questions: {
+        Row: ApplicationQuestionRow;
+        Insert: ApplicationQuestionInsert;
+        Update: ApplicationQuestionUpdate;
+        Relationships: [
+          {
+            foreignKeyName: "application_questions_application_id_fkey";
+            columns: ["application_id"];
+            referencedRelation: "applications";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      application_required_documents: {
+        Row: ApplicationRequiredDocumentRow;
+        Insert: ApplicationRequiredDocumentInsert;
+        Update: ApplicationRequiredDocumentUpdate;
+        Relationships: [
+          {
+            foreignKeyName: "application_required_documents_application_id_fkey";
+            columns: ["application_id"];
+            referencedRelation: "applications";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      tasks: {
+        Row: TaskRow;
+        Insert: TaskInsert;
+        Update: TaskUpdate;
+        Relationships: [
+          {
+            foreignKeyName: "tasks_related_project_id_fkey";
+            columns: ["related_project_id"];
+            referencedRelation: "projects";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tasks_related_grant_id_fkey";
+            columns: ["related_grant_id"];
+            referencedRelation: "grants";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tasks_related_application_id_fkey";
+            columns: ["related_application_id"];
+            referencedRelation: "applications";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tasks_related_proof_item_id_fkey";
+            columns: ["related_proof_item_id"];
+            referencedRelation: "proof_items";
             referencedColumns: ["id"];
           }
         ];
