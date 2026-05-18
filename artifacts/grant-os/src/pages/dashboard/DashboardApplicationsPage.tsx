@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { Plus, FileArchive, LayoutList, LayoutGrid, Loader2, AlertCircle } from "lucide-react";
 import type { ApplicationDbStatus } from "@/types/database";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const APP_STATUSES: ApplicationDbStatus[] = [
   "Not Started", "Drafting", "Internal Review", "Ready to Submit",
@@ -34,6 +35,7 @@ export default function DashboardApplicationsPage() {
   const { data: grants = [] } = useGrants();
   const { data: projects = [] } = useProjects();
   const createApp = useCreateApplication();
+  const { canCreateTable } = usePermissions();
 
   const grantMap = new Map(grants.map((g) => [g.id, g]));
   const projectMap = new Map(projects.map((p) => [p.id, p]));
@@ -96,9 +98,11 @@ export default function DashboardApplicationsPage() {
               <LayoutGrid size={14} />
             </button>
           </div>
-          <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}>
-            <Plus size={14} /> New application
-          </Button>
+          {canCreateTable("applications") && (
+            <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}>
+              <Plus size={14} /> New application
+            </Button>
+          )}
         </div>
       </div>
 

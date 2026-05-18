@@ -55,6 +55,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { usePermissions } from "@/hooks/usePermissions";
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -90,6 +91,7 @@ export default function DashboardGrantDetailPage() {
   const { data: relatedTasks = [] } = useTasksByGrant(grantRow?.id);
   const createApp = useCreateApplication();
   const createTask = useCreateTask();
+  const { canWriteTable, canCreateTable, canDeleteRecords } = usePermissions();
 
   const funder = useMemo(() => {
     if (!grant) return null;
@@ -292,19 +294,24 @@ export default function DashboardGrantDetailPage() {
           <Sparkles size={12} />
           Suggest Proof
         </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setCreateAppOpen(true)}>
-          <Plus size={12} />
-          Create Application
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 text-xs"
-          onClick={() => setEditOpen(true)}
-        >
-          <Pencil size={12} />
-          Edit
-        </Button>
+        {canCreateTable("applications") && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setCreateAppOpen(true)}>
+            <Plus size={12} />
+            Create Application
+          </Button>
+        )}
+        {canWriteTable("grants") && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 text-xs"
+            onClick={() => setEditOpen(true)}
+          >
+            <Pencil size={12} />
+            Edit
+          </Button>
+        )}
+        {canWriteTable("grants") && (
         <Button
           size="sm"
           variant={top3 ? "default" : "outline"}
@@ -331,6 +338,8 @@ export default function DashboardGrantDetailPage() {
           {top3 ? <StarOff size={12} /> : <Star size={12} />}
           {top3 ? "Remove from Top 3" : "Add to Top 3"}
         </Button>
+        )}
+        {canWriteTable("grants") && (
         <Button
           size="sm"
           variant="outline"
@@ -340,6 +349,8 @@ export default function DashboardGrantDetailPage() {
           <Archive size={12} />
           Archive
         </Button>
+        )}
+        {canDeleteRecords && (
         <Button
           size="sm"
           variant="outline"
@@ -349,6 +360,7 @@ export default function DashboardGrantDetailPage() {
           <Trash2 size={12} />
           Delete
         </Button>
+        )}
         {grant.applicationUrl && (
           <a href={grant.applicationUrl} target="_blank" rel="noopener noreferrer">
             <Button size="sm" variant="outline" className="gap-1.5 text-xs">
@@ -516,10 +528,12 @@ export default function DashboardGrantDetailPage() {
             <Card className="border-slate-200">
               <CardContent className="pt-6 pb-6 text-center">
                 <p className="text-sm text-slate-500 mb-4">No application workspace yet. Create one to start drafting.</p>
+                {canCreateTable("applications") && (
                 <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateAppOpen(true)}>
                   <Plus size={12} />
                   Create Application Workspace
                 </Button>
+                )}
               </CardContent>
             </Card>
           )}
@@ -554,10 +568,12 @@ export default function DashboardGrantDetailPage() {
               </CardContent>
             </Card>
           )}
+          {canWriteTable("tasks") && (
           <Button size="sm" variant="outline" className="gap-2 text-xs mt-3" onClick={() => setAddTaskOpen(true)}>
             <Plus size={12} />
             Add task
           </Button>
+          )}
         </TabsContent>
 
         <TabsContent value="documents" className="mt-4 space-y-3">

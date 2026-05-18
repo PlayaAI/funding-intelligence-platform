@@ -8,6 +8,7 @@ import { toast } from "@/hooks/use-toast";
 import { Plus, Search, FileText, AlertCircle, Loader2 } from "lucide-react";
 import ProjectFormDialog, { type ProjectFormValues } from "@/components/dashboard/ProjectFormDialog";
 import { isSupabaseConfigured, getSupabaseConfigError } from "@/lib/supabase";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const STATUS_COLORS: Record<string, string> = {
   Active: "bg-green-50 text-green-700 border-green-200",
@@ -102,9 +103,9 @@ function categorizeError(err: unknown): { title: string; detail: string; steps: 
       title: "Row Level Security is blocking access",
       detail: msg,
       steps: [
-        "RLS is enabled but no policy allows anonymous reads.",
-        "In Supabase SQL Editor run: ALTER TABLE projects DISABLE ROW LEVEL SECURITY;",
-        "Or add a policy: CREATE POLICY \"anon read\" ON projects FOR SELECT USING (true);",
+        "Row level security requires a signed-in user.",
+        "Sign in at /login and ensure migration 006_auth_roles_rls.sql has been applied.",
+        "Confirm your user has a row in the profiles table.",
       ],
     };
   }
@@ -140,6 +141,7 @@ export default function DashboardProjectsPage() {
 
   const { data: projects = [], isLoading, isError, error } = useProjects();
   const createProject = useCreateProject();
+  const { canWriteTable } = usePermissions();
 
   const configError = getSupabaseConfigError();
 
@@ -246,10 +248,12 @@ export default function DashboardProjectsPage() {
           <h1 className="text-xl font-bold text-slate-900">Projects</h1>
           <p className="text-slate-500 text-sm mt-0.5">{projects.length} project profiles</p>
         </div>
-        <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
-          <Plus size={14} />
-          Add project
-        </Button>
+        {canWriteTable("projects") && (
+          <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
+            <Plus size={14} />
+            Add project
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
@@ -287,10 +291,12 @@ export default function DashboardProjectsPage() {
             Add your first project or run the seed migration in{" "}
             <code className="font-mono bg-slate-100 px-1 rounded">supabase/migrations/001_create_projects.sql</code>.
           </p>
-          <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
-            <Plus size={14} />
-            Add project
-          </Button>
+          {canWriteTable("projects") && (
+            <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
+              <Plus size={14} />
+              Add project
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

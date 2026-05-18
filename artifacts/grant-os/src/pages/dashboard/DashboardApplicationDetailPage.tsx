@@ -15,6 +15,7 @@ import TaskFormDialog, { type TaskFormValues } from "@/components/dashboard/Task
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   ArrowLeft, Edit, Archive, Trash2, Plus, FileText, CheckSquare, ClipboardList,
   Loader2, AlertCircle, ExternalLink, ChevronsRight, Sparkles,
@@ -85,6 +86,7 @@ export default function DashboardApplicationDetailPage() {
   const updateDoc = useUpdateApplicationRequiredDocument();
   const deleteDoc = useDeleteApplicationRequiredDocument();
   const createTask = useCreateTask();
+  const { canUpdateTable, canCreateTable, canDeleteRecords, canWrite } = usePermissions();
 
   const handleAI = () => { toast({ title: "AI coming soon", description: "AI workflow will be connected in a later phase." }); };
 
@@ -272,15 +274,21 @@ export default function DashboardApplicationDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
-            <Edit size={12} /> Edit
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}>
-            <Archive size={12} /> Archive
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs text-red-600 hover:text-red-700" onClick={() => setConfirmDelete(true)}>
-            <Trash2 size={12} /> Delete
-          </Button>
+          {canUpdateTable("applications") && (
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
+              <Edit size={12} /> Edit
+            </Button>
+          )}
+          {canWrite && (
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}>
+              <Archive size={12} /> Archive
+            </Button>
+          )}
+          {canDeleteRecords && (
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs text-red-600 hover:text-red-700" onClick={() => setConfirmDelete(true)}>
+              <Trash2 size={12} /> Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -346,7 +354,9 @@ export default function DashboardApplicationDetailPage() {
             <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><FileText size={14} /> Application Questions</h2>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={handleAI}><Sparkles size={12} /> AI draft</Button>
-              <Button size="sm" className="gap-1.5 text-xs h-7" onClick={() => setAddQOpen(true)}><Plus size={12} /> Add question</Button>
+              {canCreateTable("application_questions") && (
+                <Button size="sm" className="gap-1.5 text-xs h-7" onClick={() => setAddQOpen(true)}><Plus size={12} /> Add question</Button>
+              )}
             </div>
           </div>
           {questions.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">No questions yet.</div>}
@@ -360,10 +370,14 @@ export default function DashboardApplicationDetailPage() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${Q_STATUS_COLORS[q.status] ?? ""}`}>{q.status}</span>
-                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditQ(q.id)}><Edit size={11} /></Button>
-                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-500" onClick={async () => {
-                      try { await deleteQ.mutateAsync({ id: q.id, applicationId: app.id }); toast({ title: "Question deleted" }); } catch { toast({ title: "Delete failed", variant: "destructive" }); }
-                    }}><Trash2 size={11} /></Button>
+                    {canUpdateTable("application_questions") && (
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditQ(q.id)}><Edit size={11} /></Button>
+                    )}
+                    {canDeleteRecords && (
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-500" onClick={async () => {
+                        try { await deleteQ.mutateAsync({ id: q.id, applicationId: app.id }); toast({ title: "Question deleted" }); } catch { toast({ title: "Delete failed", variant: "destructive" }); }
+                      }}><Trash2 size={11} /></Button>
+                    )}
                   </div>
                 </div>
                 {q.draft_answer && (
@@ -394,7 +408,9 @@ export default function DashboardApplicationDetailPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><ClipboardList size={14} /> Required Documents Checklist</h2>
-            <Button size="sm" className="gap-1.5 text-xs h-7" onClick={() => setAddDocOpen(true)}><Plus size={12} /> Add document</Button>
+            {canCreateTable("application_required_documents") && (
+              <Button size="sm" className="gap-1.5 text-xs h-7" onClick={() => setAddDocOpen(true)}><Plus size={12} /> Add document</Button>
+            )}
           </div>
           {requiredDocs.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">No required documents yet.</div>}
           {requiredDocs.map((d) => (
@@ -406,10 +422,14 @@ export default function DashboardApplicationDetailPage() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className={`text-xs px-2 py-0.5 rounded-full ${DOC_STATUS_COLORS[d.status] ?? ""}`}>{d.status}</span>
-                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditDoc(d.id)}><Edit size={11} /></Button>
-                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-500" onClick={async () => {
-                  try { await deleteDoc.mutateAsync({ id: d.id, applicationId: app.id }); toast({ title: "Document deleted" }); } catch { toast({ title: "Delete failed", variant: "destructive" }); }
-                }}><Trash2 size={11} /></Button>
+                {canUpdateTable("application_required_documents") && (
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditDoc(d.id)}><Edit size={11} /></Button>
+                )}
+                {canDeleteRecords && (
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-500" onClick={async () => {
+                    try { await deleteDoc.mutateAsync({ id: d.id, applicationId: app.id }); toast({ title: "Document deleted" }); } catch { toast({ title: "Delete failed", variant: "destructive" }); }
+                  }}><Trash2 size={11} /></Button>
+                )}
               </div>
             </div>
           ))}
@@ -421,7 +441,9 @@ export default function DashboardApplicationDetailPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><CheckSquare size={14} /> Linked Tasks</h2>
-            <Button size="sm" className="gap-1.5 text-xs h-7" onClick={() => setAddTaskOpen(true)}><Plus size={12} /> Add task</Button>
+            {canCreateTable("tasks") && (
+              <Button size="sm" className="gap-1.5 text-xs h-7" onClick={() => setAddTaskOpen(true)}><Plus size={12} /> Add task</Button>
+            )}
           </div>
           {linkedTasks.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">No linked tasks yet.</div>}
           {linkedTasks.map((t) => (

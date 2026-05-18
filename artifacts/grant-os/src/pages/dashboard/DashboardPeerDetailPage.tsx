@@ -20,6 +20,7 @@ import PeerFundingRecordFormDialog, {
 import { peerFormValuesToInsert } from "@/lib/peerFormUtils";
 import { peerFundingRecordFormValuesToInsert } from "@/lib/peerFundingRecordFormUtils";
 import { toast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +60,7 @@ export default function DashboardPeerDetailPage() {
   const archivePeer = useArchivePeerOrganization();
   const deletePeer = useDeletePeerOrganization();
   const createRecord = useCreatePeerFundingRecord();
+  const { canWriteTable, canDeleteRecords } = usePermissions();
 
   if (isLoading) {
     return (
@@ -195,23 +197,29 @@ export default function DashboardPeerDetailPage() {
           <Sparkles size={12} />
           Recommend Funders to Pursue
         </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
-          <Pencil size={12} />
-          Edit
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}>
-          <Archive size={12} />
-          Archive
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50"
-          onClick={() => setConfirmDelete(true)}
-        >
-          <Trash2 size={12} />
-          Delete
-        </Button>
+        {canWriteTable("peer_organizations") && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
+            <Pencil size={12} />
+            Edit
+          </Button>
+        )}
+        {canWriteTable("peer_organizations") && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}>
+            <Archive size={12} />
+            Archive
+          </Button>
+        )}
+        {canDeleteRecords && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 size={12} />
+            Delete
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -292,10 +300,12 @@ export default function DashboardPeerDetailPage() {
               </CardContent>
             </Card>
           ))}
-          <Button size="sm" variant="outline" className="gap-2 text-xs mt-2" onClick={() => setRecordDialogOpen(true)}>
-            <Plus size={12} />
-            Add funding record
-          </Button>
+          {canWriteTable("peer_funding_records") && (
+            <Button size="sm" variant="outline" className="gap-2 text-xs mt-2" onClick={() => setRecordDialogOpen(true)}>
+              <Plus size={12} />
+              Add funding record
+            </Button>
+          )}
         </TabsContent>
 
         <TabsContent value="notes" className="mt-4">
@@ -306,9 +316,11 @@ export default function DashboardPeerDetailPage() {
               ) : (
                 <p className="text-sm text-slate-400">No notes yet.</p>
               )}
-              <Button size="sm" variant="outline" className="gap-2 text-xs mt-4" onClick={() => setEditOpen(true)}>
-                Edit Notes
-              </Button>
+              {canWriteTable("peer_organizations") && (
+                <Button size="sm" variant="outline" className="gap-2 text-xs mt-4" onClick={() => setEditOpen(true)}>
+                  Edit Notes
+                </Button>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

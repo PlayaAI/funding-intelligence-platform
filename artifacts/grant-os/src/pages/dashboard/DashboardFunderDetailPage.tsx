@@ -15,6 +15,7 @@ import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
 import FunderFormDialog, { type FunderFormValues } from "@/components/dashboard/FunderFormDialog";
 import { funderFormValuesToInsert } from "@/lib/funderFormUtils";
 import { toast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,6 +58,7 @@ export default function DashboardFunderDetailPage() {
   const updateFunder = useUpdateFunder();
   const archiveFunder = useArchiveFunder();
   const deleteFunder = useDeleteFunder();
+  const { canWriteTable, canDeleteRecords } = usePermissions();
 
   const relatedGrants = useMemo(() => {
     if (!funder) return [];
@@ -199,23 +201,29 @@ export default function DashboardFunderDetailPage() {
             </Button>
           </a>
         )}
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
-          <Pencil size={12} />
-          Edit
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}>
-          <Archive size={12} />
-          Archive
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50"
-          onClick={() => setConfirmDelete(true)}
-        >
-          <Trash2 size={12} />
-          Delete
-        </Button>
+        {canWriteTable("funders") && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
+            <Pencil size={12} />
+            Edit
+          </Button>
+        )}
+        {canWriteTable("funders") && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}>
+            <Archive size={12} />
+            Archive
+          </Button>
+        )}
+        {canDeleteRecords && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 size={12} />
+            Delete
+          </Button>
+        )}
       </div>
 
       <Tabs defaultValue="overview">
@@ -303,9 +311,11 @@ export default function DashboardFunderDetailPage() {
               ) : (
                 <div className="text-sm text-slate-400">No contact recorded yet.</div>
               )}
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs mt-1" onClick={() => setEditOpen(true)}>
-                Edit Contact
-              </Button>
+              {canWriteTable("funders") && (
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs mt-1" onClick={() => setEditOpen(true)}>
+                  Edit Contact
+                </Button>
+              )}
             </CardContent>
           </Card>
 
@@ -414,9 +424,11 @@ export default function DashboardFunderDetailPage() {
               ) : (
                 <p className="text-sm text-slate-400">No notes yet.</p>
               )}
-              <Button size="sm" variant="outline" className="gap-2 text-xs mt-4" onClick={() => setEditOpen(true)}>
-                Edit Notes
-              </Button>
+              {canWriteTable("funders") && (
+                <Button size="sm" variant="outline" className="gap-2 text-xs mt-4" onClick={() => setEditOpen(true)}>
+                  Edit Notes
+                </Button>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

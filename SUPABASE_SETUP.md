@@ -16,16 +16,16 @@ Add both secrets to Replit Secrets (Settings → Secrets) or your `.env` file:
 
 > Both variables must be prefixed with `VITE_` for Vite to expose them to the browser.
 
-## 2. Run the Migration
+## 2. Run Migrations (in order)
 
-Open your Supabase project, go to **SQL Editor**, and run:
+Open your Supabase project, go to **SQL Editor**, and run each file in order:
 
-```
-supabase/migrations/001_create_projects.sql
-```
-
-This creates the `projects` table with all required columns, indexes, an
-`updated_at` trigger, and seed data matching the existing mock projects.
+1. `artifacts/grant-os/supabase/migrations/001_create_projects.sql`
+2. `002_create_proof_items.sql`
+3. `003_create_grants.sql`
+4. `004_create_funders_peers.sql`
+5. `005_create_applications_tasks.sql`
+6. **`006_auth_roles_rls.sql`** (V0.6 — auth, profiles, secure RLS)
 
 ### Using Supabase CLI (optional)
 
@@ -33,57 +33,88 @@ This creates the `projects` table with all required columns, indexes, an
 supabase db push
 ```
 
-## 3. Verify
+## 3. Enable Supabase Auth
 
-After running the migration:
+In Supabase Dashboard → **Authentication** → **Providers**:
 
-1. Open **Table Editor → projects** — you should see 6 seed rows.
-2. Open the Grant OS dashboard at `/dashboard/projects` — it should load the
-   real projects from the database.
+1. Enable **Email** provider.
+2. For local dev, you may disable **Confirm email** (or confirm users manually).
+3. Under **URL Configuration**, set **Site URL** to your app origin (e.g. `http://localhost:5173`).
 
-## 4. Row Level Security (V1)
+## 4. Create the first admin user
 
-RLS is **disabled** by default in the migration. The dashboard uses the anon
-key with no user authentication on the database side yet.
+**Before or after migration 006** — create the auth user first:
 
-When you add Supabase Auth (Phase 2), uncomment the RLS block in the migration:
+1. Supabase → **Authentication** → **Users** → **Add user** (email + password).
+2. Run migration `006_auth_roles_rls.sql` (creates `profiles` + trigger; backfills existing users).
+3. Promote to Admin in **SQL Editor**:
 
 ```sql
-alter table projects enable row level security;
-create policy "Allow all for authenticated" on projects
-  for all using (auth.role() = 'authenticated');
+update public.profiles
+set role = 'Admin',
+    full_name = 'Your Name'
+where email = 'you@example.com';
 ```
 
-## 5. What is real vs mock data
+4. Verify:
+
+```sql
+select id, email, role from public.profiles order by created_at;
+```
+
+5. Sign in at `/login` in Grant OS and open `/dashboard`.
+
+### Repair missing profile
+
+If a user can sign in but sees “Account setup required”:
+
+```sql
+insert into public.profiles (id, email, full_name, role)
+select id, coalesce(email, ''), null, 'Viewer'
+from auth.users
+where email = 'user@example.com'
+on conflict (id) do nothing;
+```
+
+## 5. Roles (V0.6)
+
+| Role | Dashboard access |
+|------|------------------|
+| **Admin** | Full read/write/delete on all modules |
+| **Grant Lead** | Full operational write (same as Admin for CRUD; no in-app user management) |
+| **Contributor** | Read all; create/edit proof items, app questions, required docs, tasks; edit applications |
+| **Viewer** | Read-only |
+
+Change roles manually: **Table Editor → profiles** or SQL:
+
+```sql
+update public.profiles set role = 'Grant Lead' where email = 'teammate@example.com';
+```
+
+Allowed values: `Admin`, `Grant Lead`, `Contributor`, `Viewer`.
+
+There is **no in-app signup or user admin UI** in V0.6.
+
+## 6. Row Level Security (V0.6)
+
+- All dashboard tables require an **authenticated** Supabase session.
+- **Anonymous** clients cannot read or write dashboard data.
+- The **public website** still uses mock data in `src/data/*` and does not need database access.
+
+## 7. What is real vs mock data
 
 | Module | Data source |
 |--------|-------------|
-| Projects | **Supabase** (real) |
-| Grants | Mock data (`src/data/grants.ts`) |
-| Funders | Mock data (`src/data/funders.ts`) |
-| Peer orgs | Mock data (`src/data/peers.ts`) |
-| Applications | Mock data (`src/data/applications.ts`) |
-| Tasks | Mock data (`src/data/tasks.ts`) |
-| Proof items | Mock data (`src/data/proofItems.ts`) |
-| Documents | Mock data (`src/data/documents.ts`) |
+| Projects | **Supabase** |
+| Proof items | **Supabase** |
+| Grants | **Supabase** |
+| Funders | **Supabase** |
+| Peer orgs / funding records | **Supabase** |
+| Applications / questions / required docs | **Supabase** |
+| Tasks | **Supabase** |
+| Public website pages | Mock data (`src/data/*`) |
+| Tracker / matches / documents / reports (partial) | Mock or mixed |
 
-## 6. CRUD capabilities (Phase 1)
+## 8. CRUD capabilities by role
 
-| Action | Available |
-|--------|-----------|
-| List projects | Yes |
-| View project detail | Yes |
-| Create project | Yes |
-| Edit project | Yes |
-| Archive project (soft-delete) | Yes |
-| Hard delete project | Yes (from detail page) |
-| Public/private toggle | Yes (via edit) |
-
-## 7. Schema additions vs blueprint
-
-The `projects` table includes two extra columns beyond `DATABASE_SCHEMA.md`:
-
-- `category text` — display grouping used by the dashboard UI
-- `grant_relevance text` — short relevance summary shown on cards
-
-These are non-breaking additions that keep the UI consistent with the mock data.
+See `artifacts/grant-os/src/lib/roles.ts` for the UI permission matrix. Database enforcement is via RLS in `006_auth_roles_rls.sql`.

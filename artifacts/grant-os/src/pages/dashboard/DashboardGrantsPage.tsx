@@ -13,6 +13,7 @@ import GrantFormDialog, { type GrantFormValues } from "@/components/dashboard/Gr
 import { grantFormValuesToInsert } from "@/lib/grantFormUtils";
 import { toast } from "@/hooks/use-toast";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   Plus,
   Search,
@@ -75,6 +76,7 @@ export default function DashboardGrantsPage() {
   const { grants, projects, isLoading, isError, error } = useMappedGrants();
   const { data: projectRows = [] } = useProjects();
   const createGrant = useCreateGrant();
+  const { canWriteTable } = usePermissions();
 
   const amountOpt = AMOUNT_OPTIONS[amountFilter];
   const deadlineOpt = DEADLINE_OPTIONS[deadlineFilter];
@@ -199,10 +201,12 @@ export default function DashboardGrantsPage() {
                 <Sparkles size={13} />
                 Recommend Top 3
               </Button>
-              <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
-                <Plus size={14} />
-                Add grant
-              </Button>
+              {canWriteTable("grants") && (
+                <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
+                  <Plus size={14} />
+                  Add grant
+                </Button>
+              )}
         </div>
       </div>
 
@@ -285,10 +289,12 @@ export default function DashboardGrantsPage() {
             Add a grant or run{" "}
             <code className="font-mono bg-slate-100 px-1 rounded">003_create_grants.sql</code> in Supabase.
           </p>
-          <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
-            <Plus size={14} />
-            Add grant
-          </Button>
+          {canWriteTable("grants") && (
+            <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
+              <Plus size={14} />
+              Add grant
+            </Button>
+          )}
         </div>
       ) : view === "table" ? (
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">

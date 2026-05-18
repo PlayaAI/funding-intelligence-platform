@@ -24,6 +24,7 @@ import {
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
 import ProjectFormDialog, { type ProjectFormValues } from "@/components/dashboard/ProjectFormDialog";
 import { toast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   ArrowLeft, Sparkles, ExternalLink, Plus, FileText,
   Loader2, AlertCircle, Archive, Trash2, Pencil,
@@ -64,6 +65,7 @@ export default function DashboardProjectDetailPage() {
     { requireProjectId: true }
   );
   const createProofItem = useCreateProofItem();
+  const { canWriteTable, canCreateTable, canDeleteRecords } = usePermissions();
 
   if (isLoading) {
     return (
@@ -242,28 +244,34 @@ export default function DashboardProjectDetailPage() {
             Public page
           </Button>
         </Link>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
-          <Pencil size={12} />
-          Edit
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
-          onClick={() => setArchiveOpen(true)}
-        >
-          <Archive size={12} />
-          Archive
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50"
-          onClick={() => setDeleteOpen(true)}
-        >
-          <Trash2 size={12} />
-          Delete
-        </Button>
+        {canWriteTable("projects") && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
+            <Pencil size={12} />
+            Edit
+          </Button>
+        )}
+        {canWriteTable("projects") && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
+            onClick={() => setArchiveOpen(true)}
+          >
+            <Archive size={12} />
+            Archive
+          </Button>
+        )}
+        {canDeleteRecords && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 size={12} />
+            Delete
+          </Button>
+        )}
       </div>
 
       <Tabs defaultValue="overview">
@@ -413,10 +421,12 @@ export default function DashboardProjectDetailPage() {
               )}
             </>
           )}
-          <Button size="sm" variant="outline" className="gap-2 text-xs" onClick={() => setProofDialogOpen(true)}>
-            <Plus size={12} />
-            Add proof item
-          </Button>
+          {canCreateTable("proof_items") && (
+            <Button size="sm" variant="outline" className="gap-2 text-xs" onClick={() => setProofDialogOpen(true)}>
+              <Plus size={12} />
+              Add proof item
+            </Button>
+          )}
         </TabsContent>
 
         <TabsContent value="applications" className="mt-4 space-y-3">

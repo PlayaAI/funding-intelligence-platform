@@ -23,6 +23,7 @@ import { peerFundingRecordFormValuesToInsert } from "@/lib/peerFundingRecordForm
 import { peerDetailPath } from "@/lib/funderMappers";
 import { toast } from "@/hooks/use-toast";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   Plus,
   Search,
@@ -57,6 +58,7 @@ export default function DashboardPeersPage() {
   const createRecord = useCreatePeerFundingRecord();
   const updateRecord = useUpdatePeerFundingRecord();
   const deleteRecord = useDeletePeerFundingRecord();
+  const { canWriteTable, canDeleteRecords } = usePermissions();
 
   const filtered = useMemo(
     () =>
@@ -176,15 +178,17 @@ export default function DashboardPeersPage() {
         <div className="p-3 border-b border-slate-100 flex-shrink-0">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-slate-700">Peer Organizations</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 text-xs px-2 gap-1"
-              onClick={() => setPeerDialogOpen(true)}
-            >
-              <Plus size={11} />
-              Add
-            </Button>
+            {canWriteTable("peer_organizations") && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 text-xs px-2 gap-1"
+                onClick={() => setPeerDialogOpen(true)}
+              >
+                <Plus size={11} />
+                Add
+              </Button>
+            )}
           </div>
           <div className="relative">
             <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -365,18 +369,20 @@ export default function DashboardPeersPage() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm">Funding History</CardTitle>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 text-xs gap-1 px-2"
-                    onClick={() => {
-                      setEditingRecord(null);
-                      setRecordDialogOpen(true);
-                    }}
-                  >
-                    <Plus size={11} />
-                    Add
-                  </Button>
+                  {canWriteTable("peer_funding_records") && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-xs gap-1 px-2"
+                      onClick={() => {
+                        setEditingRecord(null);
+                        setRecordDialogOpen(true);
+                      }}
+                    >
+                      <Plus size={11} />
+                      Add
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
@@ -399,23 +405,27 @@ export default function DashboardPeersPage() {
                         <td className="py-2 text-xs text-slate-400 pl-3">{r.notes ?? "—"}</td>
                         <td className="py-2 text-right">
                           <div className="flex justify-end gap-1">
-                            <button
-                              type="button"
-                              className="p-1 text-slate-400 hover:text-slate-600"
-                              onClick={() => {
-                                setEditingRecord(r);
-                                setRecordDialogOpen(true);
-                              }}
-                            >
-                              <Pencil size={12} />
-                            </button>
-                            <button
-                              type="button"
-                              className="p-1 text-slate-400 hover:text-red-600"
-                              onClick={() => handleDeleteRecord(r.id)}
-                            >
-                              <Trash2 size={12} />
-                            </button>
+                            {canWriteTable("peer_funding_records") && (
+                              <button
+                                type="button"
+                                className="p-1 text-slate-400 hover:text-slate-600"
+                                onClick={() => {
+                                  setEditingRecord(r);
+                                  setRecordDialogOpen(true);
+                                }}
+                              >
+                                <Pencil size={12} />
+                              </button>
+                            )}
+                            {canDeleteRecords && (
+                              <button
+                                type="button"
+                                className="p-1 text-slate-400 hover:text-red-600"
+                                onClick={() => handleDeleteRecord(r.id)}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

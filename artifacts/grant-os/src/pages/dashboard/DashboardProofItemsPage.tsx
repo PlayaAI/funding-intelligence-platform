@@ -28,6 +28,7 @@ import ProofItemFormDialog, {
 } from "@/components/dashboard/ProofItemFormDialog";
 import { toast } from "@/hooks/use-toast";
 import { isSupabaseConfigured, getSupabaseConfigError } from "@/lib/supabase";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { ProofItemDbType } from "@/types/database";
 import {
   Plus,
@@ -145,8 +146,8 @@ function categorizeError(err: unknown): { title: string; detail: string; steps: 
       title: "Row Level Security is blocking access",
       detail: msg,
       steps: [
-        "The demo RLS policies may not have been applied.",
-        "Re-run 002_create_proof_items.sql which creates the anon demo policies.",
+        "Row level security requires a signed-in user.",
+        "Sign in at /login and run migration 006_auth_roles_rls.sql.",
       ],
     };
   }
@@ -183,6 +184,7 @@ export default function DashboardProofItemsPage() {
   const updateProofItem = useUpdateProofItem();
   const archiveProofItem = useArchiveProofItem();
   const deleteProofItem = useDeleteProofItem();
+  const { canCreateTable, canUpdateTable, canDeleteRecords } = usePermissions();
 
   const configError = getSupabaseConfigError();
 
@@ -370,10 +372,12 @@ export default function DashboardProofItemsPage() {
             <Sparkles size={13} />
             Suggest for grant
           </Button>
-          <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}>
-            <Plus size={14} />
-            Add proof item
-          </Button>
+          {canCreateTable("proof_items") && (
+            <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}>
+              <Plus size={14} />
+              Add proof item
+            </Button>
+          )}
         </div>
       </div>
 
@@ -450,10 +454,12 @@ export default function DashboardProofItemsPage() {
             </code>
             .
           </p>
-          <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}>
-            <Plus size={14} />
-            Add proof item
-          </Button>
+          {canCreateTable("proof_items") && (
+            <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}>
+              <Plus size={14} />
+              Add proof item
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -517,42 +523,48 @@ export default function DashboardProofItemsPage() {
                       >
                         {item.public_visibility ? "Public" : "Private"}
                       </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 w-6 p-0 text-slate-400 hover:text-primary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditItem(item);
-                        }}
-                        title="Edit"
-                      >
-                        <Pencil size={11} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 w-6 p-0 text-slate-400 hover:text-amber-600"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setArchiveItem(item);
-                        }}
-                        title="Archive"
-                      >
-                        <Archive size={11} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 w-6 p-0 text-slate-400 hover:text-red-600"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteItem(item);
-                        }}
-                        title="Delete"
-                      >
-                        <Trash2 size={11} />
-                      </Button>
+                      {canUpdateTable("proof_items") && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-slate-400 hover:text-primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditItem(item);
+                          }}
+                          title="Edit"
+                        >
+                          <Pencil size={11} />
+                        </Button>
+                      )}
+                      {canUpdateTable("proof_items") && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-slate-400 hover:text-amber-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setArchiveItem(item);
+                          }}
+                          title="Archive"
+                        >
+                          <Archive size={11} />
+                        </Button>
+                      )}
+                      {canDeleteRecords && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-slate-400 hover:text-red-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteItem(item);
+                          }}
+                          title="Delete"
+                        >
+                          <Trash2 size={11} />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>

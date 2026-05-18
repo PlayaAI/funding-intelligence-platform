@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Loader2, AlertCircle, CheckSquare, Archive, Trash2 } from "lucide-react";
 import type { TaskDbStatus, TaskDbPriority } from "@/types/database";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const ALL_STATUSES: TaskDbStatus[] = ["Not Started", "In Progress", "Waiting", "Needs Review", "Complete"];
 const ALL_PRIORITIES: TaskDbPriority[] = ["Urgent", "High", "Medium", "Low"];
@@ -48,6 +49,7 @@ export default function DashboardTasksPage() {
   const updateTask = useUpdateTask();
   const archiveTask = useArchiveTask();
   const deleteTask = useDeleteTask();
+  const { canCreateTable, canUpdateTable } = usePermissions();
 
   const grantMap = useMemo(() => new Map(grants.map((g) => [g.id, g])), [grants]);
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
@@ -145,9 +147,11 @@ export default function DashboardTasksPage() {
           <h1 className="text-xl font-bold text-slate-900">Tasks</h1>
           <p className="text-slate-500 text-sm mt-0.5">{allTasks.length} tasks · {allTasks.filter((t) => t.status !== "Complete").length} open</p>
         </div>
-        <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}>
-          <Plus size={14} /> Add task
-        </Button>
+        {canCreateTable("tasks") && (
+          <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}>
+            <Plus size={14} /> Add task
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -179,7 +183,7 @@ export default function DashboardTasksPage() {
           const days = t.due_date ? daysUntil(t.due_date) : null;
 
           return (
-            <Card key={t.id} className="border-slate-200 hover:border-primary/40 transition-all hover:shadow-sm cursor-pointer" onClick={() => setEditId(t.id)}>
+            <Card key={t.id} className={`border-slate-200 transition-all ${canUpdateTable("tasks") ? "hover:border-primary/40 hover:shadow-sm cursor-pointer" : ""}`} onClick={() => canUpdateTable("tasks") && setEditId(t.id)}>
               <CardContent className="pt-3 pb-3">
                 <div className="flex items-start gap-3">
                   <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${PRIORITY_DOTS[t.priority] ?? "bg-slate-300"}`} />

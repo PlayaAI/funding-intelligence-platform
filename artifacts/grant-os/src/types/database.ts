@@ -7,6 +7,26 @@ export type Json =
   | Json[];
 
 // ============================================================
+// Profiles (auth.users)
+// ============================================================
+
+export type AppRoleDb = "Admin" | "Grant Lead" | "Contributor" | "Viewer";
+
+export interface ProfileRow {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: AppRoleDb;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProfileUpdate = {
+  full_name?: string | null;
+  updated_at?: string;
+};
+
+// ============================================================
 // Projects
 // ============================================================
 
@@ -528,6 +548,12 @@ export type TaskUpdate = Partial<TaskInsert>;
 export interface Database {
   public: {
     Tables: {
+      profiles: {
+        Row: ProfileRow;
+        Insert: never;
+        Update: ProfileUpdate;
+        Relationships: [];
+      };
       projects: {
         Row: ProjectRow;
         Insert: ProjectInsert;

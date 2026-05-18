@@ -229,7 +229,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-semibold text-slate-800 truncate leading-tight">{user.name}</div>
-                <div className="text-[10px] text-slate-500 truncate leading-tight">{user.role}</div>
+                <div className="text-[10px] text-slate-500 truncate leading-tight">{user.email}</div>
+                <div className="text-[10px] text-slate-400 truncate leading-tight">{user.role}</div>
               </div>
             </div>
           </div>
@@ -246,7 +247,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
           </div>
         </Link>
         <button
-          onClick={logout}
+          type="button"
+          onClick={() => void logout()}
           className={cn(
             "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-500 hover:bg-red-50 hover:text-red-600 cursor-pointer transition-colors",
             collapsed && "justify-center"

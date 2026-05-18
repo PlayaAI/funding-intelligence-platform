@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
-import { Sparkles, Building2, Users, Zap, Link2, Save } from "lucide-react";
+import { Sparkles, Building2, Users, Zap, Link2, Save, UserCircle } from "lucide-react";
 
 export default function DashboardSettingsPage() {
   const { user } = useAuth();
@@ -20,13 +20,50 @@ export default function DashboardSettingsPage() {
         <p className="text-slate-500 text-sm mt-0.5">Manage your organization and platform settings.</p>
       </div>
 
-      <Tabs defaultValue="org">
+      <Tabs defaultValue="account">
         <TabsList className="h-9">
+          <TabsTrigger value="account" className="text-xs">Account</TabsTrigger>
           <TabsTrigger value="org" className="text-xs">Organization</TabsTrigger>
           <TabsTrigger value="users" className="text-xs">Users</TabsTrigger>
           <TabsTrigger value="ai" className="text-xs">AI Settings</TabsTrigger>
           <TabsTrigger value="integrations" className="text-xs">Integrations</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="account" className="mt-4 space-y-4">
+          <Card className="border-slate-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <UserCircle size={15} />
+                Your account
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Signed in with Supabase Auth. Role changes are managed in Supabase for now.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Name</Label>
+                <p className="text-sm text-slate-900">{user?.name ?? "—"}</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Email</Label>
+                <p className="text-sm text-slate-900">{user?.email ?? "—"}</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Role</Label>
+                <Badge variant="secondary" className="text-xs">{user?.role ?? "—"}</Badge>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-2">
+                <p className="font-medium text-slate-800">Managing roles</p>
+                <p>
+                  Admins can update roles in Supabase → Table Editor → <code className="font-mono bg-slate-100 px-1 rounded">profiles</code>,
+                  or run SQL: <code className="font-mono bg-slate-100 px-1 rounded">update profiles set role = &apos;Grant Lead&apos; where email = &apos;…&apos;;</code>
+                </p>
+                <p>New users: Supabase → Authentication → Users → Add user. A profile row is created automatically.</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="org" className="mt-4 space-y-4">
           <Card className="border-slate-200">
@@ -75,33 +112,12 @@ export default function DashboardSettingsPage() {
               </CardTitle>
               <CardDescription className="text-xs">Manage who has access to Grant OS.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                { name: "Aaron Coombs", email: "aaron@playa.ai", role: "Admin", initials: "AC" },
-                { name: "Mika Torres", email: "mika@playa.ai", role: "Grant Lead", initials: "MT" },
-                { name: "Jordan Lee", email: "jordan@playa.ai", role: "Contributor", initials: "JL" },
-              ].map((member) => (
-                <div key={member.email} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
-                      {member.initials}
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-slate-800">{member.name}</div>
-                      <div className="text-xs text-slate-400">{member.email}</div>
-                    </div>
-                  </div>
-                  <Badge variant="secondary" className="text-xs">{member.role}</Badge>
-                </div>
-              ))}
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-2 text-xs w-full mt-2"
-                onClick={() => toast({ title: "Invite member", description: "User management coming in next phase." })}
-              >
-                Invite team member
-              </Button>
+            <CardContent>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600">
+                Team management UI is not built yet. Create users in Supabase Authentication and set roles on the{" "}
+                <code className="font-mono bg-slate-100 px-1 rounded">profiles</code> table.
+                Allowed roles: Admin, Grant Lead, Contributor, Viewer.
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

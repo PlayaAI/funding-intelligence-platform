@@ -1,4 +1,5 @@
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
+import { Loader2 } from "lucide-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,6 +18,8 @@ import ContactPage from "@/pages/ContactPage";
 import NotFound from "@/pages/not-found";
 
 import LoginPage from "@/pages/LoginPage";
+import AuthProfileErrorScreen from "@/components/auth/AuthProfileErrorScreen";
+import { authDebug } from "@/lib/authDebug";
 
 import DashboardHomePage from "@/pages/dashboard/DashboardHomePage";
 import DashboardTrackerPage from "@/pages/dashboard/DashboardTrackerPage";
@@ -40,8 +43,23 @@ import DashboardSettingsPage from "@/pages/dashboard/DashboardSettingsPage";
 
 const queryClient = new QueryClient();
 
+function AuthLoadingScreen() {
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+    </div>
+  );
+}
+
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading, profileError, hasSession } = useAuth();
+
+  if (import.meta.env.DEV) {
+    authDebug("ProtectedRoute", { loading, isAuthenticated, hasSession, profileError: !!profileError });
+  }
+
+  if (loading) return <AuthLoadingScreen />;
+  if (profileError) return <AuthProfileErrorScreen />;
   if (!isAuthenticated) return <Redirect to="/login" />;
   return (
     <DashboardShell>
@@ -85,15 +103,7 @@ function Router() {
         <Route path="/dashboard/documents" component={() => <ProtectedRoute component={DashboardDocumentsPage} />} />
         <Route path="/dashboard/reports" component={() => <ProtectedRoute component={DashboardReportsPage} />} />
         <Route path="/dashboard/settings" component={() => <ProtectedRoute component={DashboardSettingsPage} />} />
-        <Route component={() => {
-          const { isAuthenticated } = useAuth();
-          if (!isAuthenticated) return <Redirect to="/login" />;
-          return (
-            <DashboardShell>
-              <NotFound />
-            </DashboardShell>
-          );
-        }} />
+        <Route component={() => <ProtectedRoute component={NotFound} />} />
       </Switch>
     );
   }

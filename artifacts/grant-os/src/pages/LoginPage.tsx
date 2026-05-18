@@ -1,19 +1,25 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Sparkles } from "lucide-react";
+import AuthProfileErrorScreen from "@/components/auth/AuthProfileErrorScreen";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, isAuthenticated, loading, profileError, hasSession } = useAuth();
   const [, navigate] = useLocation();
-  const [email, setEmail] = useState("aaron@playa.ai");
-  const [password, setPassword] = useState("demo");
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      navigate("/dashboard");
+    }
+  }, [loading, isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,33 +27,44 @@ export default function LoginPage() {
       setError("Please enter email and password.");
       return;
     }
-    setLoading(true);
+    setSubmitting(true);
     setError("");
     try {
       await login(email, password);
       navigate("/dashboard");
-    } catch {
-      setError("Login failed. Please try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <p className="text-sm text-slate-500">Checking session…</p>
+      </div>
+    );
+  }
+
+  if (hasSession && profileError) {
+    return <AuthProfileErrorScreen />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary text-white font-bold text-xl mb-2">
-            P
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">Grant OS</h1>
-          <p className="text-slate-500 text-sm">Sign in to the Playa AI grant intelligence dashboard.</p>
+        <div className="text-center space-y-1">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Grant OS</h1>
+          <p className="text-sm text-slate-500">Sign in to your dashboard</p>
         </div>
 
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="pb-4">
             <CardTitle className="text-base">Sign in</CardTitle>
-            <CardDescription className="text-xs">Use any email and password to access the demo.</CardDescription>
+            <CardDescription className="text-xs">
+              Use the email and password from your Supabase account.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -58,7 +75,7 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="aaron@playa.ai"
+                  placeholder="you@example.com"
                   className="text-sm"
                   autoComplete="email"
                 />
@@ -70,23 +87,24 @@ export default function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Any password"
+                  placeholder="Password"
                   className="text-sm"
                   autoComplete="current-password"
                 />
               </div>
-              {error && <p className="text-xs text-red-600">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Signing in..." : "Sign in"}
+              {(error || (!hasSession && profileError)) && (
+                <p className="text-xs text-red-600">{error || profileError}</p>
+              )}
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? "Signing in…" : "Sign in"}
               </Button>
             </form>
           </CardContent>
         </Card>
 
-        <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          <Sparkles size={13} className="flex-shrink-0" />
-          <span>This is a demo with mock data. Any credentials will work.</span>
-        </div>
+        <p className="text-xs text-slate-500 text-center">
+          New accounts are created by an admin in Supabase. Contact your team lead if you need access.
+        </p>
       </div>
     </div>
   );

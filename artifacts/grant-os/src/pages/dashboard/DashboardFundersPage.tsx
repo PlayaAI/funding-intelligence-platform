@@ -9,6 +9,7 @@ import { funderFormValuesToInsert } from "@/lib/funderFormUtils";
 import { funderDetailPath } from "@/lib/funderMappers";
 import { toast } from "@/hooks/use-toast";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { usePermissions } from "@/hooks/usePermissions";
 import { Plus, Search, Building2, Network, Loader2, AlertCircle } from "lucide-react";
 
 const REL_COLORS: Record<string, string> = {
@@ -30,6 +31,7 @@ export default function DashboardFundersPage() {
 
   const { funders, isLoading, isError, error } = useMappedFunders();
   const createFunder = useCreateFunder();
+  const { canWriteTable } = usePermissions();
 
   const allAreas = useMemo(
     () => Array.from(new Set(funders.flatMap((f) => f.givingCategories))).sort(),
@@ -107,10 +109,12 @@ export default function DashboardFundersPage() {
           <h1 className="text-xl font-bold text-slate-900">Funder Intelligence</h1>
           <p className="text-slate-500 text-sm mt-0.5">{funders.length} funders tracked</p>
         </div>
-        <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
-          <Plus size={14} />
-          Add funder
-        </Button>
+        {canWriteTable("funders") && (
+          <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
+            <Plus size={14} />
+            Add funder
+          </Button>
+        )}
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap gap-3 items-center">
