@@ -7,7 +7,6 @@ import {
 } from "@/hooks/useApplications";
 import { useTasksByApplication, useCreateTask } from "@/hooks/useTasks";
 import { useGrant } from "@/hooks/useGrants";
-import { useProject } from "@/hooks/useProjects";
 import ApplicationFormDialog, { type ApplicationFormValues } from "@/components/dashboard/ApplicationFormDialog";
 import ApplicationQuestionFormDialog, { type ApplicationQuestionFormValues } from "@/components/dashboard/ApplicationQuestionFormDialog";
 import ApplicationRequiredDocumentFormDialog, { type ApplicationRequiredDocumentFormValues } from "@/components/dashboard/ApplicationRequiredDocumentFormDialog";
@@ -70,8 +69,7 @@ export default function DashboardApplicationDetailPage() {
 
   const { data: app, isLoading, isError, error } = useApplication(id);
   const { data: grant } = useGrant(app?.grant_id ?? undefined);
-  const projectQuery = useProject(undefined);
-  // We need to find project by id not slug — use a workaround
+
   const { data: questions = [] } = useApplicationQuestions(app?.id);
   const { data: requiredDocs = [] } = useApplicationRequiredDocuments(app?.id);
   const { data: linkedTasks = [] } = useTasksByApplication(app?.id);

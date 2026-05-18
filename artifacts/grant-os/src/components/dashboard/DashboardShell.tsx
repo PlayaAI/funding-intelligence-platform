@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useProjects } from "@/hooks/useProjects";
 import { PROJECT_COLORS } from "@/data/grants";
-import { useMappedGrants } from "@/hooks/useGrants";
-import { tasks } from "@/data/tasks";
-import { applications } from "@/data/applications";
+import { useGrants } from "@/hooks/useGrants";
+import { useTasks } from "@/hooks/useTasks";
+import { useApplications } from "@/hooks/useApplications";
 import {
   LayoutDashboard,
   ListChecks,
@@ -92,11 +92,15 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const { data: projects = [] } = useProjects();
-  const { grants } = useMappedGrants();
+  // Fix #3: use lightweight useGrants() for count — no project join needed
+  const { data: grantRows = [] } = useGrants();
+  // Optional: wire sidebar badges to real Supabase data
+  const { data: taskRows = [] } = useTasks();
+  const { data: appRows = [] } = useApplications();
 
-  const openTasksCount = tasks.filter((t) => t.status !== "Complete").length;
-  const activeAppsCount = applications.filter((a) => a.status !== "Submitted").length;
-  const activeGrantsCount = grants.filter((g) =>
+  const openTasksCount = taskRows.filter((t) => t.status !== "Complete").length;
+  const activeAppsCount = appRows.filter((a) => a.status !== "Submitted").length;
+  const activeGrantsCount = grantRows.filter((g) =>
     ["Applying", "Submitted"].includes(g.status)
   ).length;
 

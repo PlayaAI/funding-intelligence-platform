@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, getSupabaseConfigError, isSupabaseConfigured } from "@/lib/supabase";
 import { getProfile } from "@/lib/profilesService";
@@ -74,6 +74,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const initDoneRef = useRef(false);
+  const userRef = useRef<AuthUser | null>(null);
+  // Keep userRef in sync so TOKEN_REFRESHED handler always sees current user id
+  userRef.current = user;
 
   const finishLoading = useCallback(() => {
     authDebug("loading → false");
@@ -190,16 +193,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         void (async () => {
           authDebug("auth state sync start", { event });
-          setLoading(true);
-          authDebug("loading → true", { reason: event });
 
-          try {
-            if (event === "SIGNED_OUT") {
+          if (event === "SIGNED_OUT") {
+            setLoading(true);
+            authDebug("loading → true", { reason: event });
+            try {
               setSession(null);
               setUser(null);
               setProfileError(null);
-              return;
+            } finally {
+              if (mounted) finishLoading();
             }
+            authDebug("auth state sync end", { event });
+            return;
+          }
+
+          if (event === "TOKEN_REFRESHED") {
+            // Silent refresh — don't flash the loading spinner
+            authDebug("TOKEN_REFRESHED — silent update");
+            if (nextSession) {
+              setSession(nextSession);
+              // Only refetch profile if the user id actually changed (shouldn't, but defensive)
+              const prevUserId = userRef.current?.id;
+              if (nextSession.user.id !== prevUserId) {
+                authDebug("TOKEN_REFRESHED — user id changed, refetching profile silently");
+                await loadUserFromSession(nextSession);
+              }
+            }
+            authDebug("auth state sync end", { event });
+            return;
+          }
+
+          // All other events (SIGNED_IN, USER_UPDATED, etc.) — show loading
+          setLoading(true);
+          authDebug("loading → true", { reason: event });
+          try {
             await loadUserFromSession(nextSession);
           } finally {
             if (mounted) {
@@ -257,18 +285,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const ctxValue = useMemo<AuthContextType>(
+    () => ({
+      user,
+      isAuthenticated: !!user,
+      loading,
+      profileError,
+      hasSession: !!session,
+      login,
+      logout,
+    }),
+    [user, loading, profileError, session, login, logout]
+  );
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated: !!user,
-        loading,
-        profileError,
-        hasSession: !!session,
-        login,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={ctxValue}>
       {children}
     </AuthContext.Provider>
   );

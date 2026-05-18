@@ -41,7 +41,15 @@ import DashboardDocumentsPage from "@/pages/dashboard/DashboardDocumentsPage";
 import DashboardReportsPage from "@/pages/dashboard/DashboardReportsPage";
 import DashboardSettingsPage from "@/pages/dashboard/DashboardSettingsPage";
 
-const queryClient = new QueryClient();
+// Fix #4: React Query safe defaults
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 function AuthLoadingScreen() {
   return (
@@ -68,6 +76,38 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   );
 }
 
+// Fix #2: Create stable wrapper components instead of inline arrow functions.
+// This prevents ProtectedRoute from being recreated on each render, which would
+// unmount/remount DashboardShell and all children on every auth re-render.
+function makeProtected(Page: React.ComponentType): React.ComponentType {
+  function ProtectedPage() {
+    return <ProtectedRoute component={Page} />;
+  }
+  ProtectedPage.displayName = `Protected(${Page.displayName || Page.name || "Component"})`;
+  return ProtectedPage;
+}
+
+const ProtectedDashboardHome = makeProtected(DashboardHomePage);
+const ProtectedDashboardTracker = makeProtected(DashboardTrackerPage);
+const ProtectedDashboardMatchesProject = makeProtected(DashboardMatchesProjectPage);
+const ProtectedDashboardMatches = makeProtected(DashboardMatchesPage);
+const ProtectedDashboardGrantDetail = makeProtected(DashboardGrantDetailPage);
+const ProtectedDashboardGrants = makeProtected(DashboardGrantsPage);
+const ProtectedDashboardFunderDetail = makeProtected(DashboardFunderDetailPage);
+const ProtectedDashboardFunders = makeProtected(DashboardFundersPage);
+const ProtectedDashboardPeerDetail = makeProtected(DashboardPeerDetailPage);
+const ProtectedDashboardPeers = makeProtected(DashboardPeersPage);
+const ProtectedDashboardProjectDetail = makeProtected(DashboardProjectDetailPage);
+const ProtectedDashboardProjects = makeProtected(DashboardProjectsPage);
+const ProtectedDashboardApplicationDetail = makeProtected(DashboardApplicationDetailPage);
+const ProtectedDashboardApplications = makeProtected(DashboardApplicationsPage);
+const ProtectedDashboardTasks = makeProtected(DashboardTasksPage);
+const ProtectedDashboardProofItems = makeProtected(DashboardProofItemsPage);
+const ProtectedDashboardDocuments = makeProtected(DashboardDocumentsPage);
+const ProtectedDashboardReports = makeProtected(DashboardReportsPage);
+const ProtectedDashboardSettings = makeProtected(DashboardSettingsPage);
+const ProtectedNotFound = makeProtected(NotFound);
+
 function Router() {
   const [location] = useLocation();
   const isDashboard = location.startsWith("/dashboard");
@@ -84,26 +124,26 @@ function Router() {
   if (isDashboard) {
     return (
       <Switch>
-        <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardHomePage} />} />
-        <Route path="/dashboard/tracker" component={() => <ProtectedRoute component={DashboardTrackerPage} />} />
-        <Route path="/dashboard/matches/:projectId" component={() => <ProtectedRoute component={DashboardMatchesProjectPage} />} />
-        <Route path="/dashboard/matches" component={() => <ProtectedRoute component={DashboardMatchesPage} />} />
-        <Route path="/dashboard/grants/:id" component={() => <ProtectedRoute component={DashboardGrantDetailPage} />} />
-        <Route path="/dashboard/grants" component={() => <ProtectedRoute component={DashboardGrantsPage} />} />
-        <Route path="/dashboard/funders/:id" component={() => <ProtectedRoute component={DashboardFunderDetailPage} />} />
-        <Route path="/dashboard/funders" component={() => <ProtectedRoute component={DashboardFundersPage} />} />
-        <Route path="/dashboard/peers/:id" component={() => <ProtectedRoute component={DashboardPeerDetailPage} />} />
-        <Route path="/dashboard/peers" component={() => <ProtectedRoute component={DashboardPeersPage} />} />
-        <Route path="/dashboard/projects/:slug" component={() => <ProtectedRoute component={DashboardProjectDetailPage} />} />
-        <Route path="/dashboard/projects" component={() => <ProtectedRoute component={DashboardProjectsPage} />} />
-        <Route path="/dashboard/applications/:id" component={() => <ProtectedRoute component={DashboardApplicationDetailPage} />} />
-        <Route path="/dashboard/applications" component={() => <ProtectedRoute component={DashboardApplicationsPage} />} />
-        <Route path="/dashboard/tasks" component={() => <ProtectedRoute component={DashboardTasksPage} />} />
-        <Route path="/dashboard/proof-items" component={() => <ProtectedRoute component={DashboardProofItemsPage} />} />
-        <Route path="/dashboard/documents" component={() => <ProtectedRoute component={DashboardDocumentsPage} />} />
-        <Route path="/dashboard/reports" component={() => <ProtectedRoute component={DashboardReportsPage} />} />
-        <Route path="/dashboard/settings" component={() => <ProtectedRoute component={DashboardSettingsPage} />} />
-        <Route component={() => <ProtectedRoute component={NotFound} />} />
+        <Route path="/dashboard" component={ProtectedDashboardHome} />
+        <Route path="/dashboard/tracker" component={ProtectedDashboardTracker} />
+        <Route path="/dashboard/matches/:projectId" component={ProtectedDashboardMatchesProject} />
+        <Route path="/dashboard/matches" component={ProtectedDashboardMatches} />
+        <Route path="/dashboard/grants/:id" component={ProtectedDashboardGrantDetail} />
+        <Route path="/dashboard/grants" component={ProtectedDashboardGrants} />
+        <Route path="/dashboard/funders/:id" component={ProtectedDashboardFunderDetail} />
+        <Route path="/dashboard/funders" component={ProtectedDashboardFunders} />
+        <Route path="/dashboard/peers/:id" component={ProtectedDashboardPeerDetail} />
+        <Route path="/dashboard/peers" component={ProtectedDashboardPeers} />
+        <Route path="/dashboard/projects/:slug" component={ProtectedDashboardProjectDetail} />
+        <Route path="/dashboard/projects" component={ProtectedDashboardProjects} />
+        <Route path="/dashboard/applications/:id" component={ProtectedDashboardApplicationDetail} />
+        <Route path="/dashboard/applications" component={ProtectedDashboardApplications} />
+        <Route path="/dashboard/tasks" component={ProtectedDashboardTasks} />
+        <Route path="/dashboard/proof-items" component={ProtectedDashboardProofItems} />
+        <Route path="/dashboard/documents" component={ProtectedDashboardDocuments} />
+        <Route path="/dashboard/reports" component={ProtectedDashboardReports} />
+        <Route path="/dashboard/settings" component={ProtectedDashboardSettings} />
+        <Route component={ProtectedNotFound} />
       </Switch>
     );
   }

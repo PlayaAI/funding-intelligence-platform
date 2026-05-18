@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useRoute, Link, useLocation } from "wouter";
-import { useMappedFunders } from "@/hooks/useFunders";
-import { resolveFunderForGrant, funderDetailPath } from "@/lib/funderMappers";
+import { useFunders } from "@/hooks/useFunders";
+import { funderDetailPath } from "@/lib/funderMappers";
 import {
   useMappedGrant,
   useUpdateGrant,
@@ -81,7 +81,8 @@ export default function DashboardGrantDetailPage() {
 
   const grantId = params?.id;
   const { grant, grantRow, isLoading, isError, error } = useMappedGrant(grantId);
-  const { funders } = useMappedFunders();
+  // Fix #5: lightweight funder lookup — don't load all grants+projects+peer records
+  const { data: funderRows = [] } = useFunders();
   const { data: projectRows = [] } = useProjects();
   const updateGrant = useUpdateGrant();
   const archiveGrant = useArchiveGrant();
@@ -95,8 +96,20 @@ export default function DashboardGrantDetailPage() {
 
   const funder = useMemo(() => {
     if (!grant) return null;
-    return resolveFunderForGrant(grant, funders);
-  }, [grant, funders]);
+    const fid = grant.funderId;
+    const nameLower = grant.funderName.toLowerCase();
+    const matchedRow = funderRows.find(
+      (f) => f.id === fid || f.legacy_id === fid || f.name.toLowerCase() === nameLower
+    );
+    if (!matchedRow) return null;
+    return {
+      id: matchedRow.id,
+      legacyId: matchedRow.legacy_id ?? undefined,
+      name: matchedRow.name,
+      relationshipStatus: (matchedRow.relationship_status as string) ?? "None",
+      notes: matchedRow.notes ?? undefined,
+    };
+  }, [grant, funderRows]);
 
   const handleAI = (action: string) =>
     toast({ title: action, description: "AI workflow will be connected in a later phase." });

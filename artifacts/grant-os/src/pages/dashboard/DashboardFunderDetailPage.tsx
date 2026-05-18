@@ -6,7 +6,7 @@ import {
   useArchiveFunder,
   useDeleteFunder,
 } from "@/hooks/useFunders";
-import { useMappedGrants } from "@/hooks/useGrants";
+import { useGrants } from "@/hooks/useGrants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,7 +54,8 @@ export default function DashboardFunderDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { funder, funderRow, isLoading, isError, error } = useMappedFunder(params?.id);
-  const { grants } = useMappedGrants();
+  // Lighter: only load raw grant rows, no project join needed
+  const { data: grantRows = [] } = useGrants();
   const updateFunder = useUpdateFunder();
   const archiveFunder = useArchiveFunder();
   const deleteFunder = useDeleteFunder();
@@ -62,8 +63,9 @@ export default function DashboardFunderDetailPage() {
 
   const relatedGrants = useMemo(() => {
     if (!funder) return [];
-    return grants.filter((g) => funder.relatedGrantIds.includes(g.id));
-  }, [funder, grants]);
+    const ids = new Set(funder.relatedGrantIds);
+    return grantRows.filter((g) => ids.has(g.id));
+  }, [funder, grantRows]);
 
   const handleAI = (action: string) =>
     toast({ title: action, description: "AI workflow will be connected in a later phase." });
