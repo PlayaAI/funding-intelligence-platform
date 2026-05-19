@@ -27,6 +27,60 @@ export type ProfileUpdate = {
 };
 
 // ============================================================
+// Import Runs
+// ============================================================
+
+export interface ImportRunRow {
+  id: string;
+  source: string;
+  import_type: string;
+  file_name: string | null;
+  status: string;
+  total_rows: number;
+  created_count: number;
+  updated_count: number;
+  skipped_count: number;
+  error_count: number;
+  summary: Json | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export type ImportRunInsert = {
+  id?: string;
+  source?: string;
+  import_type: string;
+  file_name?: string | null;
+  status?: string;
+  total_rows?: number;
+  created_count?: number;
+  updated_count?: number;
+  skipped_count?: number;
+  error_count?: number;
+  summary?: Json | null;
+  created_by?: string | null;
+  created_at?: string;
+};
+
+export interface ImportErrorRow {
+  id: string;
+  import_run_id: string;
+  row_index: number | null;
+  message: string;
+  raw_row: Json | null;
+  created_at: string;
+}
+
+export type ImportErrorInsert = {
+  id?: string;
+  import_run_id: string;
+  row_index?: number | null;
+  message: string;
+  raw_row?: Json | null;
+  created_at?: string;
+};
+
+// ============================================================
 // Projects
 // ============================================================
 

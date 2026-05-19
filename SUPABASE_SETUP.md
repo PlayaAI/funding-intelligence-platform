@@ -26,6 +26,7 @@ Open your Supabase project, go to **SQL Editor**, and run each file in order:
 4. `004_create_funders_peers.sql`
 5. `005_create_applications_tasks.sql`
 6. **`006_auth_roles_rls.sql`** (V0.6 — auth, profiles, secure RLS)
+7. **`007_create_imports.sql`** (V0.7 — import runs and import errors)
 
 ### Using Supabase CLI (optional)
 
