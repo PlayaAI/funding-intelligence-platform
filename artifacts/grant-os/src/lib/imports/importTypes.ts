@@ -115,9 +115,16 @@ export interface ImportErrorInsert {
   created_at?: string;
 }
 
+export interface ImportTargetProject {
+  id: string;
+  slug: string;
+  name: string;
+}
+
 export interface ExecuteImportOptions {
   updateMissingFieldsOnly: boolean;
   createdBy: string | null;
+  targetProject?: ImportTargetProject | null;
 }
 
 export interface ExecuteImportResult {
@@ -127,6 +134,7 @@ export interface ExecuteImportResult {
   skippedCount: number;
   errorCount: number;
   errors: Array<{ rowIndex: number | null; message: string }>;
+  targetProject?: ImportTargetProject | null;
 }
 
 export type ImportableGrantUpdate = Omit<GrantUpdate, "id" | "created_at">;

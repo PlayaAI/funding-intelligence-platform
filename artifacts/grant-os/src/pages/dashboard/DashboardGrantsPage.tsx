@@ -63,11 +63,15 @@ function formatAmount(min: number, max: number) {
 }
 
 export default function DashboardGrantsPage() {
+  const initialProjectFilter =
+    typeof window === "undefined"
+      ? "All"
+      : new URLSearchParams(window.location.search).get("project") || "All";
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<GrantStatus | "All">("All");
   const [amountFilter, setAmountFilter] = useState(0);
   const [deadlineFilter, setDeadlineFilter] = useState(0);
-  const [projectFilter, setProjectFilter] = useState("All");
+  const [projectFilter, setProjectFilter] = useState(initialProjectFilter);
   const [view, setView] = useState<"table" | "kanban">("table");
   const [sortField, setSortField] = useState<SortField>("deadline");
   const [sortDir, setSortDir] = useState<SortDir>("asc");

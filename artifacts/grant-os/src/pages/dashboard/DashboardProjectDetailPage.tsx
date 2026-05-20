@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useRoute, Link, useLocation } from "wouter";
 import { useProject, useUpdateProject, useArchiveProject, useDeleteProject } from "@/hooks/useProjects";
 import { useProofItems, useCreateProofItem } from "@/hooks/useProofItems";
-import { grants, PROJECT_COLORS } from "@/data/grants";
+import { PROJECT_COLORS } from "@/data/grants";
+import { useMappedGrants } from "@/hooks/useGrants";
 import { useApplicationsByProject } from "@/hooks/useApplications";
 import { useTasksByProject } from "@/hooks/useTasks";
 import { documents } from "@/data/documents";
@@ -64,6 +65,9 @@ export default function DashboardProjectDetailPage() {
     project?.id,
     { requireProjectId: true }
   );
+  const { grants: allGrants } = useMappedGrants();
+  const { data: relatedApps = [] } = useApplicationsByProject(project?.id);
+  const { data: relatedTasks = [] } = useTasksByProject(project?.id);
   const createProofItem = useCreateProofItem();
   const { canWriteTable, canCreateTable, canDeleteRecords } = usePermissions();
 
@@ -104,9 +108,7 @@ export default function DashboardProjectDetailPage() {
     );
   }
 
-  const relatedGrants = grants.filter((g) => g.relatedProjectSlug === project.slug);
-  const { data: relatedApps = [] } = useApplicationsByProject(project.id);
-  const { data: relatedTasks = [] } = useTasksByProject(project.id);
+  const relatedGrants = allGrants.filter((g) => g.relatedProjectSlug === project.slug);
   const relatedDocs = documents.filter((d) => d.relatedProjectSlug === project.slug);
   const color = PROJECT_COLORS[project.slug] ?? "#94a3b8";
   const stage = project.stage ?? "Unknown";

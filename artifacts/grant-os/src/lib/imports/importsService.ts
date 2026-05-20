@@ -21,6 +21,7 @@ import type {
   ExecuteImportOptions,
   ExecuteImportResult,
   FunderImportCandidate,
+  GrantImportCandidate,
   ImportErrorInsert,
   ImportPreview,
   ImportPreviewRow,
@@ -157,6 +158,17 @@ function missingGrantFields(existing: GrantRow, input: GrantInsert): GrantUpdate
   return updates;
 }
 
+function withTargetProject(
+  input: Omit<GrantInsert, "id" | "created_at" | "updated_at">,
+  targetProject: NonNullable<ExecuteImportOptions["targetProject"]>
+): Omit<GrantInsert, "id" | "created_at" | "updated_at"> {
+  return {
+    ...input,
+    related_project_id: input.related_project_id ?? targetProject.id,
+    related_project_slug: input.related_project_slug ?? targetProject.slug,
+  };
+}
+
 function missingFunderFields(existing: FunderRow, input: FunderInsert): FunderUpdate {
   const updates: FunderUpdate = {};
   (Object.keys(input) as Array<keyof FunderInsert>).forEach((key) => {
@@ -242,12 +254,16 @@ export async function executeImport(
 
   try {
     if (preview.entity === "grant") {
+      if (!options.targetProject) {
+        throw new Error("Select or create a target project before importing opportunities.");
+      }
+
       const createInputs = readyRows
         .map((row) => row.candidate)
-        .filter((candidate): candidate is Extract<NonNullable<typeof candidate>, { entity: "grant" }> =>
+        .filter((candidate): candidate is GrantImportCandidate =>
           Boolean(candidate && candidate.entity === "grant")
         )
-        .map((candidate) => candidate.input);
+        .map((candidate) => withTargetProject(candidate.input, options.targetProject!));
       createdCount = (await insertGrants(createInputs)).length;
     } else {
       const createInputs = readyRows
@@ -263,7 +279,11 @@ export async function executeImport(
       for (const row of preview.rows) {
         if (!row.candidate || !row.duplicate || row.duplicate.id.startsWith("file-row-")) continue;
         if (row.candidate.entity === "grant") {
-          const updates = missingGrantFields(row.duplicate.existing as GrantRow, row.candidate.input);
+          if (!options.targetProject) continue;
+          const updates = missingGrantFields(
+            row.duplicate.existing as GrantRow,
+            withTargetProject(row.candidate.input, options.targetProject)
+          );
           const updated = await updateGrantMissingFields(row.duplicate.id, updates);
           if (updated) updatedCount += 1;
         } else {
@@ -293,6 +313,7 @@ export async function executeImport(
         warningRows: preview.summary.warningRows,
         unknownColumns: preview.summary.unknownColumns,
         updateMissingFieldsOnly: options.updateMissingFieldsOnly,
+        targetProject: options.targetProject ?? null,
       } as Json,
     });
 
@@ -306,7 +327,15 @@ export async function executeImport(
       }))
     );
 
-    return { importRun, createdCount, updatedCount, skippedCount, errorCount: errors.length, errors };
+    return {
+      importRun,
+      createdCount,
+      updatedCount,
+      skippedCount,
+      errorCount: errors.length,
+      errors,
+      targetProject: options.targetProject ?? null,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Import failed.";
     errors.push({ rowIndex: null, message });
@@ -323,7 +352,7 @@ export async function executeImport(
         skipped_count: skippedCount,
         error_count: errors.length,
         created_by: options.createdBy,
-        summary: { message } as Json,
+        summary: { message, targetProject: options.targetProject ?? null } as Json,
       });
       await insertImportErrors([
         {
@@ -336,7 +365,15 @@ export async function executeImport(
     } catch {
       // If audit writes fail, return the original import error to the UI.
     }
-    return { importRun, createdCount, updatedCount, skippedCount, errorCount: errors.length, errors };
+    return {
+      importRun,
+      createdCount,
+      updatedCount,
+      skippedCount,
+      errorCount: errors.length,
+      errors,
+      targetProject: options.targetProject ?? null,
+    };
   }
 }
 

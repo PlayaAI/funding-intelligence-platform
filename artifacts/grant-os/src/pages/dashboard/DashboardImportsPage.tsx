@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import { AlertCircle, CheckCircle2, FileUp, History, Loader2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -23,10 +26,12 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useBuildImportPreview, useExecuteImport, useImportRuns } from "@/hooks/useImports";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useCreateProject, useProjects } from "@/hooks/useProjects";
 import type {
   ExecuteImportResult,
   ImportPreview,
   ImportPreviewRow,
+  ImportTargetProject,
   ImportType,
 } from "@/lib/imports/importTypes";
 
@@ -51,6 +56,30 @@ function statusLabel(status: ImportPreviewRow["status"]) {
   return "Error";
 }
 
+function isOpportunityImport(importType: ImportType) {
+  return importType.startsWith("instrumentl_opportunities_");
+}
+
+function toSlug(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function suggestedProjectName(fileName: string) {
+  const base = fileName.replace(/\.(csv|json)$/iu, "");
+  const cleaned = base
+    .replace(/^instrumentl-opportunities-/iu, "")
+    .replace(/-?(all|full|next-\d+-months)$/iu, "")
+    .replace(/[-_]+/g, " ")
+    .trim();
+  return cleaned && !/^\d+$/u.test(cleaned) ? cleaned : "";
+}
+
 function SummaryTile({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
@@ -60,7 +89,13 @@ function SummaryTile({ label, value }: { label: string; value: number }) {
   );
 }
 
-function PreviewTable({ preview }: { preview: ImportPreview }) {
+function PreviewTable({
+  preview,
+  targetProject,
+}: {
+  preview: ImportPreview;
+  targetProject: ImportTargetProject | null;
+}) {
   const visibleRows = preview.rows.slice(0, 50);
 
   return (
@@ -76,6 +111,7 @@ function PreviewTable({ preview }: { preview: ImportPreview }) {
               <TableHead>Status</TableHead>
               <TableHead>{preview.entity === "grant" ? "Grant" : "Funder"}</TableHead>
               <TableHead>{preview.entity === "grant" ? "Funder" : "EIN / Location"}</TableHead>
+              {preview.entity === "grant" && <TableHead>Target Project</TableHead>}
               <TableHead>Notes</TableHead>
             </TableRow>
           </TableHeader>
@@ -88,6 +124,9 @@ function PreviewTable({ preview }: { preview: ImportPreview }) {
                 </TableCell>
                 <TableCell className="font-medium text-slate-900">{row.displayName}</TableCell>
                 <TableCell className="text-slate-600">{row.secondary ?? "-"}</TableCell>
+                {preview.entity === "grant" && (
+                  <TableCell className="text-slate-600">{targetProject?.name ?? "Select target project"}</TableCell>
+                )}
                 <TableCell className="text-xs text-slate-600">
                   {[row.duplicate?.reason, ...row.issues.map((issue) => issue.message)]
                     .filter(Boolean)
@@ -97,7 +136,7 @@ function PreviewTable({ preview }: { preview: ImportPreview }) {
             ))}
             {visibleRows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-sm text-slate-500">
+                <TableCell colSpan={preview.entity === "grant" ? 6 : 5} className="py-6 text-center text-sm text-slate-500">
                   No rows to preview.
                 </TableCell>
               </TableRow>
@@ -122,14 +161,25 @@ export default function DashboardImportsPage() {
   const [result, setResult] = useState<ExecuteImportResult | null>(null);
   const [updateMissingFieldsOnly, setUpdateMissingFieldsOnly] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectSummary, setNewProjectSummary] = useState("");
 
   const previewMutation = useBuildImportPreview();
   const executeMutation = useExecuteImport();
   const runsQuery = useImportRuns();
+  const projectsQuery = useProjects();
+  const createProject = useCreateProject();
+
+  const requiresTargetProject = Boolean(preview && isOpportunityImport(preview.importType));
+  const selectedProject = (projectsQuery.data ?? []).find((project) => project.id === selectedProjectId) ?? null;
+  const targetProject: ImportTargetProject | null = selectedProject
+    ? { id: selectedProject.id, slug: selectedProject.slug, name: selectedProject.name }
+    : null;
 
   const canImportRows = useMemo(
-    () => Boolean(canWrite && preview && preview.summary.readyRows > 0),
-    [canWrite, preview]
+    () => Boolean(canWrite && preview && preview.summary.readyRows > 0 && (!requiresTargetProject || targetProject)),
+    [canWrite, preview, requiresTargetProject, targetProject]
   );
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -147,11 +197,45 @@ export default function DashboardImportsPage() {
         text,
       });
       setPreview(nextPreview);
+      const suggestion = suggestedProjectName(file.name);
+      if (isOpportunityImport(importType) && suggestion && !newProjectName) {
+        setNewProjectName(suggestion);
+      }
     } catch (err) {
       setParseError(err instanceof Error ? err.message : "Failed to parse import file.");
     } finally {
       event.target.value = "";
     }
+  }
+
+  async function handleCreateProject() {
+    const name = newProjectName.trim();
+    const slug = toSlug(name);
+    if (!name || !slug) {
+      setParseError("Enter a project name before creating a target project.");
+      return;
+    }
+
+    setParseError(null);
+    const project = await createProject.mutateAsync({
+      name,
+      slug,
+      summary: newProjectSummary.trim() || null,
+      category: null,
+      stage: null,
+      problem_statement: null,
+      solution: null,
+      target_audience: null,
+      geography: null,
+      technology: null,
+      impact: null,
+      grant_relevance: null,
+      reusable_grant_language: null,
+      public_visibility: false,
+      featured: false,
+      archived_at: null,
+    });
+    setSelectedProjectId(project.id);
   }
 
   async function handleImport() {
@@ -161,6 +245,7 @@ export default function DashboardImportsPage() {
       options: {
         updateMissingFieldsOnly,
         createdBy: user?.id ?? null,
+        targetProject: requiresTargetProject ? targetProject : null,
       },
     });
     setResult(nextResult);
@@ -257,6 +342,67 @@ export default function DashboardImportsPage() {
                 </div>
               )}
 
+              {requiresTargetProject && (
+                <div className="space-y-3 rounded-md border border-slate-200 bg-white p-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Target Project</div>
+                    <p className="text-xs text-slate-500">Opportunity imports create grants linked to one project.</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Select existing project</Label>
+                      <Select value={selectedProjectId || "none"} onValueChange={(value) => setSelectedProjectId(value === "none" ? "" : value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose a project" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Choose a project</SelectItem>
+                          {(projectsQuery.data ?? []).map((project) => (
+                            <SelectItem key={project.id} value={project.id}>
+                              {project.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="new-project-name" className="text-xs font-medium">Create new project</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="new-project-name"
+                          value={newProjectName}
+                          onChange={(event) => setNewProjectName(event.target.value)}
+                          placeholder="Project name"
+                          disabled={!canWrite || createProject.isPending}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void handleCreateProject()}
+                          disabled={!canWrite || createProject.isPending || !newProjectName.trim()}
+                        >
+                          {createProject.isPending ? <Loader2 size={14} className="animate-spin" /> : "Create"}
+                        </Button>
+                      </div>
+                      <div className="text-[11px] text-slate-500">Slug: {toSlug(newProjectName) || "project-slug"}</div>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-project-summary" className="text-xs font-medium">New project summary</Label>
+                    <Textarea
+                      id="new-project-summary"
+                      value={newProjectSummary}
+                      onChange={(event) => setNewProjectSummary(event.target.value)}
+                      placeholder="Optional description for the new project"
+                      disabled={!canWrite || createProject.isPending}
+                    />
+                  </div>
+                  {!targetProject && (
+                    <div className="text-xs font-medium text-amber-700">Select or create a target project before importing opportunities.</div>
+                  )}
+                </div>
+              )}
+
               <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 md:flex-row md:items-center md:justify-between">
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <Checkbox
@@ -285,7 +431,7 @@ export default function DashboardImportsPage() {
         </CardContent>
       </Card>
 
-      {preview && <PreviewTable preview={preview} />}
+      {preview && <PreviewTable preview={preview} targetProject={targetProject} />}
 
       {result && (
         <Card className="border-slate-200 shadow-sm">
@@ -302,6 +448,17 @@ export default function DashboardImportsPage() {
               <SummaryTile label="Skipped" value={result.skippedCount} />
               <SummaryTile label="Errors" value={result.errorCount} />
             </div>
+            {result.targetProject && (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                <span>Imported grants target {result.targetProject.name}.</span>
+                <Link href={`/dashboard/grants?project=${result.targetProject.slug}`}>
+                  <Button type="button" size="sm" variant="outline" className="h-8 text-xs">View imported grants</Button>
+                </Link>
+                <Link href={`/dashboard/projects/${result.targetProject.slug}`}>
+                  <Button type="button" size="sm" variant="outline" className="h-8 text-xs">View project</Button>
+                </Link>
+              </div>
+            )}
             {result.errors.length > 0 && (
               <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {result.errors.slice(0, 5).map((error, index) => (
