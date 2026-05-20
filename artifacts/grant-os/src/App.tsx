@@ -38,6 +38,10 @@ import DashboardApplicationDetailPage from "@/pages/dashboard/DashboardApplicati
 import DashboardTasksPage from "@/pages/dashboard/DashboardTasksPage";
 import DashboardProofItemsPage from "@/pages/dashboard/DashboardProofItemsPage";
 import DashboardImportsPage from "@/pages/dashboard/DashboardImportsPage";
+import DashboardTeamPage from "@/pages/dashboard/DashboardTeamPage";
+import DashboardCustomFieldsPage from "@/pages/dashboard/DashboardCustomFieldsPage";
+import DashboardCalendarPage from "@/pages/dashboard/DashboardCalendarPage";
+import DashboardFinancialsPage from "@/pages/dashboard/DashboardFinancialsPage";
 import DashboardDocumentsPage from "@/pages/dashboard/DashboardDocumentsPage";
 import DashboardReportsPage from "@/pages/dashboard/DashboardReportsPage";
 import DashboardSettingsPage from "@/pages/dashboard/DashboardSettingsPage";
@@ -105,6 +109,10 @@ const ProtectedDashboardApplications = makeProtected(DashboardApplicationsPage);
 const ProtectedDashboardTasks = makeProtected(DashboardTasksPage);
 const ProtectedDashboardProofItems = makeProtected(DashboardProofItemsPage);
 const ProtectedDashboardImports = makeProtected(DashboardImportsPage);
+const ProtectedDashboardTeam = makeProtected(DashboardTeamPage);
+const ProtectedDashboardCustomFields = makeProtected(DashboardCustomFieldsPage);
+const ProtectedDashboardCalendar = makeProtected(DashboardCalendarPage);
+const ProtectedDashboardFinancials = makeProtected(DashboardFinancialsPage);
 const ProtectedDashboardDocuments = makeProtected(DashboardDocumentsPage);
 const ProtectedDashboardReports = makeProtected(DashboardReportsPage);
 const ProtectedDashboardSettings = makeProtected(DashboardSettingsPage);
@@ -143,6 +151,10 @@ function Router() {
         <Route path="/dashboard/tasks" component={ProtectedDashboardTasks} />
         <Route path="/dashboard/proof-items" component={ProtectedDashboardProofItems} />
         <Route path="/dashboard/imports" component={ProtectedDashboardImports} />
+        <Route path="/dashboard/team" component={ProtectedDashboardTeam} />
+        <Route path="/dashboard/custom-fields" component={ProtectedDashboardCustomFields} />
+        <Route path="/dashboard/calendar" component={ProtectedDashboardCalendar} />
+        <Route path="/dashboard/financials" component={ProtectedDashboardFinancials} />
         <Route path="/dashboard/documents" component={ProtectedDashboardDocuments} />
         <Route path="/dashboard/reports" component={ProtectedDashboardReports} />
         <Route path="/dashboard/settings" component={ProtectedDashboardSettings} />

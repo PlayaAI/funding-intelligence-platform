@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import type { ProfileRow } from "@/types/database";
+
+export type { ProfileRow };
 import { authDebug } from "@/lib/authDebug";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,4 +53,15 @@ export async function getProfile(userId: string): Promise<ProfileRow | null> {
 
   authDebug("profile fetch end", { found: Boolean(data) });
   return data as ProfileRow | null;
+}
+
+
+export async function listProfiles(): Promise<ProfileRow[]> {
+  const { data, error } = await db
+    .from("profiles")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) throw new Error(profileFetchErrorMessage(error));
+  return (data ?? []) as ProfileRow[];
 }

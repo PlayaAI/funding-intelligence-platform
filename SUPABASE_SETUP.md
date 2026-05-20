@@ -27,6 +27,7 @@ Open your Supabase project, go to **SQL Editor**, and run each file in order:
 5. `005_create_applications_tasks.sql`
 6. **`006_auth_roles_rls.sql`** (V0.6 — auth, profiles, secure RLS)
 7. **`007_create_imports.sql`** (V0.7 — import runs and import errors)
+8. **`008_create_custom_fields.sql`** (V0.7.2 — custom field definitions)
 
 ### Using Supabase CLI (optional)
 

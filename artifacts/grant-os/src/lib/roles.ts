@@ -12,7 +12,8 @@ export type WritableTable =
   | "applications"
   | "application_questions"
   | "application_required_documents"
-  | "tasks";
+  | "tasks"
+  | "custom_fields";
 
 const CONTRIBUTOR_CREATABLE: WritableTable[] = [
   "proof_items",

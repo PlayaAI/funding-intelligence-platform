@@ -133,6 +133,52 @@ export type ProjectInsert = {
 export type ProjectUpdate = Partial<ProjectInsert>;
 
 // ============================================================
+// Custom Fields
+// ============================================================
+
+export type CustomFieldType =
+  | "short_text"
+  | "long_text"
+  | "amount"
+  | "date"
+  | "single_select"
+  | "multi_select"
+  | "number"
+  | "url";
+
+export type CustomFieldAppliesTo =
+  | "opportunities"
+  | "funders"
+  | "projects"
+  | "applications";
+
+export interface CustomFieldRow {
+  id: string;
+  name: string;
+  field_type: CustomFieldType;
+  applies_to: CustomFieldAppliesTo;
+  options: Json | null;
+  created_by: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CustomFieldInsert = {
+  id?: string;
+  name: string;
+  field_type: CustomFieldType;
+  applies_to: CustomFieldAppliesTo;
+  options?: Json | null;
+  created_by?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type CustomFieldUpdate = Partial<CustomFieldInsert>;
+
+// ============================================================
 // Proof Items
 // ============================================================
 
@@ -607,6 +653,19 @@ export interface Database {
         Insert: never;
         Update: ProfileUpdate;
         Relationships: [];
+      };
+      custom_fields: {
+        Row: CustomFieldRow;
+        Insert: CustomFieldInsert;
+        Update: CustomFieldUpdate;
+        Relationships: [
+          {
+            foreignKeyName: "custom_fields_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       projects: {
         Row: ProjectRow;

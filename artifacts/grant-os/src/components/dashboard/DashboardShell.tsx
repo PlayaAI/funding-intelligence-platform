@@ -3,6 +3,14 @@ import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useProjects } from "@/hooks/useProjects";
 import { PROJECT_COLORS } from "@/data/grants";
@@ -22,8 +30,13 @@ import {
   Shield,
   Files,
   Upload,
+  CalendarDays,
   BarChart2,
   Settings,
+  UserCog,
+  SlidersHorizontal,
+  CircleDollarSign,
+  Plug,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -117,6 +130,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     { label: "Tasks", href: "/dashboard/tasks", icon: <CheckSquare size={16} />, badge: openTasksCount },
     { label: "Proof Library", href: "/dashboard/proof-items", icon: <Shield size={16} /> },
     { label: "Imports", href: "/dashboard/imports", icon: <Upload size={16} /> },
+    { label: "Calendar", href: "/dashboard/calendar", icon: <CalendarDays size={16} /> },
     { label: "Documents", href: "/dashboard/documents", icon: <Files size={16} /> },
     { label: "Reports", href: "/dashboard/reports", icon: <BarChart2 size={16} /> },
     { label: "Settings", href: "/dashboard/settings", icon: <Settings size={16} /> },
@@ -227,19 +241,45 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       )}
 
       <div className="border-t border-slate-200 p-2 space-y-px flex-shrink-0">
-        {!collapsed && user && (
-          <div className="px-2 py-1.5 mb-1">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center flex-shrink-0">
-                {user.initials}
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-slate-800 truncate leading-tight">{user.name}</div>
-                <div className="text-[10px] text-slate-500 truncate leading-tight">{user.email}</div>
-                <div className="text-[10px] text-slate-400 truncate leading-tight">{user.role}</div>
-              </div>
-            </div>
-          </div>
+        {user && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "w-full px-2 py-1.5 mb-1 rounded-lg hover:bg-slate-100 transition-colors text-left",
+                  collapsed && "flex justify-center"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                    {user.initials}
+                  </div>
+                  {!collapsed && (
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-800 truncate leading-tight">{user.name}</div>
+                      <div className="text-[10px] text-slate-500 truncate leading-tight">{user.email}</div>
+                      <div className="text-[10px] text-slate-400 truncate leading-tight">{user.role}</div>
+                    </div>
+                  )}
+                </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="end" className="w-56">
+              <DropdownMenuLabel>Workspace</DropdownMenuLabel>
+              <Link href="/dashboard/team"><DropdownMenuItem><UserCog size={14} />Manage Team</DropdownMenuItem></Link>
+              <Link href="/dashboard/settings"><DropdownMenuItem><Building2 size={14} />Organization Profile</DropdownMenuItem></Link>
+              <Link href="/dashboard/settings"><DropdownMenuItem><Settings size={14} />Settings</DropdownMenuItem></Link>
+              <Link href="/dashboard/custom-fields"><DropdownMenuItem><SlidersHorizontal size={14} />Custom Fields</DropdownMenuItem></Link>
+              <Link href="/dashboard/financials"><DropdownMenuItem><CircleDollarSign size={14} />Financials</DropdownMenuItem></Link>
+              <Link href="/dashboard/settings"><DropdownMenuItem><Plug size={14} />Integrations</DropdownMenuItem></Link>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void logout()} className="text-red-600 focus:text-red-600">
+                <LogOut size={14} />
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         <Link href="/">
           <div
@@ -252,17 +292,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             {!collapsed && <span>Public site</span>}
           </div>
         </Link>
-        <button
-          type="button"
-          onClick={() => void logout()}
-          className={cn(
-            "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-500 hover:bg-red-50 hover:text-red-600 cursor-pointer transition-colors",
-            collapsed && "justify-center"
-          )}
-        >
-          <LogOut size={13} className="flex-shrink-0" />
-          {!collapsed && <span>Log out</span>}
-        </button>
         <button
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
