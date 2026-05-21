@@ -122,16 +122,17 @@ export default function DashboardSettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                OpenClaw, Codex, or another operator can generate JSON outside the app, then paste it into Agent Import. Grant OS will store notes, reports, selected task suggestions, exports, and activity logs. No API keys are stored here.
+                OpenClaw, Codex, or another operator can analyze exported Grant OS JSON outside the app, including documents with extracted text, then paste notes, reports, selected task suggestions, or document notes into Agent Import. No API keys are stored here.
               </div>
               <pre className="rounded-md bg-slate-950 p-3 text-xs text-slate-100 overflow-auto">{`{
-  "type": "agent_report",
-  "source": "codex",
-  "report_type": "weekly_readiness",
-  "title": "Weekly Grant Readiness Report",
-  "content": "Top priorities this week...",
-  "related_project_id": "uuid",
-  "structured_data": {}
+  "type": "document_note",
+  "source": "openclaw",
+  "document_id": "uuid",
+  "title": "Document Review Notes",
+  "content": "This guideline requires a 500-word impact statement.",
+  "structured_data": {
+    "requirements": ["500-word impact statement"]
+  }
 }`}</pre>
             </CardContent>
           </Card>

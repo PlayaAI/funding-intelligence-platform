@@ -43,6 +43,7 @@ import DashboardCustomFieldsPage from "@/pages/dashboard/DashboardCustomFieldsPa
 import DashboardCalendarPage from "@/pages/dashboard/DashboardCalendarPage";
 import DashboardFinancialsPage from "@/pages/dashboard/DashboardFinancialsPage";
 import DashboardDocumentsPage from "@/pages/dashboard/DashboardDocumentsPage";
+import DashboardDocumentDetailPage from "@/pages/dashboard/DashboardDocumentDetailPage";
 import DashboardReportsPage from "@/pages/dashboard/DashboardReportsPage";
 import DashboardSettingsPage from "@/pages/dashboard/DashboardSettingsPage";
 import DashboardAgentReportsPage from "@/pages/dashboard/DashboardAgentReportsPage";
@@ -117,6 +118,7 @@ const ProtectedDashboardCustomFields = makeProtected(DashboardCustomFieldsPage);
 const ProtectedDashboardCalendar = makeProtected(DashboardCalendarPage);
 const ProtectedDashboardFinancials = makeProtected(DashboardFinancialsPage);
 const ProtectedDashboardDocuments = makeProtected(DashboardDocumentsPage);
+const ProtectedDashboardDocumentDetail = makeProtected(DashboardDocumentDetailPage);
 const ProtectedDashboardReports = makeProtected(DashboardReportsPage);
 const ProtectedDashboardSettings = makeProtected(DashboardSettingsPage);
 const ProtectedDashboardAgentReports = makeProtected(DashboardAgentReportsPage);
@@ -161,6 +163,7 @@ function Router() {
         <Route path="/dashboard/custom-fields" component={ProtectedDashboardCustomFields} />
         <Route path="/dashboard/calendar" component={ProtectedDashboardCalendar} />
         <Route path="/dashboard/financials" component={ProtectedDashboardFinancials} />
+        <Route path="/dashboard/documents/:id" component={ProtectedDashboardDocumentDetail} />
         <Route path="/dashboard/documents" component={ProtectedDashboardDocuments} />
         <Route path="/dashboard/reports" component={ProtectedDashboardReports} />
         <Route path="/dashboard/agent-reports" component={ProtectedDashboardAgentReports} />

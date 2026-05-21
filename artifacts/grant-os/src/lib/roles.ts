@@ -14,6 +14,7 @@ export type WritableTable =
   | "application_required_documents"
   | "tasks"
   | "custom_fields"
+  | "documents"
   | "agent_notes"
   | "agent_reports"
   | "agent_activity_logs";
@@ -26,6 +27,7 @@ const CONTRIBUTOR_CREATABLE: WritableTable[] = [
   "agent_notes",
   "agent_reports",
   "agent_activity_logs",
+  "documents",
 ];
 
 const CONTRIBUTOR_UPDATABLE: WritableTable[] = [

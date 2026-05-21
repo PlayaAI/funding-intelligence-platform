@@ -323,6 +323,78 @@ export type AgentReportInsert = {
 
 export type AgentReportUpdate = Partial<AgentReportInsert>;
 
+
+// ============================================================
+// Documents
+// ============================================================
+
+export type DocumentDbType =
+  | "grant_guidelines"
+  | "application_form"
+  | "budget_template"
+  | "letter_of_support"
+  | "proof_document"
+  | "funder_document"
+  | "report"
+  | "general";
+
+export type DocumentExtractionStatus =
+  | "not_started"
+  | "pending"
+  | "completed"
+  | "failed"
+  | "unsupported";
+
+export interface DocumentRow {
+  id: string;
+  title: string;
+  document_type: DocumentDbType;
+  file_name: string | null;
+  file_path: string | null;
+  file_url: string | null;
+  source_url: string | null;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  extracted_text: string | null;
+  extraction_status: DocumentExtractionStatus;
+  extraction_error: string | null;
+  metadata: Json | null;
+  related_project_id: string | null;
+  related_grant_id: string | null;
+  related_funder_id: string | null;
+  related_application_id: string | null;
+  uploaded_by: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DocumentInsert = {
+  id?: string;
+  title: string;
+  document_type?: DocumentDbType;
+  file_name?: string | null;
+  file_path?: string | null;
+  file_url?: string | null;
+  source_url?: string | null;
+  mime_type?: string | null;
+  file_size_bytes?: number | null;
+  extracted_text?: string | null;
+  extraction_status?: DocumentExtractionStatus;
+  extraction_error?: string | null;
+  metadata?: Json | null;
+  related_project_id?: string | null;
+  related_grant_id?: string | null;
+  related_funder_id?: string | null;
+  related_application_id?: string | null;
+  uploaded_by?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DocumentUpdate = Partial<DocumentInsert>;
+
 // ============================================================
 // Proof Items
 // ============================================================
@@ -811,6 +883,12 @@ export interface Database {
             referencedColumns: ["id"];
           },
         ];
+      };
+      documents: {
+        Row: DocumentRow;
+        Insert: DocumentInsert;
+        Update: DocumentUpdate;
+        Relationships: [];
       };
       agent_notes: {
         Row: AgentNoteRow;

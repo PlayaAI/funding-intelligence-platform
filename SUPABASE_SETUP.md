@@ -120,3 +120,19 @@ There is **no in-app signup or user admin UI** in V0.6.
 ## 8. CRUD capabilities by role
 
 See `artifacts/grant-os/src/lib/roles.ts` for the UI permission matrix. Database enforcement is via RLS in `006_auth_roles_rls.sql`.
+
+
+## V0.9 Documents Storage Bucket
+
+Create a private Supabase Storage bucket for uploaded grant documents.
+
+1. Open Supabase Dashboard -> Storage -> New bucket.
+2. Bucket name: `grant-documents`.
+3. Keep the bucket private. Do not enable public access.
+4. Add storage policies for `storage.objects` scoped to `bucket_id = 'grant-documents'`:
+   - Authenticated users can read/select objects.
+   - Admin, Grant Lead, and Contributor can upload/insert objects.
+   - Admin and Grant Lead can update/delete objects.
+5. Do not add anonymous storage policies.
+
+Suggested policy predicates should use the existing `public.can_write()` and `public.can_contribute()` helpers from migration 006. If Supabase blocks helper use in the Storage UI, create equivalent SQL policies manually in the SQL editor.

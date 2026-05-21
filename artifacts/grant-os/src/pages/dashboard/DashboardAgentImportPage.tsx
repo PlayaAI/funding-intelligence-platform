@@ -17,6 +17,7 @@ import type { AgentNoteType, AgentReportType, AgentSource, Json, TaskDbPriority 
 type ParsedPayload =
   | { type: "agent_note"; source?: AgentSource; note_type: AgentNoteType; title: string; content: string; related_grant_id?: string; related_project_id?: string; related_application_id?: string; structured_data?: Json }
   | { type: "agent_report"; source?: AgentSource; report_type: AgentReportType; title: string; content: string; related_grant_id?: string; related_project_id?: string; related_application_id?: string; structured_data?: Json }
+  | { type: "document_note"; source?: AgentSource; document_id: string; title: string; content: string; structured_data?: Json }
   | { type: "task_suggestions"; source?: AgentSource; related_grant_id?: string; related_project_id?: string; related_application_id?: string; tasks: Array<{ title: string; description?: string; priority?: TaskDbPriority; due_date?: string }> };
 
 const EXAMPLE = `{
@@ -41,12 +42,16 @@ function validatePayload(value: unknown): ParsedPayload {
     if (!obj.title || !obj.content || !obj.report_type) throw new Error("agent_report requires title, content, and report_type.");
     return obj as ParsedPayload;
   }
+  if (obj.type === "document_note") {
+    if (!obj.document_id || !obj.title || !obj.content) throw new Error("document_note requires document_id, title, and content.");
+    return obj as ParsedPayload;
+  }
   if (obj.type === "task_suggestions") {
     if (!Array.isArray(obj.tasks)) throw new Error("task_suggestions requires a tasks array.");
     if (obj.tasks.some((t: any) => !t?.title)) throw new Error("Every suggested task needs a title.");
     return obj as ParsedPayload;
   }
-  throw new Error("Supported types are agent_note, agent_report, and task_suggestions.");
+  throw new Error("Supported types are agent_note, agent_report, document_note, and task_suggestions.");
 }
 
 export default function DashboardAgentImportPage() {
@@ -116,6 +121,22 @@ export default function DashboardAgentImportPage() {
           created_by: user?.id ?? null,
         });
         await createActivity.mutateAsync({ actor_source: parsed.source ?? "external_agent", action_type: "import_completed", title: `Imported report: ${parsed.title}`, related_project_id: parsed.related_project_id ?? null, related_grant_id: parsed.related_grant_id ?? null, related_application_id: parsed.related_application_id ?? null, created_by: user?.id ?? null });
+      }
+      if (parsed.type === "document_note") {
+        if (!canImportNotes) throw new Error("Your role cannot import document notes.");
+        const structured = {
+          ...(parsed.structured_data && typeof parsed.structured_data === "object" && !Array.isArray(parsed.structured_data) ? parsed.structured_data : {}),
+          document_id: parsed.document_id,
+        } as Json;
+        await createNote.mutateAsync({
+          source: parsed.source ?? "external_agent",
+          note_type: "general",
+          title: parsed.title,
+          content: parsed.content,
+          structured_data: structured,
+          created_by: user?.id ?? null,
+        });
+        await createActivity.mutateAsync({ actor_source: parsed.source ?? "external_agent", action_type: "import_completed", title: `Imported document note: ${parsed.title}`, metadata: { document_id: parsed.document_id }, created_by: user?.id ?? null });
       }
       if (parsed.type === "task_suggestions") {
         if (!canImportTasks) throw new Error("Only Admin and Grant Lead can bulk-create suggested tasks.");
