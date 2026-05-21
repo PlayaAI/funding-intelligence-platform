@@ -45,6 +45,9 @@ import DashboardFinancialsPage from "@/pages/dashboard/DashboardFinancialsPage";
 import DashboardDocumentsPage from "@/pages/dashboard/DashboardDocumentsPage";
 import DashboardReportsPage from "@/pages/dashboard/DashboardReportsPage";
 import DashboardSettingsPage from "@/pages/dashboard/DashboardSettingsPage";
+import DashboardAgentReportsPage from "@/pages/dashboard/DashboardAgentReportsPage";
+import DashboardAgentActivityPage from "@/pages/dashboard/DashboardAgentActivityPage";
+import DashboardAgentImportPage from "@/pages/dashboard/DashboardAgentImportPage";
 
 // Fix #4: React Query safe defaults
 const queryClient = new QueryClient({
@@ -116,6 +119,9 @@ const ProtectedDashboardFinancials = makeProtected(DashboardFinancialsPage);
 const ProtectedDashboardDocuments = makeProtected(DashboardDocumentsPage);
 const ProtectedDashboardReports = makeProtected(DashboardReportsPage);
 const ProtectedDashboardSettings = makeProtected(DashboardSettingsPage);
+const ProtectedDashboardAgentReports = makeProtected(DashboardAgentReportsPage);
+const ProtectedDashboardAgentActivity = makeProtected(DashboardAgentActivityPage);
+const ProtectedDashboardAgentImport = makeProtected(DashboardAgentImportPage);
 const ProtectedNotFound = makeProtected(NotFound);
 
 function Router() {
@@ -157,6 +163,9 @@ function Router() {
         <Route path="/dashboard/financials" component={ProtectedDashboardFinancials} />
         <Route path="/dashboard/documents" component={ProtectedDashboardDocuments} />
         <Route path="/dashboard/reports" component={ProtectedDashboardReports} />
+        <Route path="/dashboard/agent-reports" component={ProtectedDashboardAgentReports} />
+        <Route path="/dashboard/agent-activity" component={ProtectedDashboardAgentActivity} />
+        <Route path="/dashboard/agent-import" component={ProtectedDashboardAgentImport} />
         <Route path="/dashboard/settings" component={ProtectedDashboardSettings} />
         <Route component={ProtectedNotFound} />
       </Switch>

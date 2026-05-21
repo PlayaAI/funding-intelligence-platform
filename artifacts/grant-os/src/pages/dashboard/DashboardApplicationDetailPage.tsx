@@ -11,17 +11,21 @@ import ApplicationFormDialog, { type ApplicationFormValues } from "@/components/
 import ApplicationQuestionFormDialog, { type ApplicationQuestionFormValues } from "@/components/dashboard/ApplicationQuestionFormDialog";
 import ApplicationRequiredDocumentFormDialog, { type ApplicationRequiredDocumentFormValues } from "@/components/dashboard/ApplicationRequiredDocumentFormDialog";
 import TaskFormDialog, { type TaskFormValues } from "@/components/dashboard/TaskFormDialog";
+import AgentNotesPanel from "@/components/dashboard/AgentNotesPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
+import { exportApplicationPackage } from "@/lib/exports/exportPackages";
+import { useCreateAgentActivity } from "@/hooks/useAgentActivity";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   ArrowLeft, Edit, Archive, Trash2, Plus, FileText, CheckSquare, ClipboardList,
-  Loader2, AlertCircle, ExternalLink, ChevronsRight, Sparkles,
+  Loader2, AlertCircle, ExternalLink, ChevronsRight, Sparkles, Download,
 } from "lucide-react";
 import type { ApplicationDbStatus, ApplicationQuestionDbStatus, ApplicationRequiredDocumentDbStatus, TaskDbStatus, TaskDbPriority } from "@/types/database";
 
-const TABS = ["Questions", "Required Docs", "Tasks", "Proof Package"] as const;
+const TABS = ["Questions", "Required Docs", "Tasks", "Agent Notes", "Proof Package"] as const;
 type Tab = (typeof TABS)[number];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -85,8 +89,20 @@ export default function DashboardApplicationDetailPage() {
   const deleteDoc = useDeleteApplicationRequiredDocument();
   const createTask = useCreateTask();
   const { canUpdateTable, canCreateTable, canDeleteRecords, canWrite } = usePermissions();
+  const { user } = useAuth();
+  const createActivity = useCreateAgentActivity();
 
   const handleAI = () => { toast({ title: "AI coming soon", description: "AI workflow will be connected in a later phase." }); };
+
+  const handleExportApplication = async () => {
+    try {
+      await exportApplicationPackage(app!.id, app!.title);
+      await createActivity.mutateAsync({ actor_source: "human", action_type: "export_created", title: `Exported application package: ${app!.title}`, related_application_id: app!.id, related_project_id: app!.project_id ?? null, related_grant_id: app!.grant_id ?? null, created_by: user?.id ?? null });
+      toast({ title: "Application package exported", description: "JSON download created." });
+    } catch (e) {
+      toast({ title: "Export failed", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
 
   if (isLoading) {
     return <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" /> Loading application…</div>;
@@ -272,6 +288,9 @@ export default function DashboardApplicationDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleExportApplication}>
+            <Download size={12} /> Export JSON
+          </Button>
           {canUpdateTable("applications") && (
             <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
               <Edit size={12} /> Edit
@@ -457,6 +476,10 @@ export default function DashboardApplicationDetailPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {tab === "Agent Notes" && (
+        <AgentNotesPanel relatedApplicationId={app.id} relatedGrantId={app.grant_id ?? undefined} relatedProjectId={app.project_id ?? undefined} />
       )}
 
       {/* Proof Package tab — placeholder */}

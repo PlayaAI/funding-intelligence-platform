@@ -37,6 +37,7 @@ import {
   SlidersHorizontal,
   CircleDollarSign,
   Plug,
+  Bot,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -133,6 +134,9 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     { label: "Calendar", href: "/dashboard/calendar", icon: <CalendarDays size={16} /> },
     { label: "Documents", href: "/dashboard/documents", icon: <Files size={16} /> },
     { label: "Reports", href: "/dashboard/reports", icon: <BarChart2 size={16} /> },
+    { label: "Agent Reports", href: "/dashboard/agent-reports", icon: <Bot size={16} /> },
+    { label: "Agent Import", href: "/dashboard/agent-import", icon: <Plug size={16} /> },
+    { label: "Agent Activity", href: "/dashboard/agent-activity", icon: <ListChecks size={16} /> },
     { label: "Settings", href: "/dashboard/settings", icon: <Settings size={16} /> },
   ];
 

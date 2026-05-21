@@ -179,6 +179,151 @@ export type CustomFieldInsert = {
 export type CustomFieldUpdate = Partial<CustomFieldInsert>;
 
 // ============================================================
+// Agent Layer
+// ============================================================
+
+export type AgentSource =
+  | "human"
+  | "openclaw"
+  | "codex"
+  | "import"
+  | "external_agent";
+
+export type AgentNoteType =
+  | "summary"
+  | "fit_analysis"
+  | "risk"
+  | "next_steps"
+  | "scraped_data"
+  | "readiness_report"
+  | "recommendation"
+  | "general";
+
+export type AgentReportType =
+  | "weekly_readiness"
+  | "grant_readiness"
+  | "application_review"
+  | "funder_summary"
+  | "import_review"
+  | "general";
+
+export type AgentActivityActionType =
+  | "import_completed"
+  | "note_created"
+  | "report_generated"
+  | "status_updated"
+  | "task_created"
+  | "data_reviewed"
+  | "export_created"
+  | "manual_entry";
+
+export type AgentActivityStatus = "completed" | "pending" | "failed";
+
+export interface AgentNoteRow {
+  id: string;
+  source: AgentSource;
+  note_type: AgentNoteType;
+  title: string;
+  content: string;
+  structured_data: Json | null;
+  related_project_id: string | null;
+  related_grant_id: string | null;
+  related_funder_id: string | null;
+  related_application_id: string | null;
+  related_task_id: string | null;
+  created_by: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type AgentNoteInsert = {
+  id?: string;
+  source?: AgentSource;
+  note_type: AgentNoteType;
+  title: string;
+  content: string;
+  structured_data?: Json | null;
+  related_project_id?: string | null;
+  related_grant_id?: string | null;
+  related_funder_id?: string | null;
+  related_application_id?: string | null;
+  related_task_id?: string | null;
+  created_by?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type AgentNoteUpdate = Partial<AgentNoteInsert>;
+
+export interface AgentActivityLogRow {
+  id: string;
+  actor_source: AgentSource;
+  action_type: AgentActivityActionType;
+  title: string;
+  description: string | null;
+  status: AgentActivityStatus;
+  related_project_id: string | null;
+  related_grant_id: string | null;
+  related_application_id: string | null;
+  metadata: Json | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export type AgentActivityLogInsert = {
+  id?: string;
+  actor_source: AgentSource;
+  action_type: AgentActivityActionType;
+  title: string;
+  description?: string | null;
+  status?: AgentActivityStatus;
+  related_project_id?: string | null;
+  related_grant_id?: string | null;
+  related_application_id?: string | null;
+  metadata?: Json | null;
+  created_by?: string | null;
+  created_at?: string;
+};
+
+export type AgentActivityLogUpdate = Partial<AgentActivityLogInsert>;
+
+export interface AgentReportRow {
+  id: string;
+  report_type: AgentReportType;
+  title: string;
+  content: string;
+  structured_data: Json | null;
+  related_project_id: string | null;
+  related_grant_id: string | null;
+  related_application_id: string | null;
+  source: AgentSource;
+  created_by: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type AgentReportInsert = {
+  id?: string;
+  report_type: AgentReportType;
+  title: string;
+  content: string;
+  structured_data?: Json | null;
+  related_project_id?: string | null;
+  related_grant_id?: string | null;
+  related_application_id?: string | null;
+  source?: AgentSource;
+  created_by?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type AgentReportUpdate = Partial<AgentReportInsert>;
+
+// ============================================================
 // Proof Items
 // ============================================================
 
@@ -666,6 +811,24 @@ export interface Database {
             referencedColumns: ["id"];
           },
         ];
+      };
+      agent_notes: {
+        Row: AgentNoteRow;
+        Insert: AgentNoteInsert;
+        Update: AgentNoteUpdate;
+        Relationships: [];
+      };
+      agent_activity_logs: {
+        Row: AgentActivityLogRow;
+        Insert: AgentActivityLogInsert;
+        Update: AgentActivityLogUpdate;
+        Relationships: [];
+      };
+      agent_reports: {
+        Row: AgentReportRow;
+        Insert: AgentReportInsert;
+        Update: AgentReportUpdate;
+        Relationships: [];
       };
       projects: {
         Row: ProjectRow;

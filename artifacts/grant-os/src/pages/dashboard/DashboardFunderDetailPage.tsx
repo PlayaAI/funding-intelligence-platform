@@ -13,9 +13,13 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
 import FunderFormDialog, { type FunderFormValues } from "@/components/dashboard/FunderFormDialog";
+import AgentNotesPanel from "@/components/dashboard/AgentNotesPanel";
 import { funderFormValuesToInsert } from "@/lib/funderFormUtils";
 import { toast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
+import { exportFunderPackage } from "@/lib/exports/exportPackages";
+import { useCreateAgentActivity } from "@/hooks/useAgentActivity";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +44,7 @@ import {
   Archive,
   Trash2,
   Loader2,
+  Download,
 } from "lucide-react";
 
 function fmt(n: number) {
@@ -60,6 +65,8 @@ export default function DashboardFunderDetailPage() {
   const archiveFunder = useArchiveFunder();
   const deleteFunder = useDeleteFunder();
   const { canWriteTable, canDeleteRecords } = usePermissions();
+  const { user } = useAuth();
+  const createActivity = useCreateAgentActivity();
 
   const relatedGrants = useMemo(() => {
     if (!funder) return [];
@@ -69,6 +76,16 @@ export default function DashboardFunderDetailPage() {
 
   const handleAI = (action: string) =>
     toast({ title: action, description: "AI workflow will be connected in a later phase." });
+
+  const handleExportFunder = async () => {
+    try {
+      await exportFunderPackage(funderRow!.id, funderRow!.name);
+      await createActivity.mutateAsync({ actor_source: "human", action_type: "export_created", title: `Exported funder package: ${funderRow!.name}`, metadata: { related_funder_id: funderRow!.id }, created_by: user?.id ?? null });
+      toast({ title: "Funder package exported", description: "JSON download created." });
+    } catch (e) {
+      toast({ title: "Export failed", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -195,6 +212,10 @@ export default function DashboardFunderDetailPage() {
           <Sparkles size={12} />
           Best Project Angle
         </Button>
+        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportFunder}>
+          <Download size={12} />
+          Export JSON
+        </Button>
         {funder.website && (
           <a href={funder.website} target="_blank" rel="noopener noreferrer">
             <Button size="sm" variant="outline" className="gap-1.5 text-xs">
@@ -235,6 +256,7 @@ export default function DashboardFunderDetailPage() {
           <TabsTrigger value="grants" className="text-xs">Grants ({relatedGrants.length})</TabsTrigger>
           <TabsTrigger value="grantees" className="text-xs">Past Grantees</TabsTrigger>
           <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
+          <TabsTrigger value="agent-notes" className="text-xs">Agent Notes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
@@ -433,6 +455,10 @@ export default function DashboardFunderDetailPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="agent-notes" className="mt-4">
+          <AgentNotesPanel relatedFunderId={funder.id} />
         </TabsContent>
       </Tabs>
 

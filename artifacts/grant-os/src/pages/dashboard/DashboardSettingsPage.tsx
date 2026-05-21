@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
-import { Building2, Link2, Lock, Save, UserCircle } from "lucide-react";
+import { Bot, Building2, Link2, Lock, Save, UserCircle } from "lucide-react";
 
 export default function DashboardSettingsPage() {
   const { user } = useAuth();
@@ -27,6 +27,7 @@ export default function DashboardSettingsPage() {
           <TabsTrigger value="organization" className="text-xs">Organization Profile</TabsTrigger>
           <TabsTrigger value="security" className="text-xs">Security</TabsTrigger>
           <TabsTrigger value="integrations" className="text-xs">Integrations</TabsTrigger>
+          <TabsTrigger value="agents" className="text-xs">Agents</TabsTrigger>
         </TabsList>
 
         <TabsContent value="account" className="mt-4">
@@ -109,6 +110,29 @@ export default function DashboardSettingsPage() {
                   <Badge variant="outline">Placeholder</Badge>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="agents" className="mt-4">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2"><Bot size={15} />Agent-ready mode</CardTitle>
+              <CardDescription className="text-xs">Grant OS stores external agent outputs without connecting native AI providers.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                OpenClaw, Codex, or another operator can generate JSON outside the app, then paste it into Agent Import. Grant OS will store notes, reports, selected task suggestions, exports, and activity logs. No API keys are stored here.
+              </div>
+              <pre className="rounded-md bg-slate-950 p-3 text-xs text-slate-100 overflow-auto">{`{
+  "type": "agent_report",
+  "source": "codex",
+  "report_type": "weekly_readiness",
+  "title": "Weekly Grant Readiness Report",
+  "content": "Top priorities this week...",
+  "related_project_id": "uuid",
+  "structured_data": {}
+}`}</pre>
             </CardContent>
           </Card>
         </TabsContent>

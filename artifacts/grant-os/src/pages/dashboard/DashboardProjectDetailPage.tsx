@@ -24,10 +24,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
 import ProjectFormDialog, { type ProjectFormValues } from "@/components/dashboard/ProjectFormDialog";
+import AgentNotesPanel from "@/components/dashboard/AgentNotesPanel";
 import { toast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
+import { exportProjectPackage } from "@/lib/exports/exportPackages";
+import { useCreateAgentActivity } from "@/hooks/useAgentActivity";
+import { useAuth } from "@/contexts/AuthContext";
 import {
-  ArrowLeft, Sparkles, ExternalLink, Plus, FileText,
+  ArrowLeft, Sparkles, ExternalLink, Plus, FileText, Download,
   Loader2, AlertCircle, Archive, Trash2, Pencil,
 } from "lucide-react";
 
@@ -70,6 +74,8 @@ export default function DashboardProjectDetailPage() {
   const { data: relatedTasks = [] } = useTasksByProject(project?.id);
   const createProofItem = useCreateProofItem();
   const { canWriteTable, canCreateTable, canDeleteRecords } = usePermissions();
+  const { user } = useAuth();
+  const createActivity = useCreateAgentActivity();
 
   if (isLoading) {
     return (
@@ -140,6 +146,16 @@ export default function DashboardProjectDetailPage() {
 
   const handleAI = (a: string) =>
     toast({ title: a, description: "AI workflow will be connected in a later phase." });
+
+  async function handleExportProject() {
+    try {
+      await exportProjectPackage(project!.id, project!.slug || project!.name);
+      await createActivity.mutateAsync({ actor_source: "human", action_type: "export_created", title: `Exported project package: ${project!.name}`, related_project_id: project!.id, created_by: user?.id ?? null });
+      toast({ title: "Project package exported", description: "JSON download created." });
+    } catch (err) {
+      toast({ title: "Export failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    }
+  }
 
   async function handleEdit(values: ProjectFormValues) {
     try {
@@ -246,6 +262,10 @@ export default function DashboardProjectDetailPage() {
             Public page
           </Button>
         </Link>
+        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportProject}>
+          <Download size={12} />
+          Export JSON
+        </Button>
         {canWriteTable("projects") && (
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
             <Pencil size={12} />
@@ -285,6 +305,7 @@ export default function DashboardProjectDetailPage() {
           <TabsTrigger value="applications" className="text-xs">Applications ({relatedApps.length})</TabsTrigger>
           <TabsTrigger value="tasks" className="text-xs">Tasks ({relatedTasks.length})</TabsTrigger>
           <TabsTrigger value="documents" className="text-xs">Documents ({relatedDocs.length})</TabsTrigger>
+          <TabsTrigger value="agent-notes" className="text-xs">Agent Notes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
@@ -513,6 +534,10 @@ export default function DashboardProjectDetailPage() {
             <Plus size={12} />
             Add document
           </Button>
+        </TabsContent>
+
+        <TabsContent value="agent-notes" className="mt-4">
+          <AgentNotesPanel relatedProjectId={project.id} />
         </TabsContent>
       </Tabs>
 

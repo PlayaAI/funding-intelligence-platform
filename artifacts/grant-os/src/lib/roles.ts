@@ -13,13 +13,19 @@ export type WritableTable =
   | "application_questions"
   | "application_required_documents"
   | "tasks"
-  | "custom_fields";
+  | "custom_fields"
+  | "agent_notes"
+  | "agent_reports"
+  | "agent_activity_logs";
 
 const CONTRIBUTOR_CREATABLE: WritableTable[] = [
   "proof_items",
   "application_questions",
   "application_required_documents",
   "tasks",
+  "agent_notes",
+  "agent_reports",
+  "agent_activity_logs",
 ];
 
 const CONTRIBUTOR_UPDATABLE: WritableTable[] = [

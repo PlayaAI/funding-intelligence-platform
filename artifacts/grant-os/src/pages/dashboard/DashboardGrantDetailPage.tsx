@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
 import ScoreBar from "@/components/dashboard/ScoreBar";
+import AgentNotesPanel from "@/components/dashboard/AgentNotesPanel";
 import { toast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -53,9 +54,13 @@ import {
   Archive,
   Trash2,
   Loader2,
+  Download,
 } from "lucide-react";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { exportGrantPackage } from "@/lib/exports/exportPackages";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useCreateAgentActivity } from "@/hooks/useAgentActivity";
+import { useAuth } from "@/contexts/AuthContext";
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -93,6 +98,8 @@ export default function DashboardGrantDetailPage() {
   const createApp = useCreateApplication();
   const createTask = useCreateTask();
   const { canWriteTable, canCreateTable, canDeleteRecords } = usePermissions();
+  const { user } = useAuth();
+  const createActivity = useCreateAgentActivity();
 
   const funder = useMemo(() => {
     if (!grant) return null;
@@ -113,6 +120,16 @@ export default function DashboardGrantDetailPage() {
 
   const handleAI = (action: string) =>
     toast({ title: action, description: "AI workflow will be connected in a later phase." });
+
+  const handleExportGrant = async () => {
+    try {
+      await exportGrantPackage(grantRow!.id, grantRow!.title);
+      await createActivity.mutateAsync({ actor_source: "human", action_type: "export_created", title: `Exported grant package: ${grantRow!.title}`, related_grant_id: grantRow!.id, related_project_id: grantRow!.related_project_id ?? null, created_by: user?.id ?? null });
+      toast({ title: "Grant package exported", description: "JSON download created." });
+    } catch (e) {
+      toast({ title: "Export failed", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
 
   if (!isSupabaseConfigured) {
     return (
@@ -306,6 +323,10 @@ export default function DashboardGrantDetailPage() {
         <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleAI("Suggest Proof")}>
           <Sparkles size={12} />
           Suggest Proof
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportGrant}>
+          <Download size={12} />
+          Export JSON
         </Button>
         {canCreateTable("applications") && (
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setCreateAppOpen(true)}>
@@ -625,32 +646,7 @@ export default function DashboardGrantDetailPage() {
         </TabsContent>
 
         <TabsContent value="ai-notes" className="mt-4">
-          <Card className="border-slate-200">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Sparkles size={13} className="text-primary" />
-                AI Notes
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-slate-500">No AI notes generated yet.</p>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" className="gap-1.5 text-xs" onClick={() => handleAI("Summarize Grant")}>
-                  <Sparkles size={12} />
-                  Summarize Grant
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleAI("Analyze Fit")}>
-                  <Sparkles size={12} />
-                  Analyze Fit
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleAI("Extract Requirements")}>
-                  <Sparkles size={12} />
-                  Extract Requirements
-                </Button>
-              </div>
-              <p className="text-[11px] text-slate-400">AI workflow will be connected in a later phase.</p>
-            </CardContent>
-          </Card>
+          <AgentNotesPanel relatedGrantId={grant.id} relatedProjectId={grantRow.related_project_id ?? undefined} />
         </TabsContent>
       </Tabs>
 
