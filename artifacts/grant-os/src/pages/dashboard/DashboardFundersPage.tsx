@@ -279,7 +279,9 @@ export default function DashboardFundersPage() {
                     <Building2 size={16} className="text-slate-500" />
                   </div>
                   <div>
-                          <div className="font-semibold text-sm text-slate-800 leading-tight line-clamp-1">{f.name}</div>
+                          <Link href={funderDetailPath(f)} className="font-semibold text-sm text-slate-800 leading-tight line-clamp-1 hover:text-primary">
+                            {f.name}
+                          </Link>
                           <div className="text-xs text-slate-400 line-clamp-1">{f.website ?? "No website"}</div>
                   </div>
                 </div>
