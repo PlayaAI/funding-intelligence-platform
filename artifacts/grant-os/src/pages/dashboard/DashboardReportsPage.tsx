@@ -1,12 +1,17 @@
-import { grants } from "@/data/grants";
-import { tasks } from "@/data/tasks";
-import { applications } from "@/data/applications";
+import { useApplications } from "@/hooks/useApplications";
+import { useMappedGrants } from "@/hooks/useGrants";
+import { useTasks } from "@/hooks/useTasks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { BarChart2, Download, Sparkles, TrendingUp, Clock, Trophy, FileText } from "lucide-react";
 
 export default function DashboardReportsPage() {
+  const { grants, isLoading: grantsLoading } = useMappedGrants();
+  const { data: applications = [], isLoading: applicationsLoading } = useApplications();
+  const { data: tasks = [], isLoading: tasksLoading } = useTasks();
+  const isLoading = grantsLoading || applicationsLoading || tasksLoading;
+
   const awarded = grants.filter((g) => g.status === "Awarded").length;
   const submitted = grants.filter((g) => g.status === "Submitted").length;
   const declined = grants.filter((g) => g.status === "Declined").length;
@@ -55,7 +60,7 @@ export default function DashboardReportsPage() {
               <FileText size={14} className="text-slate-400" />
               <span className="text-xs text-slate-500">Total Grants</span>
             </div>
-            <div className="text-3xl font-bold text-slate-900">{totalGrants}</div>
+            <div className="text-3xl font-bold text-slate-900">{isLoading ? "…" : totalGrants}</div>
           </CardContent>
         </Card>
         <Card className="border-green-200 bg-green-50/30">
@@ -64,7 +69,7 @@ export default function DashboardReportsPage() {
               <Trophy size={14} className="text-green-500" />
               <span className="text-xs text-green-600">Awarded</span>
             </div>
-            <div className="text-3xl font-bold text-green-700">{awarded}</div>
+            <div className="text-3xl font-bold text-green-700">{isLoading ? "…" : awarded}</div>
           </CardContent>
         </Card>
         <Card className="border-violet-200 bg-violet-50/30">
@@ -73,7 +78,7 @@ export default function DashboardReportsPage() {
               <TrendingUp size={14} className="text-violet-500" />
               <span className="text-xs text-violet-600">Applying</span>
             </div>
-            <div className="text-3xl font-bold text-violet-700">{applying}</div>
+            <div className="text-3xl font-bold text-violet-700">{isLoading ? "…" : applying}</div>
           </CardContent>
         </Card>
         <Card className="border-slate-200">
@@ -82,7 +87,9 @@ export default function DashboardReportsPage() {
               <Clock size={14} className="text-slate-400" />
               <span className="text-xs text-slate-500">Tasks Done</span>
             </div>
-            <div className="text-3xl font-bold text-slate-900">{completedTasks}/{totalTasks}</div>
+            <div className="text-3xl font-bold text-slate-900">
+              {isLoading ? "…" : `${completedTasks}/${totalTasks}`}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -119,16 +126,21 @@ export default function DashboardReportsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {applications.map((a) => (
+              {applications.slice(0, 8).map((a) => (
                 <div key={a.id} className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
-                  <div className="text-xs font-medium text-slate-700 line-clamp-1">{a.grantTitle}</div>
+                  <div className="text-xs font-medium text-slate-700 line-clamp-1">{a.title}</div>
                   <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ml-2 ${
                     a.status === "Submitted" ? "bg-violet-50 text-violet-700 border-violet-200" :
-                    a.status === "Writing" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                    a.status === "Drafting" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                    a.status === "Awarded" ? "bg-green-50 text-green-700 border-green-200" :
+                    a.status === "Declined" ? "bg-red-50 text-red-700 border-red-200" :
                     "bg-slate-100 text-slate-600 border-slate-200"
                   }`}>{a.status}</span>
                 </div>
               ))}
+              {!isLoading && applications.length === 0 && (
+                <p className="text-xs text-slate-400 py-2">No applications yet.</p>
+              )}
             </div>
           </CardContent>
         </Card>

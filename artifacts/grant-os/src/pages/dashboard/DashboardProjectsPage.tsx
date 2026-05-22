@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useProjects, useCreateProject } from "@/hooks/useProjects";
-import { grants, PROJECT_COLORS } from "@/data/grants";
+import { useMappedGrants } from "@/hooks/useGrants";
+import { PROJECT_COLORS } from "@/data/grants";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -140,6 +141,7 @@ export default function DashboardProjectsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const { data: projects = [], isLoading, isError, error } = useProjects();
+  const { grants } = useMappedGrants();
   const createProject = useCreateProject();
   const { canWriteTable } = usePermissions();
 

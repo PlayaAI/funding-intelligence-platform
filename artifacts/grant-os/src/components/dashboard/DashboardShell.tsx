@@ -204,7 +204,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         <div className="px-3 pb-1">
           <div className="flex items-center gap-1.5 text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
             <Sparkles size={10} />
-            <span className="font-semibold">Demo data</span>
+            <span className="font-semibold">Real data</span>
           </div>
         </div>
       )}

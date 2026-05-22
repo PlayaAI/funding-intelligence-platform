@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { grants } from "@/data/grants";
+import { useMappedGrants } from "@/hooks/useGrants";
 import { useApplications } from "@/hooks/useApplications";
 import { useTasks } from "@/hooks/useTasks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,58 +20,35 @@ import {
   Plus,
   Search,
   Target,
-  Activity,
   Network,
   BarChart2,
   Shield,
 } from "lucide-react";
 
 function formatDate(dateStr: string) {
+  if (!dateStr) return "Deadline unknown";
   const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function daysUntil(dateStr: string) {
+  if (!dateStr) return Infinity;
   const diff = new Date(dateStr).getTime() - Date.now();
+  if (Number.isNaN(diff)) return Infinity;
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
 
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const days = Math.floor(diff / 86400000);
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days}d ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  return `${Math.floor(days / 30)}mo ago`;
-}
-
-const RECENT_ACTIVITY = [
-  { id: "ra1", type: "submission", text: "Application submitted for Burning Man Project — Arts & Community Innovation", date: "2026-03-29", href: "/dashboard/applications/a3" },
-  { id: "ra2", type: "task", text: "Task completed: Draft executive summary for Wellspring application", date: "2026-05-10", href: "/dashboard/tasks" },
-  { id: "ra3", type: "grant", text: "New grant added: Mozilla Foundation — Humane Technology Initiative", date: "2026-05-08", href: "/dashboard/grants/g2" },
-  { id: "ra4", type: "note", text: "Funder notes updated: Wellspring Foundation — Sarah Chen confirmed interest", date: "2026-05-07", href: "/dashboard/funders/f4" },
-  { id: "ra5", type: "proof", text: "Proof item added: Connect App Field Sessions — Burning Man 2024", date: "2026-05-05", href: "/dashboard/proof-items" },
-  { id: "ra6", type: "grant", text: "Grant status updated: MIT Solve — Indigenous Communities Fellowship → Applying", date: "2026-05-03", href: "/dashboard/grants/g1" },
-];
-
-const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
-  submission: <Trophy size={12} className="text-green-500" />,
-  task: <CheckSquare size={12} className="text-blue-500" />,
-  grant: <Target size={12} className="text-primary" />,
-  note: <FileText size={12} className="text-amber-500" />,
-  proof: <Shield size={12} className="text-violet-500" />,
-};
-
 export default function DashboardHomePage() {
   const { user } = useAuth();
+  const { grants } = useMappedGrants();
   const { data: applications = [] } = useApplications();
   const { data: allTasks = [] } = useTasks();
 
   const top3 = grants.filter((g) => g.isTop3);
   const upcoming = grants
-    .filter((g) => !["Awarded", "Declined", "Archived"].includes(g.status))
-    .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+    .filter((g) => !["Awarded", "Declined", "Archived"].includes(g.status) && Number.isFinite(daysUntil(g.deadline)))
+    .sort((a, b) => daysUntil(a.deadline) - daysUntil(b.deadline))
     .slice(0, 5);
   const activeApps = applications.filter((a) => !["Submitted", "Awarded", "Declined", "Archived"].includes(a.status));
   const dueTasks = allTasks
@@ -83,7 +60,7 @@ export default function DashboardHomePage() {
       return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
     })
     .slice(0, 5);
-  const needsReview = grants.filter((g) => g.status === "Researching");
+  const needsReview = grants.filter((g) => g.status === "Researching").slice(0, 8);
 
   const handleAI = () => {
     toast({ title: "AI workflow coming soon", description: "AI workflow will be connected in a later phase." });
@@ -232,7 +209,7 @@ export default function DashboardHomePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3 pt-0">
-              {top3.map((g) => {
+              {top3.length > 0 ? top3.map((g) => {
                 const days = daysUntil(g.deadline);
                 return (
                   <Link href={`/dashboard/grants/${g.id}`} key={g.id}>
@@ -251,7 +228,7 @@ export default function DashboardHomePage() {
                     </div>
                   </Link>
                 );
-              })}
+              }) : <div className="text-center py-6 text-slate-400 text-sm">No top focus grants marked yet.</div>}
             </CardContent>
           </Card>
 
@@ -306,7 +283,7 @@ export default function DashboardHomePage() {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-2">
-                {upcoming.map((g) => {
+                {upcoming.length > 0 ? upcoming.map((g) => {
                   const days = daysUntil(g.deadline);
                   return (
                     <Link href={`/dashboard/grants/${g.id}`} key={g.id}>
@@ -324,34 +301,8 @@ export default function DashboardHomePage() {
                       </div>
                     </Link>
                   );
-                })}
+                }) : <div className="text-center py-6 text-slate-400 text-sm">No upcoming deadlines found.</div>}
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Activity size={14} className="text-slate-500" />
-                  Recent Activity
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 space-y-1">
-              {RECENT_ACTIVITY.map((item) => (
-                <Link href={item.href} key={item.id}>
-                  <div className="flex items-start gap-3 py-2.5 px-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors group">
-                    <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-slate-200 transition-colors">
-                      {ACTIVITY_ICONS[item.type] ?? <Activity size={11} className="text-slate-400" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs text-slate-700 leading-snug line-clamp-1">{item.text}</div>
-                    </div>
-                    <div className="text-[11px] text-slate-400 flex-shrink-0 mt-0.5">{timeAgo(item.date)}</div>
-                  </div>
-                </Link>
-              ))}
             </CardContent>
           </Card>
         </div>

@@ -145,6 +145,10 @@ overrides:
 importers:
 
   .:
+    dependencies:
+      '@supabase/supabase-js':
+        specifier: ^2.105.4
+        version: 2.105.4
     devDependencies:
       prettier:
         specifier: ^3.8.1
@@ -385,6 +389,9 @@ importers:
       tailwindcss:
         specifier: 'catalog:'
         version: 4.2.1
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
