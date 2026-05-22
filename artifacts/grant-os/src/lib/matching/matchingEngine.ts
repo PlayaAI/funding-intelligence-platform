@@ -48,9 +48,10 @@ export type MatchingResult = {
 const STOP_WORDS = new Set([
   "about", "after", "also", "and", "are", "but", "for", "from", "has", "have", "into",
   "its", "our", "that", "the", "their", "this", "through", "with", "your", "you",
-  "application", "apply", "dataset", "foundation", "funder", "funding", "grant", "grants",
-  "imported", "instrumentl", "opportunities", "opportunity", "playa", "program", "project",
-  "projects", "support",
+  "application", "applications", "apply", "dataset", "export", "exported", "foundation",
+  "funder", "funders", "funding", "grant", "grants", "imported", "instrumentl",
+  "opportunities", "opportunity", "playa", "program", "project", "projects", "public",
+  "row", "source", "support",
 ]);
 
 const GLOBAL_TERMS = ["anywhere", "global", "international", "worldwide", "remote", "all locations"];
@@ -64,6 +65,45 @@ const DOT_ORG_TERMS = [".org", "dot org"];
 const INDIVIDUAL_TERMS = ["individual", "artists", "researchers"];
 const ORG_TERMS = ["organization", "community", "collective", "social enterprise", "startup", "company"];
 const APPLICATION_MATERIAL_TERMS = ["problem statement", "solution", "impact", "budget", "team", "demo", "screenshot", "metric", "legal", "eligibility", "fiscal sponsor"];
+const HEALTHCARE_SPECIAL_CASE_TERMS = [
+  "nih",
+  "national institutes of health",
+  "health human services",
+  "health & human services",
+  "brain initiative",
+  "clinical trial not allowed",
+  "clinical trial",
+  "r01",
+  "r03",
+  "r18",
+  "r21",
+  "neuroscience",
+  "nervous system",
+  "biomedical",
+  "patient",
+  "patients",
+  "hospital",
+  "disease",
+  "treatment",
+  "medical research",
+  "healthcare safety",
+  "wearable devices",
+];
+const PROJECT_HEALTHCARE_RESEARCH_TERMS = [
+  "clinical research",
+  "healthcare",
+  "neuroscience",
+  "biomedical",
+  "patient",
+  "hospital",
+  "medical research",
+  "clinical trial",
+  "disease treatment",
+];
+
+// Calibration invariant: NIH/BRAIN/R01/R03 clinical grants against non-healthcare
+// Playa AI projects must finish at <= 49, not strong/best, with decision_label=skip.
+// Human-connection opportunities such as MIT Solve should not trigger this override.
 
 const STRATEGIC_KEYWORDS = {
   high: [
@@ -81,17 +121,8 @@ const STRATEGIC_KEYWORDS = {
   ],
   lower: ["arts", "exhibition", "performance", "curatorial", "healthcare safety", "neuroscience", "government program", "speaker program", "leadership exchange"],
   artsSignals: ["art", "arts", "artist", "art science", "installation", "exhibition", "performance", "creative", "cultural", "participatory"],
-  healthcareSignals: [
-    "nih", "national institutes of health", "brain initiative", "neuroscience", "nervous system",
-    "clinical trial", "clinical trials", "healthcare safety", "medical research", "biomedical",
-    "patient", "patients", "hospital", "hospitals", "therapy", "therapeutic", "treatment",
-    "disease", "r01", "r21", "r18",
-  ],
-  healthcareProjectSignals: [
-    "healthcare safety", "medical research", "biomedical", "clinical trial", "clinical trials",
-    "patient safety", "neuroscience", "nervous system", "therapy", "treatment", "disease",
-    "hospital", "nih", "r01", "r21", "r18",
-  ],
+  healthcareSignals: HEALTHCARE_SPECIAL_CASE_TERMS,
+  healthcareProjectSignals: PROJECT_HEALTHCARE_RESEARCH_TERMS,
   governmentSignals: ["government program", "public sector", "civil service", "speaker program", "leadership exchange"],
 };
 
@@ -117,10 +148,17 @@ function keywords(value: string): Set<string> {
 function overlapScore(a: string, b: string, max: number): { score: number; terms: string[] } {
   const aWords = keywords(a);
   const bWords = keywords(b);
-  const terms = [...aWords].filter((word) => bWords.has(word)).slice(0, 8);
+  const terms = [...aWords].filter((word) => bWords.has(word) && !isNoiseTerm(word)).slice(0, 8);
   if (aWords.size === 0 || bWords.size === 0) return { score: Math.round(max * 0.35), terms };
   const ratio = terms.length / Math.min(aWords.size, bWords.size, 18);
   return { score: Math.min(max, Math.round(max * Math.min(1, ratio * 2.2))), terms };
+}
+
+function isNoiseTerm(term: string): boolean {
+  const normalized = normalize(term);
+  if (!normalized) return true;
+  const parts = normalized.split(" ");
+  return STOP_WORDS.has(normalized) || parts.some((part) => STOP_WORDS.has(part));
 }
 
 function includesAny(value: string, terms: string[]): boolean {
@@ -398,8 +436,31 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
     grant.title, grant.focus_areas, grant.eligibility, grant.notes,
     grant.required_documents, funder?.giving_areas, funder?.notes,
   ]);
+  const grantFullText = text([
+    grant.title,
+    grant.funder_name,
+    grant.focus_areas,
+    grant.eligibility,
+    grant.notes,
+    grant.required_documents,
+    funder?.name,
+    funder?.notes,
+  ]);
+  const projectFullText = text([
+    project.name,
+    project.summary,
+    project.problem_statement,
+    project.solution,
+    project.target_audience,
+    project.technology,
+    project.impact,
+    project.grant_relevance,
+  ]);
+  const healthcareSpecialCase = includesAny(grantFullText, HEALTHCARE_SPECIAL_CASE_TERMS);
+  const projectIsHealthcareResearch = includesAny(projectFullText, PROJECT_HEALTHCARE_RESEARCH_TERMS);
   const cause = strategicTopicScore(projectCauseText, grantCauseText, fitReasons, risks);
-  if (cause.terms.length) fitReasons.push(`Topic overlap: ${cause.terms.slice(0, 5).join(", ")}.`);
+  const cleanCauseTerms = cause.terms.filter((term) => !isNoiseTerm(term));
+  if (cleanCauseTerms.length) fitReasons.push(`Topic overlap: ${cleanCauseTerms.slice(0, 5).join(", ")}.`);
   if (cause.score < 9) risks.push("Cause/topic overlap is weak based on available keywords.");
 
   const geography = scoreGeography(project, grant, fitReasons, risks);
@@ -436,19 +497,18 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
     deadline: { score: deadline.weighted, max: 15 },
     evidence: { score: evidence.weighted, max: 15 },
   };
-  const rawMatchScore = clamp(Object.values(scoreBreakdown).reduce((sum, item) => sum + item.score, 0));
-  const matchScore = cause.clinicalSpecialCase ? Math.min(rawMatchScore, 49) : rawMatchScore;
+  let matchScore = clamp(Object.values(scoreBreakdown).reduce((sum, item) => sum + item.score, 0));
   const readinessScore = evidence.readiness;
   const urgencyScore = deadline.urgency;
   const evidenceScore = evidence.evidence;
-  const matchTier: MatchTier =
+  let matchTier: MatchTier =
     matchScore >= 85 ? "best" :
     matchScore >= 72 ? "strong" :
     matchScore >= 60 ? "good" :
     matchScore >= 45 ? "maybe" :
     matchScore >= 25 ? "weak" :
     "needs_review";
-  const decisionLabel = decideLabel({
+  let decisionLabel = decideLabel({
     matchScore,
     readinessScore,
     deadlineStatus: deadline.status,
@@ -459,8 +519,13 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
     clinicalSpecialCase: cause.clinicalSpecialCase,
   });
 
-  if (cause.clinicalSpecialCase) {
-    recommendedActions.push("Skip unless Playa AI is deliberately reframed as a healthcare/neuroscience research project.");
+  if (healthcareSpecialCase && !projectIsHealthcareResearch) {
+    matchScore = Math.min(matchScore, 49);
+    matchTier = matchScore >= 40 ? "maybe" : "weak";
+    decisionLabel = "skip";
+    risks.push("Healthcare, NIH, clinical, or neuroscience framing is a special-case mismatch for Playa AI unless the project is deliberately reframed as healthcare/neuroscience research.");
+    missingItems.push("Healthcare/neuroscience research framing and eligible research applicant");
+    recommendedActions.push("Skip unless Playa AI is deliberately reframed as a healthcare/neuroscience research project with an eligible research partner.");
   }
   if (decisionLabel === "skip") recommendedActions.push("Skip unless the project can be reframed to meet the eligibility and focus requirements.");
   if (decisionLabel === "track_next_cycle") recommendedActions.push("Track the next cycle and reuse this match as a planning reference.");
