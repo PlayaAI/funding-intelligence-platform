@@ -48,7 +48,9 @@ export type MatchingResult = {
 const STOP_WORDS = new Set([
   "about", "after", "also", "and", "are", "but", "for", "from", "has", "have", "into",
   "its", "our", "that", "the", "their", "this", "through", "with", "your", "you",
-  "grant", "grants", "funding", "program", "project", "projects", "support",
+  "application", "apply", "dataset", "foundation", "funder", "funding", "grant", "grants",
+  "imported", "instrumentl", "opportunities", "opportunity", "playa", "program", "project",
+  "projects", "support",
 ]);
 
 const GLOBAL_TERMS = ["anywhere", "global", "international", "worldwide", "remote", "all locations"];
@@ -66,18 +68,30 @@ const APPLICATION_MATERIAL_TERMS = ["problem statement", "solution", "impact", "
 const STRATEGIC_KEYWORDS = {
   high: [
     "ai", "artificial intelligence", "responsible ai", "human connection", "loneliness", "belonging",
-    "social isolation", "relationship", "relational ai", "social trust", "community health",
-    "mental well being", "mental wellbeing", "civic trust", "digital well being", "digital wellbeing",
-    "future of work", "workplace belonging", "education", "learning communities",
-    "social impact technology", "public benefit technology",
+    "social isolation", "relationship", "relationships", "relational ai", "social trust",
+    "civic trust", "community wellbeing", "community well being", "mental well being",
+    "mental wellbeing", "digital well being", "digital wellbeing", "future of work",
+    "workplace belonging", "learning communities", "social cohesion", "ai for humanity",
+    "human centered ai", "human centred ai", "social impact technology", "public benefit technology",
+    "public benefit data", "nonprofit technology", "community infrastructure",
   ],
   medium: [
     "community", "technology", "digital inclusion", "social cohesion", "pluralism", "trust",
     "education", "research", "innovation", "wellbeing", "well being",
   ],
   lower: ["arts", "exhibition", "performance", "curatorial", "healthcare safety", "neuroscience", "government program", "speaker program", "leadership exchange"],
-  artsSignals: ["arts", "artist", "installation", "exhibition", "performance", "creative", "cultural"],
-  healthcareSignals: ["healthcare safety", "clinical", "patient safety", "medical device", "neuroscience", "nih"],
+  artsSignals: ["art", "arts", "artist", "art science", "installation", "exhibition", "performance", "creative", "cultural", "participatory"],
+  healthcareSignals: [
+    "nih", "national institutes of health", "brain initiative", "neuroscience", "nervous system",
+    "clinical trial", "clinical trials", "healthcare safety", "medical research", "biomedical",
+    "patient", "patients", "hospital", "hospitals", "therapy", "therapeutic", "treatment",
+    "disease", "r01", "r21", "r18",
+  ],
+  healthcareProjectSignals: [
+    "healthcare safety", "medical research", "biomedical", "clinical trial", "clinical trials",
+    "patient safety", "neuroscience", "nervous system", "therapy", "treatment", "disease",
+    "hospital", "nih", "r01", "r21", "r18",
+  ],
   governmentSignals: ["government program", "public sector", "civil service", "speaker program", "leadership exchange"],
 };
 
@@ -279,7 +293,13 @@ function scoreReadiness(input: MatchingInput, reasons: string[], risks: string[]
   return { weighted: Math.round(readiness * 0.15), readiness, evidence };
 }
 
-function strategicTopicScore(projectText: string, grantText: string, reasons: string[], risks: string[]): { score: number; terms: string[] } {
+function strategicTopicScore(projectText: string, grantText: string, reasons: string[], risks: string[]): {
+  score: number;
+  terms: string[];
+  clinicalSpecialCase: boolean;
+  artsSpecialCase: boolean;
+  governmentSpecialCase: boolean;
+} {
   const overlap = overlapScore(projectText, grantText, 25);
   const normalizedProject = normalize(projectText);
   const normalizedGrant = normalize(grantText);
@@ -287,25 +307,37 @@ function strategicTopicScore(projectText: string, grantText: string, reasons: st
   const medium = STRATEGIC_KEYWORDS.medium.filter((term) => normalizedProject.includes(normalize(term)) && normalizedGrant.includes(normalize(term)));
   const lower = STRATEGIC_KEYWORDS.lower.filter((term) => normalizedGrant.includes(normalize(term)));
   const projectHasArts = includesAny(projectText, STRATEGIC_KEYWORDS.artsSignals);
-  const projectHasHealthcare = includesAny(projectText, STRATEGIC_KEYWORDS.healthcareSignals);
+  const projectHasHealthcare = includesAny(projectText, STRATEGIC_KEYWORDS.healthcareProjectSignals);
   const projectHasGovernment = includesAny(projectText, STRATEGIC_KEYWORDS.governmentSignals);
+  const clinicalSpecialCase = includesAny(grantText, STRATEGIC_KEYWORDS.healthcareSignals) && !projectHasHealthcare;
+  const artsSpecialCase =
+    includesAny(grantText, STRATEGIC_KEYWORDS.artsSignals) &&
+    !projectHasArts &&
+    !includesAny(grantText, ["technology", "community", "participatory", "social connection", "human connection"]);
+  const governmentSpecialCase = includesAny(grantText, STRATEGIC_KEYWORDS.governmentSignals) && !projectHasGovernment;
 
   let score = overlap.score + Math.min(9, high.length * 4) + Math.min(4, medium.length * 2);
   if (high.length) reasons.push(`Strategic fit on ${high.slice(0, 3).join(", ")}.`);
-  if (lower.length && !projectHasArts && lower.some((term) => STRATEGIC_KEYWORDS.artsSignals.includes(term))) {
-    score -= 5;
+  if (artsSpecialCase || (lower.length && !projectHasArts && lower.some((term) => STRATEGIC_KEYWORDS.artsSignals.includes(term)))) {
+    score -= 7;
     risks.push("Arts or cultural language detected; fit depends on an explicit arts/community-installation framing.");
   }
-  if (includesAny(grantText, STRATEGIC_KEYWORDS.healthcareSignals) && !projectHasHealthcare) {
-    score -= 5;
-    risks.push("Healthcare or neuroscience framing appears special-case for this project.");
+  if (clinicalSpecialCase) {
+    score -= 14;
+    risks.push("Healthcare, NIH, clinical, or neuroscience framing appears special-case for this project.");
   }
-  if (includesAny(grantText, STRATEGIC_KEYWORDS.governmentSignals) && !projectHasGovernment) {
-    score -= 5;
+  if (governmentSpecialCase) {
+    score -= 7;
     risks.push("Government, speaker, or leadership-program framing appears special-case.");
   }
 
-  return { score: Math.max(0, Math.min(25, score)), terms: [...new Set([...high, ...medium, ...overlap.terms])].slice(0, 8) };
+  return {
+    score: Math.max(0, Math.min(25, score)),
+    terms: [...new Set([...high, ...medium, ...overlap.terms])].slice(0, 8),
+    clinicalSpecialCase,
+    artsSpecialCase,
+    governmentSpecialCase,
+  };
 }
 
 function addDataQualityFlags(input: MatchingInput, risks: string[], missing: string[]): string[] {
@@ -333,8 +365,10 @@ function decideLabel(params: {
   eligibilityBlockingRisk: boolean;
   eligibilityUnclear: boolean;
   dataQualityFlags: string[];
+  clinicalSpecialCase: boolean;
 }): DecisionLabel {
-  const { matchScore, readinessScore, deadlineStatus, days, eligibilityBlockingRisk, eligibilityUnclear, dataQualityFlags } = params;
+  const { matchScore, readinessScore, deadlineStatus, days, eligibilityBlockingRisk, eligibilityUnclear, dataQualityFlags, clinicalSpecialCase } = params;
+  if (clinicalSpecialCase) return matchScore >= 45 ? "needs_review" : "skip";
   if (deadlineStatus === "past_due") return matchScore >= 60 ? "track_next_cycle" : "skip";
   if (matchScore < 35 && eligibilityBlockingRisk) return "skip";
   if (dataQualityFlags.length >= 3 || eligibilityUnclear) return "needs_review";
@@ -376,6 +410,8 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
     text([grant.focus_areas, grant.required_documents, grant.eligibility, grant.notes]),
     15
   );
+  if (cause.clinicalSpecialCase) fundingUse.score = Math.max(0, fundingUse.score - 6);
+  if (cause.artsSpecialCase) fundingUse.score = Math.max(0, fundingUse.score - 4);
   if (fundingUse.terms.length) fitReasons.push(`Funding-use language overlaps on ${fundingUse.terms.slice(0, 4).join(", ")}.`);
   if (fundingUse.score < 6) risks.push("Funding use fit is not clear from current grant fields.");
 
@@ -395,12 +431,13 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
   const scoreBreakdown: ScoreBreakdown = {
     topic_fit: { score: cause.score, max: 25 },
     geography: { score: geography, max: 15 },
-    eligibility: { score: eligibility.score, max: 15 },
+    eligibility: { score: cause.clinicalSpecialCase ? Math.max(0, eligibility.score - 5) : eligibility.score, max: 15 },
     funding_use: { score: fundingUse.score, max: 15 },
     deadline: { score: deadline.weighted, max: 15 },
     evidence: { score: evidence.weighted, max: 15 },
   };
-  const matchScore = clamp(Object.values(scoreBreakdown).reduce((sum, item) => sum + item.score, 0));
+  const rawMatchScore = clamp(Object.values(scoreBreakdown).reduce((sum, item) => sum + item.score, 0));
+  const matchScore = cause.clinicalSpecialCase ? Math.min(rawMatchScore, 49) : rawMatchScore;
   const readinessScore = evidence.readiness;
   const urgencyScore = deadline.urgency;
   const evidenceScore = evidence.evidence;
@@ -419,8 +456,12 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
     eligibilityBlockingRisk: eligibility.blockingRisk,
     eligibilityUnclear: eligibility.unclear,
     dataQualityFlags,
+    clinicalSpecialCase: cause.clinicalSpecialCase,
   });
 
+  if (cause.clinicalSpecialCase) {
+    recommendedActions.push("Skip unless Playa AI is deliberately reframed as a healthcare/neuroscience research project.");
+  }
   if (decisionLabel === "skip") recommendedActions.push("Skip unless the project can be reframed to meet the eligibility and focus requirements.");
   if (decisionLabel === "track_next_cycle") recommendedActions.push("Track the next cycle and reuse this match as a planning reference.");
   if (decisionLabel === "prepare_next") recommendedActions.push("Prepare reusable application answers and close readiness gaps before the deadline window tightens.");
