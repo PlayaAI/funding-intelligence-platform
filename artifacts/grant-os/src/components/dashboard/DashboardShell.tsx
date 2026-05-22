@@ -122,7 +122,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const navItems: NavItem[] = [
     { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard size={16} /> },
     { label: "Tracker", href: "/dashboard/tracker", icon: <ListChecks size={16} />, badge: activeGrantsCount },
-    { label: "Matches", href: "/dashboard/matches", icon: <Sparkles size={16} /> },
+    { label: "Matches", href: "/dashboard/matching", icon: <Sparkles size={16} /> },
     { label: "Grants", href: "/dashboard/grants", icon: <BookOpen size={16} /> },
     { label: "Funders", href: "/dashboard/funders", icon: <Building2 size={16} /> },
     { label: "Peer Orgs", href: "/dashboard/peers", icon: <Network size={16} /> },

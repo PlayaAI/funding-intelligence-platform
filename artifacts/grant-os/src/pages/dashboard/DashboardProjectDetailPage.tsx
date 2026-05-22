@@ -5,6 +5,8 @@ import { useProofItems, useCreateProofItem } from "@/hooks/useProofItems";
 import { PROJECT_COLORS } from "@/data/grants";
 import { useMappedGrants } from "@/hooks/useGrants";
 import { useApplicationsByProject } from "@/hooks/useApplications";
+import { useGenerateMatchesForProject, useGrantMatchesForProject, useHideMatch, useSaveMatch } from "@/hooks/useGrantMatches";
+import { matchJsonArray } from "@/lib/matching/matchesService";
 import { useTasksByProject } from "@/hooks/useTasks";
 import { documents } from "@/data/documents";
 import ProofItemFormDialog, { PROOF_TYPE_LABELS, parseTagsString, type ProofItemFormValues } from "@/components/dashboard/ProofItemFormDialog";
@@ -73,9 +75,13 @@ export default function DashboardProjectDetailPage() {
   const { data: relatedApps = [] } = useApplicationsByProject(project?.id);
   const { data: relatedTasks = [] } = useTasksByProject(project?.id);
   const createProofItem = useCreateProofItem();
-  const { canWriteTable, canCreateTable, canDeleteRecords } = usePermissions();
+  const { canWriteTable, canCreateTable, canDeleteRecords, canContribute } = usePermissions();
   const { user } = useAuth();
   const createActivity = useCreateAgentActivity();
+  const projectMatchesQuery = useGrantMatchesForProject(project?.id);
+  const generateProjectMatches = useGenerateMatchesForProject();
+  const saveMatch = useSaveMatch();
+  const hideMatch = useHideMatch();
 
   if (isLoading) {
     return (
@@ -392,18 +398,48 @@ export default function DashboardProjectDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="matches" className="mt-4">
-          <Card className="border-slate-200">
-            <CardContent className="pt-5 text-center">
-              <p className="text-sm text-slate-500 mb-4">View all matched grant opportunities for {project.name}.</p>
-              <Link href={`/dashboard/matches/${project.slug}`}>
-                <Button size="sm" className="gap-2 text-xs">
-                  View matches
-                  <ExternalLink size={12} />
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+        <TabsContent value="matches" className="mt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-800">Project Matches</div>
+              <p className="text-xs text-slate-500 mt-0.5">Top deterministic grant matches, readiness gaps, and recommended next actions.</p>
+            </div>
+            {canWriteTable("grant_matches") && (
+              <Button size="sm" className="gap-2 text-xs" disabled={generateProjectMatches.isPending} onClick={async () => {
+                const rows = await generateProjectMatches.mutateAsync(project.id);
+                toast({ title: "Project matches generated", description: ` matches updated.` });
+              }}>
+                {generateProjectMatches.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                Generate/Refresh
+              </Button>
+            )}
+          </div>
+          {projectMatchesQuery.isLoading && <div className="py-8 text-center text-sm text-slate-400">Loading matches...</div>}
+          {(projectMatchesQuery.data ?? []).filter((m) => m.status !== "hidden" && m.status !== "dismissed").slice(0, 8).map((match) => {
+            const reasons = matchJsonArray(match.fit_reasons).slice(0, 3);
+            const risks = matchJsonArray(match.risks);
+            const actions = matchJsonArray(match.recommended_actions);
+            return (
+              <Card key={match.id} className="border-slate-200">
+                <CardContent className="pt-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Link href={`/dashboard/grants/`}><div className="font-medium text-sm text-slate-900 hover:text-primary">{match.grant?.title ?? "Unknown grant"}</div></Link>
+                      <div className="text-xs text-slate-500 mt-0.5">{match.grant?.funder_name ?? "Unknown funder"} · Score {match.match_score} · Readiness {match.readiness_score} · Urgency {match.urgency_score}</div>
+                    </div>
+                    <Badge variant="outline" className="text-xs capitalize">{match.match_tier.replace("_", " ")}</Badge>
+                  </div>
+                  {reasons.map((reason) => <div key={reason} className="text-xs text-slate-600">• {reason}</div>)}
+                  {risks[0] && <div className="text-xs text-red-600">Risk: {risks[0]}</div>}
+                  {actions[0] && <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">Next: {actions[0]}</div>}
+                  {canContribute && <div className="flex gap-2"><Button size="sm" variant="outline" className="h-7 text-xs" onClick={async () => { await saveMatch.mutateAsync(match.id); toast({ title: "Match saved" }); }}>Save</Button><Button size="sm" variant="outline" className="h-7 text-xs" onClick={async () => { await hideMatch.mutateAsync({ id: match.id, reason: "Hidden from project detail" }); toast({ title: "Match hidden" }); }}>Hide</Button></div>}
+                </CardContent>
+              </Card>
+            );
+          })}
+          {!projectMatchesQuery.isLoading && (projectMatchesQuery.data ?? []).length === 0 && (
+            <Card className="border-slate-200"><CardContent className="py-10 text-center text-sm text-slate-500">No generated matches for this project yet.</CardContent></Card>
+          )}
         </TabsContent>
 
         <TabsContent value="proof" className="mt-4 space-y-3">

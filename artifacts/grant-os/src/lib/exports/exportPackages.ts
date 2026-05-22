@@ -20,12 +20,7 @@ async function selectOne<T>(table: string, column: string, value: string): Promi
 }
 
 function packageBase(packageType: PackageType, records: Record<string, unknown>) {
-  return {
-    exported_at: new Date().toISOString(),
-    package_type: packageType,
-    app: "Grant OS",
-    records,
-  };
+  return { exported_at: new Date().toISOString(), package_type: packageType, app: "Grant OS", records };
 }
 
 function downloadJson(filename: string, payload: unknown) {
@@ -46,7 +41,7 @@ function cleanName(value: string) {
 
 export async function exportProjectPackage(projectId: string, filenameHint: string) {
   const project = await selectOne("projects", "id", projectId);
-  const [grants, proofItems, applications, tasks, documents, agentNotes, agentReports] = await Promise.all([
+  const [grants, proofItems, applications, tasks, documents, agentNotes, agentReports, grantMatches] = await Promise.all([
     selectMany("grants", "related_project_id", projectId),
     selectMany("proof_items", "project_id", projectId),
     selectMany("applications", "project_id", projectId),
@@ -54,15 +49,16 @@ export async function exportProjectPackage(projectId: string, filenameHint: stri
     selectMany("documents", "related_project_id", projectId),
     selectMany("agent_notes", "related_project_id", projectId),
     selectMany("agent_reports", "related_project_id", projectId),
+    selectMany("grant_matches", "project_id", projectId),
   ]);
-  const payload = packageBase("project", { project, grants, proof_items: proofItems, applications, tasks, documents, agent_notes: agentNotes, agent_reports: agentReports });
+  const payload = packageBase("project", { project, grants, proof_items: proofItems, applications, tasks, documents, agent_notes: agentNotes, agent_reports: agentReports, grant_matches: grantMatches });
   downloadJson(`grant-os-project-${cleanName(filenameHint)}.json`, payload);
   return payload;
 }
 
 export async function exportGrantPackage(grantId: string, filenameHint: string) {
   const grant: any = await selectOne("grants", "id", grantId);
-  const [funder, project, applications, tasks, documents, agentNotes, agentReports] = await Promise.all([
+  const [funder, project, applications, tasks, documents, agentNotes, agentReports, grantMatches] = await Promise.all([
     grant?.funder_id ? selectOne("funders", "id", grant.funder_id) : Promise.resolve(null),
     grant?.related_project_id ? selectOne("projects", "id", grant.related_project_id) : Promise.resolve(null),
     selectMany("applications", "grant_id", grantId),
@@ -70,9 +66,10 @@ export async function exportGrantPackage(grantId: string, filenameHint: string) 
     selectMany("documents", "related_grant_id", grantId),
     selectMany("agent_notes", "related_grant_id", grantId),
     selectMany("agent_reports", "related_grant_id", grantId),
+    selectMany("grant_matches", "grant_id", grantId),
   ]);
   const proofItems = grant?.related_project_id ? await selectMany("proof_items", "project_id", grant.related_project_id) : [];
-  const payload = packageBase("grant", { grant, funder, project, applications, tasks, proof_items: proofItems, documents, agent_notes: agentNotes, agent_reports: agentReports });
+  const payload = packageBase("grant", { grant, funder, project, applications, tasks, proof_items: proofItems, documents, agent_notes: agentNotes, agent_reports: agentReports, grant_matches: grantMatches });
   downloadJson(`grant-os-grant-${cleanName(filenameHint)}.json`, payload);
   return payload;
 }

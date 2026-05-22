@@ -145,6 +145,7 @@ function Router() {
         <Route path="/dashboard" component={ProtectedDashboardHome} />
         <Route path="/dashboard/tracker" component={ProtectedDashboardTracker} />
         <Route path="/dashboard/matches/:projectId" component={ProtectedDashboardMatchesProject} />
+        <Route path="/dashboard/matching" component={ProtectedDashboardMatches} />
         <Route path="/dashboard/matches" component={ProtectedDashboardMatches} />
         <Route path="/dashboard/grants/:id" component={ProtectedDashboardGrantDetail} />
         <Route path="/dashboard/grants" component={ProtectedDashboardGrants} />

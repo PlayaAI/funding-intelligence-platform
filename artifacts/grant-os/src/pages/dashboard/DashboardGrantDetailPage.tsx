@@ -10,6 +10,8 @@ import {
   useSetGrantTopThree,
 } from "@/hooks/useGrants";
 import { useProjects } from "@/hooks/useProjects";
+import { useGenerateMatchesForGrant, useGrantMatchesForGrant } from "@/hooks/useGrantMatches";
+import { matchJsonArray } from "@/lib/matching/matchesService";
 import { useApplicationsByGrant } from "@/hooks/useApplications";
 import { useTasksByGrant, useCreateTask } from "@/hooks/useTasks";
 import GrantFormDialog, { type GrantFormValues } from "@/components/dashboard/GrantFormDialog";
@@ -100,6 +102,8 @@ export default function DashboardGrantDetailPage() {
   const { canWriteTable, canCreateTable, canDeleteRecords } = usePermissions();
   const { user } = useAuth();
   const createActivity = useCreateAgentActivity();
+  const grantMatchesQuery = useGrantMatchesForGrant(grantRow?.id);
+  const generateGrantMatches = useGenerateMatchesForGrant();
 
   const funder = useMemo(() => {
     if (!grant) return null;
@@ -436,6 +440,7 @@ export default function DashboardGrantDetailPage() {
         <TabsList className="h-9 flex-wrap">
           <TabsTrigger value="summary" className="text-xs">Summary</TabsTrigger>
           <TabsTrigger value="fit" className="text-xs">Fit Analysis</TabsTrigger>
+          <TabsTrigger value="project-matches" className="text-xs">Project Matches</TabsTrigger>
           <TabsTrigger value="requirements" className="text-xs">Requirements</TabsTrigger>
           <TabsTrigger value="workspace" className="text-xs">Workspace ({relatedApps.length})</TabsTrigger>
           <TabsTrigger value="tasks" className="text-xs">Tasks ({relatedTasks.length})</TabsTrigger>
@@ -524,6 +529,47 @@ export default function DashboardGrantDetailPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="project-matches" className="mt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-800">Project Matches</div>
+              <p className="text-xs text-slate-500 mt-0.5">Projects ranked against this grant by deterministic fit and readiness.</p>
+            </div>
+            {canWriteTable("grant_matches") && (
+              <Button size="sm" className="gap-2 text-xs" disabled={generateGrantMatches.isPending} onClick={async () => {
+                const rows = await generateGrantMatches.mutateAsync(grant.id);
+                toast({ title: "Project matches generated", description: ` matches updated.` });
+              }}>
+                {generateGrantMatches.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                Generate
+              </Button>
+            )}
+          </div>
+          {grantMatchesQuery.isLoading && <div className="py-8 text-center text-sm text-slate-400">Loading project matches...</div>}
+          {(grantMatchesQuery.data ?? []).slice(0, 10).map((match) => {
+            const reasons = matchJsonArray(match.fit_reasons).slice(0, 2);
+            const risks = matchJsonArray(match.risks);
+            return (
+              <Card key={match.id} className="border-slate-200">
+                <CardContent className="pt-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      {match.project?.slug ? <Link href={`/dashboard/projects/`}><div className="font-medium text-sm text-primary hover:underline">{match.project.name}</div></Link> : <div className="font-medium text-sm text-slate-800">Unknown project</div>}
+                      <div className="text-xs text-slate-500 mt-0.5">Score {match.match_score} · Readiness {match.readiness_score} · Urgency {match.urgency_score} · {match.match_tier.replace("_", " ")}</div>
+                    </div>
+                    <Badge variant="outline" className="text-xs">{match.status}</Badge>
+                  </div>
+                  <div className="mt-3 space-y-1">
+                    {reasons.map((reason) => <div key={reason} className="text-xs text-slate-600">• {reason}</div>)}
+                    {risks[0] && <div className="text-xs text-red-600">Risk: {risks[0]}</div>}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+          {!grantMatchesQuery.isLoading && (grantMatchesQuery.data ?? []).length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center text-sm text-slate-500">No project matches generated for this grant yet.</CardContent></Card>}
         </TabsContent>
 
         <TabsContent value="requirements" className="mt-4">

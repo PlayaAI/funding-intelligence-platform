@@ -528,6 +528,79 @@ export type GrantInsert = {
 export type GrantUpdate = Partial<GrantInsert>;
 
 // ============================================================
+// Grant Matches
+// ============================================================
+
+export type MatchTierDb =
+  | "best"
+  | "strong"
+  | "good"
+  | "maybe"
+  | "weak"
+  | "needs_review";
+
+export type GrantMatchStatusDb =
+  | "active"
+  | "saved"
+  | "hidden"
+  | "dismissed"
+  | "applied";
+
+export interface GrantMatchRow {
+  id: string;
+  project_id: string;
+  grant_id: string;
+  funder_id: string | null;
+  match_score: number;
+  match_tier: MatchTierDb;
+  readiness_score: number;
+  urgency_score: number;
+  evidence_score: number;
+  fit_reasons: Json;
+  risks: Json;
+  missing_items: Json;
+  recommended_actions: Json;
+  status: GrantMatchStatusDb;
+  hidden_at: string | null;
+  saved_at: string | null;
+  dismissed_reason: string | null;
+  generated_by: string;
+  generated_at: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type GrantMatchInsert = {
+  id?: string;
+  project_id: string;
+  grant_id: string;
+  funder_id?: string | null;
+  match_score?: number;
+  match_tier?: MatchTierDb;
+  readiness_score?: number;
+  urgency_score?: number;
+  evidence_score?: number;
+  fit_reasons?: Json;
+  risks?: Json;
+  missing_items?: Json;
+  recommended_actions?: Json;
+  status?: GrantMatchStatusDb;
+  hidden_at?: string | null;
+  saved_at?: string | null;
+  dismissed_reason?: string | null;
+  generated_by?: string;
+  generated_at?: string;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type GrantMatchUpdate = Partial<GrantMatchInsert>;
+
+// ============================================================
 // Funders
 // ============================================================
 
@@ -936,6 +1009,37 @@ export interface Database {
             foreignKeyName: "grants_related_project_id_fkey";
             columns: ["related_project_id"];
             referencedRelation: "projects";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      grant_matches: {
+        Row: GrantMatchRow;
+        Insert: GrantMatchInsert;
+        Update: GrantMatchUpdate;
+        Relationships: [
+          {
+            foreignKeyName: "grant_matches_project_id_fkey";
+            columns: ["project_id"];
+            referencedRelation: "projects";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "grant_matches_grant_id_fkey";
+            columns: ["grant_id"];
+            referencedRelation: "grants";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "grant_matches_funder_id_fkey";
+            columns: ["funder_id"];
+            referencedRelation: "funders";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "grant_matches_reviewed_by_fkey";
+            columns: ["reviewed_by"];
+            referencedRelation: "profiles";
             referencedColumns: ["id"];
           }
         ];
