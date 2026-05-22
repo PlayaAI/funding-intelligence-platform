@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { calculateGrantMatch } from "@/lib/matching/matchingEngine";
 import type {
+  AgentNoteRow,
+  AgentReportRow,
   ApplicationRow,
   DocumentRow,
   FunderRow,
@@ -61,12 +63,14 @@ async function fetchMatchingInputs(projectId?: string, grantId?: string) {
   const grantsResult: SupabaseResult<GrantRow[]> = await grantsQuery;
   if (grantsResult.error) throw new Error(grantsResult.error.message);
 
-  const [funders, proofItems, documents, applications, tasks] = await Promise.all([
+  const [funders, proofItems, documents, applications, tasks, agentNotes, agentReports] = await Promise.all([
     selectAll<FunderRow>("funders"),
     selectAll<ProofItemRow>("proof_items"),
     selectAll<DocumentRow>("documents"),
     selectAll<ApplicationRow>("applications"),
     selectAll<TaskRow>("tasks"),
+    selectAll<AgentNoteRow>("agent_notes"),
+    selectAll<AgentReportRow>("agent_reports"),
   ]);
 
   return {
@@ -77,6 +81,8 @@ async function fetchMatchingInputs(projectId?: string, grantId?: string) {
     documents,
     applications,
     tasks,
+    agentNotes,
+    agentReports,
   };
 }
 
@@ -140,6 +146,16 @@ async function generateMatches(projectId?: string, grantId?: string): Promise<Gr
         tasks: inputs.tasks.filter((task) =>
           !task.archived_at && (task.related_project_id === project.id || task.related_grant_id === grant.id)
         ),
+        agentNotes: inputs.agentNotes.filter((note) =>
+          !note.archived_at && (
+            note.related_project_id === project.id ||
+            note.related_grant_id === grant.id ||
+            (funder?.id && note.related_funder_id === funder.id)
+          )
+        ),
+        agentReports: inputs.agentReports.filter((report) =>
+          !report.archived_at && (report.related_project_id === project.id || report.related_grant_id === grant.id)
+        ),
       });
       return {
         project_id: project.id,
@@ -147,9 +163,13 @@ async function generateMatches(projectId?: string, grantId?: string): Promise<Gr
         funder_id: funder?.id ?? null,
         match_score: result.matchScore,
         match_tier: result.matchTier,
+        decision_label: result.decisionLabel,
         readiness_score: result.readinessScore,
         urgency_score: result.urgencyScore,
         evidence_score: result.evidenceScore,
+        deadline_status: result.deadlineStatus,
+        score_breakdown: result.scoreBreakdown,
+        data_quality_flags: result.dataQualityFlags,
         fit_reasons: result.fitReasons,
         risks: result.risks,
         missing_items: result.missingItems,

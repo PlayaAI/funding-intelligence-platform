@@ -7,6 +7,7 @@ import { useMappedGrants } from "@/hooks/useGrants";
 import { useApplicationsByProject } from "@/hooks/useApplications";
 import { useGenerateMatchesForProject, useGrantMatchesForProject, useHideMatch, useSaveMatch } from "@/hooks/useGrantMatches";
 import { matchJsonArray } from "@/lib/matching/matchesService";
+import { DECISION_CLASSES, DECISION_LABELS, deadlineLanguage } from "@/lib/matching/matchPresentation";
 import { useTasksByProject } from "@/hooks/useTasks";
 import { documents } from "@/data/documents";
 import ProofItemFormDialog, { PROOF_TYPE_LABELS, parseTagsString, type ProofItemFormValues } from "@/components/dashboard/ProofItemFormDialog";
@@ -419,15 +420,21 @@ export default function DashboardProjectDetailPage() {
             const reasons = matchJsonArray(match.fit_reasons).slice(0, 3);
             const risks = matchJsonArray(match.risks);
             const actions = matchJsonArray(match.recommended_actions);
+            const deadline = deadlineLanguage(match.grant?.deadline);
             return (
               <Card key={match.id} className="border-slate-200">
                 <CardContent className="pt-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <Link href={`/dashboard/grants/`}><div className="font-medium text-sm text-slate-900 hover:text-primary">{match.grant?.title ?? "Unknown grant"}</div></Link>
-                      <div className="text-xs text-slate-500 mt-0.5">{match.grant?.funder_name ?? "Unknown funder"} · Score {match.match_score} · Readiness {match.readiness_score} · Urgency {match.urgency_score}</div>
+                      <Link href={`/dashboard/grants/${match.grant_id}`}><div className="font-medium text-sm text-slate-900 hover:text-primary">{match.grant?.title ?? "Unknown grant"}</div></Link>
+                      <div className="text-xs text-slate-500 mt-0.5">{match.grant?.funder_name ?? "Unknown funder"} · Score {match.match_score} · Readiness {match.readiness_score} · {deadline.label}</div>
                     </div>
-                    <Badge variant="outline" className="text-xs capitalize">{match.match_tier.replace("_", " ")}</Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant="outline" className={`text-xs ${DECISION_CLASSES[match.decision_label] ?? DECISION_CLASSES.needs_review}`}>
+                        {DECISION_LABELS[match.decision_label] ?? "Needs Review"}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs capitalize">{match.match_tier.replace("_", " ")}</Badge>
+                    </div>
                   </div>
                   {reasons.map((reason) => <div key={reason} className="text-xs text-slate-600">• {reason}</div>)}
                   {risks[0] && <div className="text-xs text-red-600">Risk: {risks[0]}</div>}

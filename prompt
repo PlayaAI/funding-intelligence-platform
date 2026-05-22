@@ -1,0 +1,514 @@
+You are a senior full-stack engineer, product architect, Supabase/PostgreSQL engineer, grant-tech strategist, and matching-systems calibration expert.
+
+You are working inside an existing React + Vite + TypeScript + Supabase app called Grant OS.
+
+Grant OS is an Instrumentl-inspired funding intelligence and grant operations platform. It already has:
+- Projects
+- Proof Items
+- Grants
+- Funders
+- Peer Organizations
+- Applications
+- Tasks
+- Imports
+- Team / Custom Fields / Calendar / Documents / Financials shell
+- Agent Notes / Reports / Activity / Agent Import
+- Documents foundation
+- Deterministic Grant Matching & Readiness Engine
+
+Current completed matching phase:
+V1.0 — Grant Matching & Readiness Engine
+
+What V1.0 already added:
+- `grant_matches` table
+- deterministic scoring engine
+- `/dashboard/matching`
+- top matches
+- ending soon
+- needs review
+- saved matches
+- save / hide / review actions
+- project detail matches
+- grant detail project matches
+- match data in JSON exports
+
+Current issue:
+The matching engine is technically working, but it needs calibration before we trust it for real grant decisions.
+
+Important context:
+The dashboard does not yet contain the same complete real data as the external AI grant-fit report. So do not judge the current visible rankings too harshly. The goal of this phase is not to force exact rankings yet. The goal is to make the matching engine structurally smarter, more transparent, and more strategy-aligned so that when the full Instrumentl/export data is imported, the engine behaves much closer to a real grant strategist.
+
+Reference strategy from uploaded report:
+The external grant-fit report used stricter strategic judgment. It recommended:
+- Apply Now / Highest Priority:
+  - MIT Solve: FII Innovators Pitch
+  - MIT Solve: 10th Anniversary Global Challenge only if nearly complete
+  - AWS Imagine Grant if nonprofit/fiscal sponsor eligibility is confirmed
+  - .ORG Impact Awards if .ORG eligibility exists
+- Prepare Next / Monitor:
+  - Michelson Spark / Digital Equity
+  - CSET Foundational Research
+  - Global Pluralism Award
+  - Future of Work Accelerator
+  - Trust in Practice Awards
+- Lower priority / not fit unless reframed:
+  - AHRQ AI Healthcare Safety
+  - NIH neuroscience grants
+  - generic arts/exhibition grants unless Playa AI is reframed as arts/community installation
+  - government speaker/leadership programs
+  - curatorial/arts-sector grants
+
+The report’s strategic logic emphasized:
+- AI-forward fit
+- human connection / loneliness / belonging
+- responsible AI
+- social trust
+- community infrastructure
+- legal eligibility
+- deadline feasibility
+- application readiness
+- proof materials
+- avoiding generic arts/healthcare/government grants unless specifically reframed
+
+Next phase:
+
+# V1.0.1 — Matching Calibration + Strategic Decision Layer
+
+Goal:
+Improve the deterministic matching engine so it is more transparent, more useful, and closer to strategic grant judgment — without adding AI APIs.
+
+Do not add OpenAI/OpenRouter/Anthropic.
+Do not add native AI calls.
+Do not scrape.
+Do not add autonomous agents.
+Do not redesign the dashboard.
+Do not weaken RLS.
+Do not break existing matching behavior.
+Do not require the full real dataset to be present.
+
+Build a calibration and decision layer on top of the existing rules engine.
+
+---
+
+## 1. Add Strategic Decision Label
+
+The match tier alone is not enough.
+
+Add a new field to `grant_matches`:
+
+`decision_label text not null default 'needs_review'`
+
+Allowed values:
+- apply_now
+- prepare_next
+- monitor
+- skip
+- track_next_cycle
+- needs_review
+
+Add a human-readable label in UI:
+- Apply Now
+- Prepare Next
+- Monitor
+- Skip
+- Track Next Cycle
+- Needs Review
+
+Decision logic should consider:
+- match score
+- readiness score
+- urgency score
+- deadline status
+- eligibility risk
+- data completeness
+- whether deadline has passed
+- whether deadline is too close with low readiness
+
+Example logic:
+- High match + enough readiness + deadline active/soon = Apply Now
+- High match + low readiness + deadline not too close = Prepare Next
+- Medium match + later/rolling deadline = Monitor
+- Past deadline = Track Next Cycle or Skip depending fit
+- Low match + strong eligibility/geography mismatch = Skip
+- Missing key fields = Needs Review
+
+Do not make this perfect. Make it transparent and practical.
+
+---
+
+## 2. Add Score Breakdown
+
+Add a new field to `grant_matches`:
+
+`score_breakdown jsonb not null default '{}'::jsonb`
+
+It should store something like:
+
+```json
+{
+  "topic_fit": { "score": 18, "max": 25 },
+  "geography": { "score": 15, "max": 15 },
+  "eligibility": { "score": 8, "max": 15 },
+  "funding_use": { "score": 12, "max": 15 },
+  "deadline": { "score": 15, "max": 15 },
+  "evidence": { "score": 7, "max": 15 }
+}
+
+Update the matching engine to return this breakdown.
+
+The UI should show this in a clear way, ideally in a “Why this score?” expandable section or match detail drawer.
+
+Do not overbuild charts. A simple table/list is enough.
+
+3. Improve Deadline Language + Deadline Strategy
+
+Fix wording:
+
+Current bad wording:
+
+“Ending in 0 days”
+
+Replace with:
+
+Due today
+Past due by X days
+X days left
+Rolling deadline
+Deadline unknown
+
+Decision behavior:
+
+Deadline passed → Track Next Cycle or Skip
+Due today + high readiness → Apply Now
+Due today + low readiness → Too Late / Needs Review
+1–7 days + low readiness → Prepare only if already drafted
+8–30 days + strong match → Apply Now or Prepare Next
+31–60 days → Prepare Next / Monitor
+rolling → Monitor / Prepare Next depending score
+unknown → Needs Review
+
+Add this deadline status to fit reasons/risks/recommended actions.
+
+4. Improve Readiness Score
+
+Current readiness can be too harsh or unclear.
+
+Readiness should consider:
+
+project profile completeness
+proof items linked to project
+public proof items
+linked documents
+extracted document text
+applications already started
+tasks completed/open
+agent notes/reports
+presence of application materials like problem statement, solution, impact, budget, team, demo/screenshots, metrics, legal/eligibility notes if represented in available fields
+
+Suggested readiness logic:
+
+project profile fields complete: up to 20 points
+proof items: up to 25 points
+documents/extracted text: up to 15 points
+application workspace exists/progress: up to 15 points
+tasks completed / low blockers: up to 10 points
+agent notes/reports: up to 10 points
+eligibility/legal/budget evidence if detectable: up to 5 points
+
+Then normalize to 0–100.
+
+Do not require all fields to exist. Use whatever data is available safely.
+
+Add missing items when readiness is low:
+
+Add proof items
+Add demo/screenshots
+Add impact metrics
+Add budget narrative
+Confirm legal applicant / fiscal sponsor
+Draft reusable application answers
+Add project brief
+Attach grant guidelines/document
+5. Improve Eligibility Risk Detection
+
+Eligibility should become first-class.
+
+Detect and flag phrases in grants/funders/documents where available:
+
+nonprofit
+501(c)(3)
+fiscal sponsor
+university
+academic institution
+government agency
+individual
+organization
+invite only
+.org
+US only
+residency
+registered charity
+tax exempt
+
+Add specific risks/reasons:
+
+“Nonprofit or fiscal sponsor eligibility may need confirmation.”
+“University/academic eligibility may be required.”
+“Government agency eligibility may be required.”
+“Invite-only language detected.”
+“.ORG eligibility may need confirmation.”
+“Applicant type is unclear.”
+
+Eligibility should affect:
+
+match score
+decision_label
+risks
+missing_items
+recommended_actions
+
+Do not over-penalize unclear eligibility; mark as Needs Review where appropriate.
+
+6. Add Data Completeness Warning
+
+If important grant fields are missing, the match should show a warning.
+
+Examples of missing grant data:
+
+no eligibility text
+no funding uses
+no focus/cause areas
+no deadline
+no amount
+no description/summary
+
+Examples of missing project data:
+
+no problem statement
+no solution
+no impact
+no geography
+no proof items
+no documents
+
+Add to risks or missing_items:
+
+“Match score may be unreliable because eligibility data is missing.”
+“Project profile is incomplete, so readiness may be underestimated.”
+“Grant details are sparse; verify official source before applying.”
+
+This is important because the current dashboard may not yet contain the same complete dataset as the external report.
+
+7. Improve Topic Fit Calibration
+
+The current engine can over-score generic keyword overlap like:
+
+arts
+cultural
+creative
+community
+design
+
+Those can be relevant, but they should not outrank strong AI/human-connection/responsible-tech grants unless the project is explicitly arts/community-installation focused.
+
+Add a strategic keyword weighting layer.
+
+High-value Playa AI keywords:
+
+AI
+artificial intelligence
+responsible AI
+human connection
+loneliness
+belonging
+social isolation
+relationship
+relational AI
+social trust
+community health
+mental well-being
+civic trust
+digital well-being
+future of work
+workplace belonging
+education / learning communities
+social impact technology
+public benefit technology
+
+Medium-value keywords:
+
+community
+technology
+digital inclusion
+social cohesion
+pluralism
+trust
+education
+research
+innovation
+wellbeing
+
+Lower/special-case keywords:
+
+arts
+exhibition
+performance
+curatorial
+healthcare safety
+neuroscience
+government program
+speaker program
+leadership exchange
+
+Do not hardcode Playa AI too narrowly if avoidable, but add configurable weighted keyword groups inside the engine.
+
+The engine should:
+
+boost AI/human-connection/responsible-tech overlap
+reduce generic arts/cultural over-scoring unless project fields also contain arts/community installation language
+flag healthcare/neuroscience/government-only grants as special-case risks unless project has those signals
+8. Add Match Detail Drawer / Expandable Details
+
+On /dashboard/matching, add a detail drawer or expandable section per match.
+
+Show:
+
+match score
+decision label
+score breakdown
+fit reasons
+risks
+missing items
+recommended actions
+data completeness warnings
+deadline status
+generated_at
+reviewed status
+
+Keep it simple and clean.
+
+This is important so the user can understand why a match scored high/low.
+
+9. Add Calibration Reference Notes
+
+Add an internal developer note or documentation section, not a user-facing hardcoded ranking, explaining benchmark expectations from the external report.
+
+Create or update a docs/comment file if suitable:
+
+MATCHING_CALIBRATION_NOTES.md
+
+Include:
+
+High-priority examples:
+MIT Solve: FII Innovators Pitch
+MIT Solve: 10th Anniversary Global Challenge
+AWS Imagine Grant
+.ORG Impact Awards
+Michelson Spark / Digital Equity
+Internet Society Foundation Research Grant
+CSET Foundational Research
+Global Pluralism Award
+Future of Work Accelerator
+Trust in Practice Awards
+Lower/special-case examples:
+AHRQ AI Healthcare Safety
+NIH neuroscience grants
+generic arts/exhibition grants
+government speaker/leadership programs
+curatorial/arts grants
+
+Make clear:
+These are calibration references, not hardcoded outcomes.
+
+10. Migration
+
+Add migration:
+
+artifacts/grant-os/supabase/migrations/012_calibrate_grant_matches.sql
+
+It should:
+
+add decision_label
+add score_breakdown
+optionally add deadline_status text if useful
+optionally add data_quality_flags jsonb default '[]'::jsonb if useful
+
+Use safe alter table if exists style.
+
+Do not drop existing data.
+Do not reset existing matches.
+
+Existing matches can be refreshed after migration.
+
+11. UI Updates
+
+Update /dashboard/matching cards to show:
+
+decision label badge
+match tier badge
+deadline status text
+better urgency warning
+“Why this score?” / details button
+data quality warning if present
+
+Update project detail match section and grant detail project match section enough to show:
+
+decision label
+deadline status
+top risk
+details link/button if simple
+
+Do not clutter the page.
+
+12. Export Updates
+
+Update JSON export packages to include:
+
+decision_label
+score_breakdown
+deadline_status if added
+data_quality_flags if added
+13. Testing
+
+After implementation:
+
+Run migration 012.
+Regenerate matches.
+Confirm existing matches are not deleted.
+Confirm new matches include:
+decision_label
+score_breakdown
+deadline status / better deadline wording
+data quality flags if added
+Confirm “Due today” replaces “Ending in 0 days.”
+Confirm past deadlines display as past due.
+Confirm missing eligibility creates a useful risk.
+Confirm project with no proof shows missing proof/readiness actions.
+Confirm matching dashboard details panel works.
+Confirm exports include new fields.
+Confirm typecheck passes.
+Confirm build passes.
+Confirm no AI/API keys were added.
+
+Run:
+
+pnpm --filter @workspace/grant-os run typecheck
+pnpm --filter @workspace/grant-os run build
+Return after implementation
+
+Return:
+
+Implementation summary
+Files changed
+Migration added
+Matching logic changes
+New decision label logic
+New readiness logic
+New eligibility/data completeness warnings
+UI changes
+Typecheck/build result
+Manual test steps
+Remaining risks/limitations
+
+Important:
+This is a calibration phase, not a new AI phase. The engine should remain deterministic, transparent, and explainable.

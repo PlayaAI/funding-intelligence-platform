@@ -546,6 +546,21 @@ export type GrantMatchStatusDb =
   | "dismissed"
   | "applied";
 
+export type GrantMatchDecisionLabelDb =
+  | "apply_now"
+  | "prepare_next"
+  | "monitor"
+  | "skip"
+  | "track_next_cycle"
+  | "needs_review";
+
+export type GrantMatchDeadlineStatusDb =
+  | "due_today"
+  | "past_due"
+  | "active"
+  | "rolling"
+  | "unknown";
+
 export interface GrantMatchRow {
   id: string;
   project_id: string;
@@ -553,9 +568,13 @@ export interface GrantMatchRow {
   funder_id: string | null;
   match_score: number;
   match_tier: MatchTierDb;
+  decision_label: GrantMatchDecisionLabelDb;
   readiness_score: number;
   urgency_score: number;
   evidence_score: number;
+  deadline_status: GrantMatchDeadlineStatusDb;
+  score_breakdown: Json;
+  data_quality_flags: Json;
   fit_reasons: Json;
   risks: Json;
   missing_items: Json;
@@ -579,9 +598,13 @@ export type GrantMatchInsert = {
   funder_id?: string | null;
   match_score?: number;
   match_tier?: MatchTierDb;
+  decision_label?: GrantMatchDecisionLabelDb;
   readiness_score?: number;
   urgency_score?: number;
   evidence_score?: number;
+  deadline_status?: GrantMatchDeadlineStatusDb;
+  score_breakdown?: Json;
+  data_quality_flags?: Json;
   fit_reasons?: Json;
   risks?: Json;
   missing_items?: Json;

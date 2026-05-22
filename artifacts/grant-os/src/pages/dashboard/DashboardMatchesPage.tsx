@@ -10,6 +10,14 @@ import {
   useSaveMatch,
 } from "@/hooks/useGrantMatches";
 import { matchJsonArray, type GrantMatchWithRelations } from "@/lib/matching/matchesService";
+import {
+  DEADLINE_STATUS_LABELS,
+  DECISION_CLASSES,
+  DECISION_LABELS,
+  deadlineLanguage,
+  jsonStringArray,
+  scoreBreakdownItems,
+} from "@/lib/matching/matchPresentation";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/contexts/AuthContext";
@@ -39,7 +47,7 @@ const TIER_CLASSES: Record<string, string> = {
 };
 
 function formatDate(value?: string | null) {
-  if (!value) return "No deadline";
+  if (!value) return "Deadline unknown";
   if (/rolling|ongoing/i.test(value)) return value;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -47,10 +55,7 @@ function formatDate(value?: string | null) {
 }
 
 function daysUntil(value?: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return Math.ceil((date.getTime() - Date.now()) / 86400000);
+  return deadlineLanguage(value).days;
 }
 
 function amountLabel(match: GrantMatchWithRelations) {
@@ -72,6 +77,60 @@ function recommendedNextAction(match: GrantMatchWithRelations) {
   return "Review eligibility and decide go/no-go.";
 }
 
+function MatchDetails({ match }: { match: GrantMatchWithRelations }) {
+  const breakdown = scoreBreakdownItems(match.score_breakdown);
+  const risks = matchJsonArray(match.risks);
+  const missing = matchJsonArray(match.missing_items);
+  const actions = matchJsonArray(match.recommended_actions);
+  const dataFlags = jsonStringArray(match.data_quality_flags);
+  const reasons = matchJsonArray(match.fit_reasons);
+
+  return (
+    <details className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+      <summary className="cursor-pointer font-medium text-slate-700">Why this score?</summary>
+      <div className="mt-3 grid gap-3">
+        {breakdown.length > 0 && (
+          <div>
+            <div className="text-slate-500 mb-1">Score breakdown</div>
+            <div className="divide-y divide-slate-200 rounded border border-slate-200 bg-white">
+              {breakdown.map((item) => (
+                <div key={item.key} className="flex items-center justify-between px-2 py-1.5">
+                  <span className="text-slate-600">{item.label}</span>
+                  <span className="font-semibold text-slate-800">{item.score}/{item.max}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {reasons.length > 0 && <ListBlock title="Fit reasons" items={reasons} />}
+          {risks.length > 0 && <ListBlock title="Risks" items={risks} tone="risk" />}
+          {missing.length > 0 && <ListBlock title="Missing items" items={missing} />}
+          {actions.length > 0 && <ListBlock title="Recommended actions" items={actions} />}
+          {dataFlags.length > 0 && <ListBlock title="Data quality" items={dataFlags} tone="warning" />}
+        </div>
+        <div className="flex flex-wrap gap-3 text-slate-500">
+          <span>Deadline: {DEADLINE_STATUS_LABELS[match.deadline_status] ?? match.deadline_status}</span>
+          <span>Generated: {formatDate(match.generated_at)}</span>
+          <span>Reviewed: {match.reviewed_at ? formatDate(match.reviewed_at) : "Not reviewed"}</span>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function ListBlock({ title, items, tone = "default" }: { title: string; items: string[]; tone?: "default" | "risk" | "warning" }) {
+  const toneClass = tone === "risk" ? "text-red-700" : tone === "warning" ? "text-amber-700" : "text-slate-600";
+  return (
+    <div>
+      <div className="text-slate-500 mb-1">{title}</div>
+      <div className="space-y-1">
+        {items.slice(0, 5).map((item) => <div key={item} className={toneClass}>• {item}</div>)}
+      </div>
+    </div>
+  );
+}
+
 function MatchCard({ match, compact = false }: { match: GrantMatchWithRelations; compact?: boolean }) {
   const save = useSaveMatch();
   const hide = useHideMatch();
@@ -80,7 +139,8 @@ function MatchCard({ match, compact = false }: { match: GrantMatchWithRelations;
   const { user } = useAuth();
   const reasons = matchJsonArray(match.fit_reasons).slice(0, 3);
   const risks = matchJsonArray(match.risks);
-  const days = daysUntil(match.grant?.deadline);
+  const deadline = deadlineLanguage(match.grant?.deadline);
+  const dataFlags = jsonStringArray(match.data_quality_flags);
 
   return (
     <Card className="border-slate-200">
@@ -94,22 +154,32 @@ function MatchCard({ match, compact = false }: { match: GrantMatchWithRelations;
               {match.grant?.funder_name ?? match.funder?.name ?? "Unknown funder"} · {match.project?.name ?? "Unknown project"}
             </div>
           </div>
-          <Badge variant="outline" className={`text-xs ${TIER_CLASSES[match.match_tier] ?? TIER_CLASSES.needs_review}`}>
-            {TIER_LABELS[match.match_tier] ?? match.match_tier}
-          </Badge>
+          <div className="flex flex-col items-end gap-1">
+            <Badge variant="outline" className={`text-xs ${DECISION_CLASSES[match.decision_label] ?? DECISION_CLASSES.needs_review}`}>
+              {DECISION_LABELS[match.decision_label] ?? "Needs Review"}
+            </Badge>
+            <Badge variant="outline" className={`text-xs ${TIER_CLASSES[match.match_tier] ?? TIER_CLASSES.needs_review}`}>
+              {TIER_LABELS[match.match_tier] ?? match.match_tier}
+            </Badge>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
           <div><div className="text-slate-400">Match</div><div className="font-semibold text-slate-800">{match.match_score}</div></div>
           <div><div className="text-slate-400">Readiness</div><div className="font-semibold text-slate-800">{match.readiness_score}</div></div>
           <div><div className="text-slate-400">Urgency</div><div className="font-semibold text-slate-800">{match.urgency_score}</div></div>
-          <div><div className="text-slate-400">Deadline</div><div className="font-semibold text-slate-800">{formatDate(match.grant?.deadline)}</div></div>
+          <div><div className="text-slate-400">Deadline</div><div className="font-semibold text-slate-800">{deadline.label}</div></div>
           <div><div className="text-slate-400">Amount</div><div className="font-semibold text-slate-800">{amountLabel(match)}</div></div>
         </div>
 
-        {days !== null && days >= 0 && days <= 30 && (
+        {deadline.days !== null && deadline.days <= 30 && (
+          <div className={`rounded-md border px-3 py-2 text-xs ${deadline.days < 0 ? "border-red-200 bg-red-50 text-red-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+            {deadline.label}: {recommendedNextAction(match)}
+          </div>
+        )}
+        {dataFlags[0] && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Ending in {days} day{days === 1 ? "" : "s"}: {recommendedNextAction(match)}
+            {dataFlags[0]}
           </div>
         )}
 
@@ -119,6 +189,7 @@ function MatchCard({ match, compact = false }: { match: GrantMatchWithRelations;
           </div>
         )}
         {!compact && risks[0] && <div className="text-xs text-red-600">Risk: {risks[0]}</div>}
+        {!compact && <MatchDetails match={match} />}
 
         <div className="flex flex-wrap gap-2 pt-1">
           {canContribute && (

@@ -1,8 +1,11 @@
 import type {
+  AgentNoteRow,
+  AgentReportRow,
   ApplicationRow,
   DocumentRow,
   FunderRow,
   GrantRow,
+  Json,
   MatchTierDb,
   ProjectRow,
   ProofItemRow,
@@ -10,6 +13,9 @@ import type {
 } from "@/types/database";
 
 export type MatchTier = MatchTierDb;
+export type DecisionLabel = "apply_now" | "prepare_next" | "monitor" | "skip" | "track_next_cycle" | "needs_review";
+export type DeadlineStatus = "due_today" | "past_due" | "active" | "rolling" | "unknown";
+export type ScoreBreakdown = Record<string, { score: number; max: number }>;
 
 export type MatchingInput = {
   project: ProjectRow;
@@ -19,6 +25,8 @@ export type MatchingInput = {
   tasks?: TaskRow[];
   applications?: ApplicationRow[];
   documents?: DocumentRow[];
+  agentNotes?: AgentNoteRow[];
+  agentReports?: AgentReportRow[];
 };
 
 export type MatchingResult = {
@@ -27,6 +35,10 @@ export type MatchingResult = {
   urgencyScore: number;
   evidenceScore: number;
   matchTier: MatchTier;
+  decisionLabel: DecisionLabel;
+  deadlineStatus: DeadlineStatus;
+  scoreBreakdown: ScoreBreakdown;
+  dataQualityFlags: string[];
   fitReasons: string[];
   risks: string[];
   missingItems: string[];
@@ -41,8 +53,33 @@ const STOP_WORDS = new Set([
 
 const GLOBAL_TERMS = ["anywhere", "global", "international", "worldwide", "remote", "all locations"];
 const US_TERMS = ["united states", "usa", "u.s.", "us ", "national", "north america"];
-const NONPROFIT_TERMS = ["nonprofit", "non-profit", "501c3", "501(c)(3)", "charity", "foundation"];
+const NONPROFIT_TERMS = ["nonprofit", "non-profit", "501c3", "501(c)(3)", "tax exempt", "registered charity", "charity", "foundation"];
+const UNIVERSITY_TERMS = ["university", "academic institution", "college", "research institution"];
+const GOVERNMENT_TERMS = ["government agency", "municipality", "public agency", "state agency", "federal agency"];
+const FISCAL_SPONSOR_TERMS = ["fiscal sponsor", "fiscally sponsored"];
+const INVITE_ONLY_TERMS = ["invite only", "invitation only", "by invitation"];
+const DOT_ORG_TERMS = [".org", "dot org"];
+const INDIVIDUAL_TERMS = ["individual", "artists", "researchers"];
 const ORG_TERMS = ["organization", "community", "collective", "social enterprise", "startup", "company"];
+const APPLICATION_MATERIAL_TERMS = ["problem statement", "solution", "impact", "budget", "team", "demo", "screenshot", "metric", "legal", "eligibility", "fiscal sponsor"];
+
+const STRATEGIC_KEYWORDS = {
+  high: [
+    "ai", "artificial intelligence", "responsible ai", "human connection", "loneliness", "belonging",
+    "social isolation", "relationship", "relational ai", "social trust", "community health",
+    "mental well being", "mental wellbeing", "civic trust", "digital well being", "digital wellbeing",
+    "future of work", "workplace belonging", "education", "learning communities",
+    "social impact technology", "public benefit technology",
+  ],
+  medium: [
+    "community", "technology", "digital inclusion", "social cohesion", "pluralism", "trust",
+    "education", "research", "innovation", "wellbeing", "well being",
+  ],
+  lower: ["arts", "exhibition", "performance", "curatorial", "healthcare safety", "neuroscience", "government program", "speaker program", "leadership exchange"],
+  artsSignals: ["arts", "artist", "installation", "exhibition", "performance", "creative", "cultural"],
+  healthcareSignals: ["healthcare safety", "clinical", "patient safety", "medical device", "neuroscience", "nih"],
+  governmentSignals: ["government program", "public sector", "civil service", "speaker program", "leadership exchange"],
+};
 
 function text(values: Array<unknown>): string {
   return values
@@ -89,20 +126,21 @@ function parseDeadline(grant: GrantRow): { date: Date | null; label: "date" | "r
   return Number.isNaN(date.getTime()) ? { date: null, label: "unknown" } : { date, label: "date" };
 }
 
-function deadlineScores(grant: GrantRow): { weighted: number; urgency: number; reason: string; risk?: string; action: string } {
+function deadlineScores(grant: GrantRow): { weighted: number; urgency: number; status: DeadlineStatus; days: number | null; reason: string; risk?: string; action: string } {
   const deadline = parseDeadline(grant);
   if (deadline.label === "rolling") {
-    return { weighted: 9, urgency: 55, reason: "Rolling or ongoing deadline.", action: "Confirm next review cycle and prepare a reusable application packet." };
+    return { weighted: 10, urgency: 45, status: "rolling", days: null, reason: "Rolling deadline.", action: "Confirm next review cycle and prepare a reusable application packet." };
   }
   if (!deadline.date) {
-    return { weighted: 5, urgency: 35, reason: "Deadline is unknown.", risk: "Deadline needs review.", action: "Confirm the next deadline before prioritizing this opportunity." };
+    return { weighted: 5, urgency: 30, status: "unknown", days: null, reason: "Deadline unknown.", risk: "Deadline needs review.", action: "Confirm the next deadline before prioritizing this opportunity." };
   }
   const days = Math.ceil((deadline.date.getTime() - Date.now()) / 86400000);
-  if (days < 0) return { weighted: 1, urgency: 5, reason: "Deadline has passed.", risk: "Deadline appears to have passed.", action: "Skip unless a new cycle is available." };
-  if (days <= 7) return { weighted: 8, urgency: 100, reason: `Deadline is within ${days} day${days === 1 ? "" : "s"}.`, risk: "Very short runway before deadline.", action: "Apply now only if eligibility and core proof are already ready." };
-  if (days <= 30) return { weighted: 14, urgency: 90, reason: `Deadline is within ${days} days.`, action: "Prioritize eligibility review and application drafting this week." };
-  if (days <= 60) return { weighted: 11, urgency: 65, reason: `Deadline is within ${days} days.`, action: "Start gathering proof and required documents." };
-  return { weighted: 7, urgency: 30, reason: `Deadline is in ${days} days.`, action: "Keep on watchlist and review after nearer-deadline matches." };
+  if (days < 0) return { weighted: 1, urgency: 5, status: "past_due", days, reason: `Past due by ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"}.`, risk: "Deadline appears to have passed.", action: "Track the next cycle unless the fit is weak or eligibility is blocked." };
+  if (days === 0) return { weighted: 7, urgency: 100, status: "due_today", days, reason: "Due today.", risk: "Deadline is today.", action: "Submit only if eligibility and core materials are already ready." };
+  if (days <= 7) return { weighted: 8, urgency: 95, status: "active", days, reason: `${days} day${days === 1 ? "" : "s"} left.`, risk: "Very short runway before deadline.", action: "Prepare only if the application is already drafted." };
+  if (days <= 30) return { weighted: 15, urgency: 85, status: "active", days, reason: `${days} days left.`, action: "Prioritize eligibility review and application drafting this week." };
+  if (days <= 60) return { weighted: 12, urgency: 60, status: "active", days, reason: `${days} days left.`, action: "Start gathering proof and required documents." };
+  return { weighted: 8, urgency: 25, status: "active", days, reason: `${days} days left.`, action: "Keep on watchlist and review after nearer-deadline matches." };
 }
 
 function scoreGeography(project: ProjectRow, grant: GrantRow, reasons: string[], risks: string[]): number {
@@ -126,55 +164,189 @@ function scoreGeography(project: ProjectRow, grant: GrantRow, reasons: string[],
   return Math.max(projectGeo ? 4 : 6, overlap.score);
 }
 
-function scoreEligibility(project: ProjectRow, grant: GrantRow, reasons: string[], risks: string[], missing: string[]): number {
-  const eligibility = text([grant.eligibility]);
+function scoreEligibility(project: ProjectRow, grant: GrantRow, funder: FunderRow | null | undefined, reasons: string[], risks: string[], missing: string[]): { score: number; blockingRisk: boolean; unclear: boolean } {
+  const eligibility = text([grant.eligibility, grant.notes, funder?.notes]);
   const projectText = text([project.name, project.summary, project.category, project.target_audience, project.grant_relevance]);
   if (!eligibility) {
     risks.push("Eligibility language is missing.");
+    risks.push("Applicant type is unclear.");
     missing.push("Grant eligibility requirements");
-    return 7;
+    return { score: 7, blockingRisk: false, unclear: true };
   }
-  if (includesAny(eligibility, NONPROFIT_TERMS) && !includesAny(projectText, NONPROFIT_TERMS)) {
-    risks.push("Nonprofit or 501(c)(3) eligibility may need a fiscal sponsor or partner.");
-    return 8;
+  let score = 12;
+  let blockingRisk = false;
+  let unclear = false;
+  if (includesAny(eligibility, NONPROFIT_TERMS) && !includesAny(projectText, NONPROFIT_TERMS.concat(FISCAL_SPONSOR_TERMS))) {
+    risks.push("Nonprofit or fiscal sponsor eligibility may need confirmation.");
+    score -= 4;
+    unclear = true;
+  }
+  if (includesAny(eligibility, UNIVERSITY_TERMS) && !includesAny(projectText, UNIVERSITY_TERMS)) {
+    risks.push("University/academic eligibility may be required.");
+    score -= 5;
+    blockingRisk = true;
+  }
+  if (includesAny(eligibility, GOVERNMENT_TERMS) && !includesAny(projectText, GOVERNMENT_TERMS)) {
+    risks.push("Government agency eligibility may be required.");
+    score -= 6;
+    blockingRisk = true;
+  }
+  if (includesAny(eligibility, INVITE_ONLY_TERMS)) {
+    risks.push("Invite-only language detected.");
+    score -= 6;
+    blockingRisk = true;
+  }
+  if (includesAny(eligibility, DOT_ORG_TERMS) && !includesAny(projectText, DOT_ORG_TERMS)) {
+    risks.push(".ORG eligibility may need confirmation.");
+    score -= 3;
+    unclear = true;
+  }
+  if (includesAny(eligibility, INDIVIDUAL_TERMS)) {
+    reasons.push("Eligibility appears to allow individual applicants or broad applicant types.");
+    score += 1;
   }
   if (includesAny(eligibility, ORG_TERMS)) {
     reasons.push("Eligibility appears compatible with organizations or community initiatives.");
-    return 12;
+    score += 1;
   }
-  risks.push("Applicant eligibility needs human review.");
-  return 9;
+  if (score < 10 && !blockingRisk) risks.push("Applicant eligibility needs human review.");
+  return { score: Math.max(3, Math.min(15, score)), blockingRisk, unclear };
 }
 
-function scoreEvidence(input: MatchingInput, reasons: string[], risks: string[], missing: string[]): { weighted: number; readiness: number; evidence: number } {
+function scoreReadiness(input: MatchingInput, reasons: string[], risks: string[], missing: string[]): { weighted: number; readiness: number; evidence: number } {
   const proofItems = input.proofItems ?? [];
   const docs = input.documents ?? [];
   const apps = input.applications ?? [];
   const tasks = input.tasks ?? [];
+  const agentNotes = input.agentNotes ?? [];
+  const agentReports = input.agentReports ?? [];
   const publicProof = proofItems.filter((item) => item.public_visibility).length;
   const completedTasks = tasks.filter((task) => task.status === "Complete").length;
   const openTasks = tasks.filter((task) => !["Complete", "Archived"].includes(task.status)).length;
   const hasExtractedDocs = docs.some((doc) => (doc.extracted_text ?? "").trim().length > 40);
   const hasApplication = apps.some((app) => app.grant_id === input.grant.id || app.project_id === input.project.id);
+  const readinessText = text([
+    input.project.problem_statement, input.project.solution, input.project.impact, input.project.reusable_grant_language,
+    ...proofItems.flatMap((item) => [item.title, item.description, item.grant_relevance, item.tags]),
+    ...docs.flatMap((doc) => [doc.title, doc.extracted_text]),
+    ...apps.flatMap((app) => [app.title, app.notes]),
+    ...agentNotes.flatMap((note) => [note.title, note.content]),
+    ...agentReports.flatMap((report) => [report.title, report.content]),
+  ]);
 
-  let evidence = Math.min(45, proofItems.length * 12) + Math.min(15, publicProof * 5) + Math.min(20, docs.length * 8);
-  if (hasExtractedDocs) evidence += 10;
-  evidence = clamp(evidence);
+  const projectFields = [
+    input.project.summary,
+    input.project.problem_statement,
+    input.project.solution,
+    input.project.target_audience,
+    input.project.geography,
+    input.project.technology,
+    input.project.impact,
+    input.project.grant_relevance,
+  ];
+  const profileScore = Math.round((projectFields.filter((value) => Boolean(value && value.trim())).length / projectFields.length) * 20);
+  const proofScore = Math.min(25, proofItems.length * 8 + publicProof * 3);
+  const documentScore = Math.min(15, docs.length * 4 + (hasExtractedDocs ? 7 : 0));
+  const applicationScore = hasApplication ? Math.min(15, 8 + apps.filter((app) => app.status !== "Not Started").length * 4) : 0;
+  const taskScore = tasks.length ? Math.max(0, Math.min(10, completedTasks * 3 + Math.max(0, 4 - openTasks))) : 4;
+  const noteScore = Math.min(10, agentNotes.length * 3 + agentReports.length * 5);
+  const materialScore = Math.min(5, APPLICATION_MATERIAL_TERMS.filter((term) => includesAny(readinessText, [term])).length);
 
-  let readiness = evidence * 0.7 + Math.min(15, completedTasks * 4) - Math.min(15, openTasks * 2);
-  if (hasApplication) readiness += 15;
-  readiness = clamp(readiness);
+  const readiness = clamp(profileScore + proofScore + documentScore + applicationScore + taskScore + noteScore + materialScore);
+  const evidence = clamp(proofScore * 2.2 + documentScore * 1.8 + noteScore * 1.5 + materialScore * 3);
 
   if (proofItems.length > 0) reasons.push(`${proofItems.length} linked proof item${proofItems.length === 1 ? "" : "s"} available.`);
   if (hasExtractedDocs) reasons.push("At least one linked document has extracted text.");
+  if (hasApplication) reasons.push("Application workspace exists for this project or grant.");
+  if (agentNotes.length || agentReports.length) reasons.push("Agent notes or reports provide extra readiness context.");
   if (!proofItems.length) {
     risks.push("No linked proof items found for the project.");
     missing.push("Project proof items");
+    missing.push("Demo/screenshots");
+    missing.push("Impact metrics");
   }
-  if (!docs.length) missing.push("Linked supporting documents");
+  if (!docs.length) {
+    missing.push("Linked supporting documents");
+    missing.push("Grant guidelines or source document");
+  }
+  if (!input.project.problem_statement) missing.push("Project brief or problem statement");
+  if (!input.project.impact) missing.push("Impact metrics");
+  if (!includesAny(readinessText, ["budget"])) missing.push("Budget narrative");
+  if (!includesAny(readinessText, ["legal", "eligibility", "fiscal sponsor"])) missing.push("Confirmed legal applicant or fiscal sponsor");
+  if (!input.project.reusable_grant_language) missing.push("Reusable application answers");
   if (openTasks > completedTasks + 2) risks.push("Several open tasks may reduce application readiness.");
 
   return { weighted: Math.round(readiness * 0.15), readiness, evidence };
+}
+
+function strategicTopicScore(projectText: string, grantText: string, reasons: string[], risks: string[]): { score: number; terms: string[] } {
+  const overlap = overlapScore(projectText, grantText, 25);
+  const normalizedProject = normalize(projectText);
+  const normalizedGrant = normalize(grantText);
+  const high = STRATEGIC_KEYWORDS.high.filter((term) => normalizedProject.includes(normalize(term)) && normalizedGrant.includes(normalize(term)));
+  const medium = STRATEGIC_KEYWORDS.medium.filter((term) => normalizedProject.includes(normalize(term)) && normalizedGrant.includes(normalize(term)));
+  const lower = STRATEGIC_KEYWORDS.lower.filter((term) => normalizedGrant.includes(normalize(term)));
+  const projectHasArts = includesAny(projectText, STRATEGIC_KEYWORDS.artsSignals);
+  const projectHasHealthcare = includesAny(projectText, STRATEGIC_KEYWORDS.healthcareSignals);
+  const projectHasGovernment = includesAny(projectText, STRATEGIC_KEYWORDS.governmentSignals);
+
+  let score = overlap.score + Math.min(9, high.length * 4) + Math.min(4, medium.length * 2);
+  if (high.length) reasons.push(`Strategic fit on ${high.slice(0, 3).join(", ")}.`);
+  if (lower.length && !projectHasArts && lower.some((term) => STRATEGIC_KEYWORDS.artsSignals.includes(term))) {
+    score -= 5;
+    risks.push("Arts or cultural language detected; fit depends on an explicit arts/community-installation framing.");
+  }
+  if (includesAny(grantText, STRATEGIC_KEYWORDS.healthcareSignals) && !projectHasHealthcare) {
+    score -= 5;
+    risks.push("Healthcare or neuroscience framing appears special-case for this project.");
+  }
+  if (includesAny(grantText, STRATEGIC_KEYWORDS.governmentSignals) && !projectHasGovernment) {
+    score -= 5;
+    risks.push("Government, speaker, or leadership-program framing appears special-case.");
+  }
+
+  return { score: Math.max(0, Math.min(25, score)), terms: [...new Set([...high, ...medium, ...overlap.terms])].slice(0, 8) };
+}
+
+function addDataQualityFlags(input: MatchingInput, risks: string[], missing: string[]): string[] {
+  const { project, grant } = input;
+  const flags: string[] = [];
+  if (!grant.eligibility) flags.push("Match score may be unreliable because eligibility data is missing.");
+  if (!grant.focus_areas?.length) flags.push("Grant details are sparse because focus/cause areas are missing.");
+  if (!grant.deadline && !grant.next_deadline) flags.push("Grant details are sparse because deadline data is missing.");
+  if (!grant.amount_display && !grant.amount_min && !grant.amount_max) flags.push("Grant details are sparse because award amount data is missing.");
+  if (!grant.notes && !grant.focus_areas?.length && !grant.eligibility) flags.push("Grant details are sparse; verify official source before applying.");
+  if (!project.problem_statement || !project.solution || !project.impact || !project.geography) flags.push("Project profile is incomplete, so readiness may be underestimated.");
+  if (!(input.proofItems ?? []).length) flags.push("Project has no linked proof items, so readiness may be underestimated.");
+  flags.forEach((flag) => {
+    if (flag.includes("missing") || flag.includes("sparse")) risks.push(flag);
+    missing.push(flag);
+  });
+  return [...new Set(flags)];
+}
+
+function decideLabel(params: {
+  matchScore: number;
+  readinessScore: number;
+  deadlineStatus: DeadlineStatus;
+  days: number | null;
+  eligibilityBlockingRisk: boolean;
+  eligibilityUnclear: boolean;
+  dataQualityFlags: string[];
+}): DecisionLabel {
+  const { matchScore, readinessScore, deadlineStatus, days, eligibilityBlockingRisk, eligibilityUnclear, dataQualityFlags } = params;
+  if (deadlineStatus === "past_due") return matchScore >= 60 ? "track_next_cycle" : "skip";
+  if (matchScore < 35 && eligibilityBlockingRisk) return "skip";
+  if (dataQualityFlags.length >= 3 || eligibilityUnclear) return "needs_review";
+  if (deadlineStatus === "unknown") return "needs_review";
+  if (deadlineStatus === "due_today") return readinessScore >= 75 && matchScore >= 70 ? "apply_now" : "needs_review";
+  if (days !== null && days <= 7 && readinessScore < 65) return matchScore >= 70 ? "prepare_next" : "monitor";
+  if (matchScore >= 75 && readinessScore >= 60 && (deadlineStatus === "active" || deadlineStatus === "rolling")) return "apply_now";
+  if (matchScore >= 70 && readinessScore < 60 && (days === null || days > 7)) return "prepare_next";
+  if (matchScore >= 55 && (deadlineStatus === "rolling" || days === null || days > 30)) return "monitor";
+  if (matchScore < 45 && eligibilityBlockingRisk) return "skip";
+  if (matchScore < 45) return "monitor";
+  return "needs_review";
 }
 
 export function calculateGrantMatch(input: MatchingInput): MatchingResult {
@@ -192,12 +364,12 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
     grant.title, grant.focus_areas, grant.eligibility, grant.notes,
     grant.required_documents, funder?.giving_areas, funder?.notes,
   ]);
-  const cause = overlapScore(projectCauseText, grantCauseText, 25);
+  const cause = strategicTopicScore(projectCauseText, grantCauseText, fitReasons, risks);
   if (cause.terms.length) fitReasons.push(`Topic overlap: ${cause.terms.slice(0, 5).join(", ")}.`);
   if (cause.score < 9) risks.push("Cause/topic overlap is weak based on available keywords.");
 
   const geography = scoreGeography(project, grant, fitReasons, risks);
-  const eligibility = scoreEligibility(project, grant, fitReasons, risks, missingItems);
+  const eligibility = scoreEligibility(project, grant, funder, fitReasons, risks, missingItems);
 
   const fundingUse = overlapScore(
     text([project.solution, project.technology, project.impact, project.reusable_grant_language, project.grant_relevance]),
@@ -212,12 +384,23 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
   if (deadline.risk) risks.push(deadline.risk);
   recommendedActions.push(deadline.action);
 
-  const evidence = scoreEvidence(input, fitReasons, risks, missingItems);
-  if (evidence.readiness < 50) recommendedActions.push("Add or link stronger proof before committing to a full application.");
-  if (eligibility < 10) recommendedActions.push("Confirm applicant eligibility and fiscal sponsor requirements.");
+  const evidence = scoreReadiness(input, fitReasons, risks, missingItems);
+  const dataQualityFlags = addDataQualityFlags(input, risks, missingItems);
+  if (evidence.readiness < 50) recommendedActions.push("Add proof items, a demo/screenshots, impact metrics, and a project brief before committing to a full application.");
+  if (eligibility.score < 10) recommendedActions.push("Confirm applicant eligibility and fiscal sponsor requirements.");
+  if (deadline.status === "past_due") recommendedActions.push("Look for the next application cycle before investing more time.");
+  if (deadline.status === "due_today" && evidence.readiness < 75) recommendedActions.push("Treat as too late unless a full draft and required proof already exist.");
   if (cause.score >= 16 && evidence.readiness >= 55) recommendedActions.push("Draft a short go/no-go note and assign an application owner.");
 
-  const matchScore = clamp(cause.score + geography + eligibility + fundingUse.score + deadline.weighted + evidence.weighted);
+  const scoreBreakdown: ScoreBreakdown = {
+    topic_fit: { score: cause.score, max: 25 },
+    geography: { score: geography, max: 15 },
+    eligibility: { score: eligibility.score, max: 15 },
+    funding_use: { score: fundingUse.score, max: 15 },
+    deadline: { score: deadline.weighted, max: 15 },
+    evidence: { score: evidence.weighted, max: 15 },
+  };
+  const matchScore = clamp(Object.values(scoreBreakdown).reduce((sum, item) => sum + item.score, 0));
   const readinessScore = evidence.readiness;
   const urgencyScore = deadline.urgency;
   const evidenceScore = evidence.evidence;
@@ -228,6 +411,19 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
     matchScore >= 45 ? "maybe" :
     matchScore >= 25 ? "weak" :
     "needs_review";
+  const decisionLabel = decideLabel({
+    matchScore,
+    readinessScore,
+    deadlineStatus: deadline.status,
+    days: deadline.days,
+    eligibilityBlockingRisk: eligibility.blockingRisk,
+    eligibilityUnclear: eligibility.unclear,
+    dataQualityFlags,
+  });
+
+  if (decisionLabel === "skip") recommendedActions.push("Skip unless the project can be reframed to meet the eligibility and focus requirements.");
+  if (decisionLabel === "track_next_cycle") recommendedActions.push("Track the next cycle and reuse this match as a planning reference.");
+  if (decisionLabel === "prepare_next") recommendedActions.push("Prepare reusable application answers and close readiness gaps before the deadline window tightens.");
 
   if (fitReasons.length === 0) fitReasons.push("Not enough structured data to explain a strong fit.");
   if (missingItems.length === 0 && readinessScore >= 65) fitReasons.push("Readiness looks workable based on linked proof and documents.");
@@ -238,6 +434,10 @@ export function calculateGrantMatch(input: MatchingInput): MatchingResult {
     urgencyScore,
     evidenceScore,
     matchTier,
+    decisionLabel,
+    deadlineStatus: deadline.status,
+    scoreBreakdown: scoreBreakdown as Json as ScoreBreakdown,
+    dataQualityFlags: [...new Set(dataQualityFlags)].slice(0, 8),
     fitReasons: [...new Set(fitReasons)].slice(0, 8),
     risks: [...new Set(risks)].slice(0, 8),
     missingItems: [...new Set(missingItems)].slice(0, 8),

@@ -12,6 +12,7 @@ import {
 import { useProjects } from "@/hooks/useProjects";
 import { useGenerateMatchesForGrant, useGrantMatchesForGrant } from "@/hooks/useGrantMatches";
 import { matchJsonArray } from "@/lib/matching/matchesService";
+import { DECISION_CLASSES, DECISION_LABELS, deadlineLanguage } from "@/lib/matching/matchPresentation";
 import { useApplicationsByGrant } from "@/hooks/useApplications";
 import { useTasksByGrant, useCreateTask } from "@/hooks/useTasks";
 import GrantFormDialog, { type GrantFormValues } from "@/components/dashboard/GrantFormDialog";
@@ -551,15 +552,21 @@ export default function DashboardGrantDetailPage() {
           {(grantMatchesQuery.data ?? []).slice(0, 10).map((match) => {
             const reasons = matchJsonArray(match.fit_reasons).slice(0, 2);
             const risks = matchJsonArray(match.risks);
+            const deadline = deadlineLanguage(match.grant?.deadline);
             return (
               <Card key={match.id} className="border-slate-200">
                 <CardContent className="pt-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      {match.project?.slug ? <Link href={`/dashboard/projects/`}><div className="font-medium text-sm text-primary hover:underline">{match.project.name}</div></Link> : <div className="font-medium text-sm text-slate-800">Unknown project</div>}
-                      <div className="text-xs text-slate-500 mt-0.5">Score {match.match_score} · Readiness {match.readiness_score} · Urgency {match.urgency_score} · {match.match_tier.replace("_", " ")}</div>
+                      {match.project?.slug ? <Link href={`/dashboard/projects/${match.project.slug}`}><div className="font-medium text-sm text-primary hover:underline">{match.project.name}</div></Link> : <div className="font-medium text-sm text-slate-800">Unknown project</div>}
+                      <div className="text-xs text-slate-500 mt-0.5">Score {match.match_score} · Readiness {match.readiness_score} · {deadline.label} · {match.match_tier.replace("_", " ")}</div>
                     </div>
-                    <Badge variant="outline" className="text-xs">{match.status}</Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant="outline" className={`text-xs ${DECISION_CLASSES[match.decision_label] ?? DECISION_CLASSES.needs_review}`}>
+                        {DECISION_LABELS[match.decision_label] ?? "Needs Review"}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">{match.status}</Badge>
+                    </div>
                   </div>
                   <div className="mt-3 space-y-1">
                     {reasons.map((reason) => <div key={reason} className="text-xs text-slate-600">• {reason}</div>)}
