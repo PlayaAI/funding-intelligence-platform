@@ -10,7 +10,7 @@ import { funderDetailPath } from "@/lib/funderMappers";
 import { toast } from "@/hooks/use-toast";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { usePermissions } from "@/hooks/usePermissions";
-import { Plus, Search, Building2, Network, Loader2, AlertCircle } from "lucide-react";
+import { Plus, Search, Building2, Network, Loader2, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 const REL_COLORS: Record<string, string> = {
   None: "bg-slate-100 text-slate-600 border-slate-200",
@@ -21,35 +21,122 @@ const REL_COLORS: Record<string, string> = {
 };
 
 function fmt(n: number) {
+  if (!Number.isFinite(n) || n <= 0) return "—";
   return n >= 1000000 ? `$${(n / 1000000).toFixed(1)}M` : `$${(n / 1000).toFixed(0)}K`;
+}
+
+function normalizeLocation(value: string | undefined): string {
+  if (!value?.trim()) return "Unknown";
+  const parts = value.split(",").map((part) => part.trim()).filter(Boolean);
+  const last = parts.at(-1) ?? value.trim();
+  return last.length <= 3 ? last.toUpperCase() : last;
+}
+
+function hasInviteOnlySignal(funder: { notes?: string; openApplications: boolean }): boolean {
+  return !funder.openApplications && /invite|invitation only|by invitation/i.test(funder.notes ?? "");
+}
+
+function SortSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <select value={value} onChange={(event) => onChange(event.target.value)} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700">
+      <option value="recent">Recently imported</option>
+      <option value="name">Name A-Z</option>
+      <option value="median">Median grant amount</option>
+      <option value="linked">Linked grants count</option>
+    </select>
+  );
+}
+
+function FilterSelect({ value, onChange, children }: { value: string; onChange: (value: string) => void; children: React.ReactNode }) {
+  return (
+    <select value={value} onChange={(event) => onChange(event.target.value)} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700">
+      {children}
+    </select>
+  );
 }
 
 export default function DashboardFundersPage() {
   const [search, setSearch] = useState("");
-  const [areaFilter, setAreaFilter] = useState("All");
+  const [relationshipFilter, setRelationshipFilter] = useState("All");
+  const [locationFilter, setLocationFilter] = useState("All");
+  const [inviteFilter, setInviteFilter] = useState("All");
+  const [websiteFilter, setWebsiteFilter] = useState("All");
+  const [einFilter, setEinFilter] = useState("All");
+  const [availableFilter, setAvailableFilter] = useState("All");
+  const [sort, setSort] = useState("recent");
+  const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const { funders, isLoading, isError, error } = useMappedFunders();
   const createFunder = useCreateFunder();
   const { canWriteTable } = usePermissions();
 
-  const allAreas = useMemo(
-    () => Array.from(new Set(funders.flatMap((f) => f.givingCategories))).sort(),
+  const locations = useMemo(
+    () => Array.from(new Set(funders.map((f) => normalizeLocation(f.location)).filter((value) => value !== "Unknown"))).sort(),
+    [funders]
+  );
+
+  const relationships = useMemo(
+    () => Array.from(new Set(funders.map((f) => f.relationshipStatus || "None"))).sort(),
     [funders]
   );
 
   const filtered = useMemo(
-    () =>
-      funders.filter((f) => {
+    () => {
+      const q = search.trim().toLowerCase();
+      return funders.filter((f) => {
         const matchesSearch =
-          !search ||
-          f.name.toLowerCase().includes(search.toLowerCase()) ||
-          f.givingCategories.some((c) => c.toLowerCase().includes(search.toLowerCase()));
-        const matchesArea = areaFilter === "All" || f.givingCategories.includes(areaFilter);
-        return matchesSearch && matchesArea;
-      }),
-    [funders, search, areaFilter]
+          !q ||
+          f.name.toLowerCase().includes(q) ||
+          (f.location ?? "").toLowerCase().includes(q) ||
+          (f.ein ?? "").toLowerCase().includes(q) ||
+          (f.website ?? "").toLowerCase().includes(q);
+        const matchesRelationship = relationshipFilter === "All" || f.relationshipStatus === relationshipFilter;
+        const matchesLocation = locationFilter === "All" || normalizeLocation(f.location) === locationFilter;
+        const inviteOnly = hasInviteOnlySignal(f);
+        const matchesInvite =
+          inviteFilter === "All" ||
+          (inviteFilter === "invite_only" && inviteOnly) ||
+          (inviteFilter === "open" && !inviteOnly);
+        const matchesWebsite =
+          websiteFilter === "All" ||
+          (websiteFilter === "has" && Boolean(f.website)) ||
+          (websiteFilter === "missing" && !f.website);
+        const matchesEin =
+          einFilter === "All" ||
+          (einFilter === "has" && Boolean(f.ein)) ||
+          (einFilter === "missing" && !f.ein);
+        const matchesAvailable =
+          availableFilter === "All" ||
+          (availableFilter === "has" && (f.openApplications || f.relatedGrantIds.length > 0)) ||
+          (availableFilter === "none" && !f.openApplications && f.relatedGrantIds.length === 0);
+        return matchesSearch && matchesRelationship && matchesLocation && matchesInvite && matchesWebsite && matchesEin && matchesAvailable;
+      }).sort((a, b) => {
+        if (sort === "name") return a.name.localeCompare(b.name);
+        if (sort === "median") return b.medianGrantAmount - a.medianGrantAmount;
+        if (sort === "linked") return b.relatedGrantIds.length - a.relatedGrantIds.length;
+        return 0;
+      });
+    },
+    [funders, search, relationshipFilter, locationFilter, inviteFilter, websiteFilter, einFilter, availableFilter, sort]
   );
+
+  const pageSize = 50;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  function resetFilters() {
+    setSearch("");
+    setRelationshipFilter("All");
+    setLocationFilter("All");
+    setInviteFilter("All");
+    setWebsiteFilter("All");
+    setEinFilter("All");
+    setAvailableFilter("All");
+    setSort("recent");
+    setPage(1);
+  }
 
   const handleCreate = async (values: FunderFormValues) => {
     try {
@@ -107,7 +194,7 @@ export default function DashboardFundersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Funder Intelligence</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{funders.length} funders tracked</p>
+          <p className="text-slate-500 text-sm mt-0.5">{funders.length} funders tracked · {filtered.length} shown by current filters</p>
         </div>
         {canWriteTable("funders") && (
           <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
@@ -123,105 +210,143 @@ export default function DashboardFundersPage() {
           <Input
             placeholder="Search funders..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="pl-8 h-8 text-sm w-52"
           />
         </div>
-        <div className="flex flex-wrap gap-1 items-center">
-          <button
-            type="button"
-            onClick={() => setAreaFilter("All")}
-            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-              areaFilter === "All"
-                ? "bg-primary text-white border-primary"
-                : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            All areas
-          </button>
-          {allAreas.map((area) => (
-            <button
-              type="button"
-              key={area}
-              onClick={() => setAreaFilter(area === areaFilter ? "All" : area)}
-              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                areaFilter === area
-                  ? "bg-primary text-white border-primary"
-                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-              }`}
-            >
-              {area}
-            </button>
-          ))}
-        </div>
+        <FilterSelect value={relationshipFilter} onChange={(value) => { setRelationshipFilter(value); setPage(1); }}>
+          <option value="All">All relationship types</option>
+          {relationships.map((relationship) => <option key={relationship} value={relationship}>{relationship}</option>)}
+        </FilterSelect>
+        <FilterSelect value={locationFilter} onChange={(value) => { setLocationFilter(value); setPage(1); }}>
+          <option value="All">All locations</option>
+          {locations.slice(0, 80).map((location) => <option key={location} value={location}>{location}</option>)}
+        </FilterSelect>
+        <FilterSelect value={inviteFilter} onChange={(value) => { setInviteFilter(value); setPage(1); }}>
+          <option value="All">All invite statuses</option>
+          <option value="invite_only">Invite-only</option>
+          <option value="open">Open/not invite-only</option>
+        </FilterSelect>
+        <FilterSelect value={websiteFilter} onChange={(value) => { setWebsiteFilter(value); setPage(1); }}>
+          <option value="All">All websites</option>
+          <option value="has">Has website</option>
+          <option value="missing">Missing website</option>
+        </FilterSelect>
+        <FilterSelect value={einFilter} onChange={(value) => { setEinFilter(value); setPage(1); }}>
+          <option value="All">All EINs</option>
+          <option value="has">Has EIN</option>
+          <option value="missing">Missing EIN</option>
+        </FilterSelect>
+        <FilterSelect value={availableFilter} onChange={(value) => { setAvailableFilter(value); setPage(1); }}>
+          <option value="All">All availability</option>
+          <option value="has">Has available grants</option>
+          <option value="none">No available grants</option>
+        </FilterSelect>
+        <SortSelect value={sort} onChange={(value) => { setSort(value); setPage(1); }} />
+        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={resetFilters}>
+          Reset
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {filtered.map((f) => (
-          <Link href={funderDetailPath(f)} key={f.id}>
-            <div className="bg-white border border-slate-200 rounded-xl p-4 hover:border-primary/40 hover:shadow-sm cursor-pointer transition-all h-full flex flex-col">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2.5">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-500 border-b border-slate-200 bg-slate-50">
+                <th className="py-2.5 px-3 font-medium">Funder</th>
+                <th className="py-2.5 px-3 font-medium">Type</th>
+                <th className="py-2.5 px-3 font-medium">Location</th>
+                <th className="py-2.5 px-3 font-medium">EIN</th>
+                <th className="py-2.5 px-3 font-medium">Website</th>
+                <th className="py-2.5 px-3 font-medium">Invite-only</th>
+                <th className="py-2.5 px-3 font-medium">Available grants</th>
+                <th className="py-2.5 px-3 font-medium">Median grant</th>
+                <th className="py-2.5 px-3 font-medium">Linked grants</th>
+                <th className="py-2.5 px-3 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.map((f) => {
+                const inviteOnly = hasInviteOnlySignal(f);
+                return (
+                  <tr key={f.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                    <td className="py-2.5 px-3 min-w-64">
+                      <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
                     <Building2 size={16} className="text-slate-500" />
                   </div>
                   <div>
-                    <div className="font-semibold text-sm text-slate-800 leading-tight">{f.name}</div>
-                      <div className="text-xs text-slate-400">{f.location}</div>
+                          <div className="font-semibold text-sm text-slate-800 leading-tight line-clamp-1">{f.name}</div>
+                          <div className="text-xs text-slate-400 line-clamp-1">{f.website ?? "No website"}</div>
                   </div>
                 </div>
-                {f.openApplications && (
-                  <Badge className="text-[10px] bg-green-50 text-green-700 border border-green-200 font-medium px-1.5 py-0">
-                    Open
-                  </Badge>
-                )}
-              </div>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${REL_COLORS[f.relationshipStatus] ?? REL_COLORS.None}`}>
+                        {f.relationshipStatus}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-600">{f.location || "—"}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{f.ein ?? "—"}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{f.website ? "Yes" : "—"}</td>
+                    <td className="py-2.5 px-3">
+                      {inviteOnly ? (
+                        <Badge className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 font-medium px-1.5 py-0">Invite-only</Badge>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {f.openApplications ? (
+                        <Badge className="text-[10px] bg-green-50 text-green-700 border border-green-200 font-medium px-1.5 py-0">Open</Badge>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">{fmt(f.medianGrantAmount)}</td>
+                    <td className="py-2.5 px-3 text-slate-600">
+                      <span className="inline-flex items-center gap-1">
+                        <Network size={11} />
+                        {f.relatedGrantIds.length}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <Link href={funderDetailPath(f)} className="text-xs text-primary font-medium">
+                        Open
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
 
-              <div className="space-y-2 flex-1">
-                <div className="flex flex-wrap gap-1">
-                  {f.givingCategories.slice(0, 3).map((c) => (
-                    <span
-                      key={c}
-                      className={`text-[11px] px-1.5 py-0.5 rounded ${
-                        c === areaFilter ? "bg-primary/10 text-primary" : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {c}
-                    </span>
-                  ))}
-                  {f.givingCategories.length > 3 && (
-                    <span className="text-[11px] text-slate-400">+{f.givingCategories.length - 3}</span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between text-xs pt-1">
-                  <span className="text-slate-500">
-                    Median grant:{" "}
-                    <span className="font-medium text-slate-700">{fmt(f.medianGrantAmount)}</span>
-                  </span>
-                  <span className="flex items-center gap-1 text-slate-500">
-                    <Network size={11} />
-                    {f.peerConnections} peers
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full border ${REL_COLORS[f.relationshipStatus]}`}
-                >
-                  {f.relationshipStatus}
-                </span>
-                <span className="text-xs text-slate-400">
-                  {f.relatedGrantIds.length} grant{f.relatedGrantIds.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-            </div>
-          </Link>
-        ))}
         {filtered.length === 0 && (
-          <div className="col-span-3 text-center py-16 text-slate-400 text-sm">
+          <div className="text-center py-16 text-slate-400 text-sm">
             No funders match your filters.
+          </div>
+        )}
+
+        {filtered.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3 border-t border-slate-200 text-xs text-slate-500">
+            <div>
+              Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                <ChevronLeft size={13} />
+                Previous
+              </Button>
+              <span>Page {currentPage} of {pageCount}</span>
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" disabled={currentPage >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>
+                Next
+                <ChevronRight size={13} />
+              </Button>
+            </div>
           </div>
         )}
       </div>
