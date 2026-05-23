@@ -1,7 +1,9 @@
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
 import { useTasks, useCreateTask, useUpdateTask, useArchiveTask, useDeleteTask } from "@/hooks/useTasks";
 import { useGrants } from "@/hooks/useGrants";
 import { useProjects } from "@/hooks/useProjects";
+import { useApplications } from "@/hooks/useApplications";
 import TaskFormDialog, { type TaskFormValues } from "@/components/dashboard/TaskFormDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,11 +41,14 @@ export default function DashboardTasksPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [filterApplication, setFilterApplication] = useState<string>("all");
+  const [filterProject, setFilterProject] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"due_date" | "priority" | "status">("due_date");
 
   const { data: allTasks = [], isLoading, isError, error } = useTasks();
   const { data: grants = [] } = useGrants();
   const { data: projects = [] } = useProjects();
+  const { data: applications = [] } = useApplications();
 
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
@@ -53,6 +58,7 @@ export default function DashboardTasksPage() {
 
   const grantMap = useMemo(() => new Map(grants.map((g) => [g.id, g])), [grants]);
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  const applicationMap = useMemo(() => new Map(applications.map((a) => [a.id, a])), [applications]);
 
   const priorityOrder: Record<string, number> = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
   const statusOrder: Record<string, number> = { "Not Started": 0, "In Progress": 1, Waiting: 2, "Needs Review": 3, Complete: 4 };
@@ -61,6 +67,8 @@ export default function DashboardTasksPage() {
     let list = allTasks;
     if (filterStatus !== "all") list = list.filter((t) => t.status === filterStatus);
     if (filterPriority !== "all") list = list.filter((t) => t.priority === filterPriority);
+    if (filterApplication !== "all") list = list.filter((t) => t.related_application_id === filterApplication);
+    if (filterProject !== "all") list = list.filter((t) => t.related_project_id === filterProject);
 
     return [...list].sort((a, b) => {
       if (sortBy === "due_date") {
@@ -72,7 +80,7 @@ export default function DashboardTasksPage() {
       if (sortBy === "priority") return (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9);
       return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
     });
-  }, [allTasks, filterStatus, filterPriority, sortBy]);
+  }, [allTasks, filterStatus, filterPriority, filterApplication, filterProject, sortBy]);
 
   const handleCreate = async (values: TaskFormValues) => {
     try {
@@ -164,6 +172,14 @@ export default function DashboardTasksPage() {
           <option value="all">All priorities</option>
           {ALL_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
+        <select value={filterApplication} onChange={(e) => setFilterApplication(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+          <option value="all">All applications</option>
+          {applications.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+        </select>
+        <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+          <option value="all">All projects</option>
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
           <option value="due_date">Sort by due date</option>
           <option value="priority">Sort by priority</option>
@@ -180,6 +196,7 @@ export default function DashboardTasksPage() {
         {filtered.map((t) => {
           const grant = t.related_grant_id ? grantMap.get(t.related_grant_id) : null;
           const project = t.related_project_id ? projectMap.get(t.related_project_id) : null;
+          const application = t.related_application_id ? applicationMap.get(t.related_application_id) : null;
           const days = t.due_date ? daysUntil(t.due_date) : null;
 
           return (
@@ -193,8 +210,9 @@ export default function DashboardTasksPage() {
                         <div className={`text-sm font-medium leading-snug ${t.status === "Complete" ? "line-through text-slate-400" : "text-slate-800"}`}>{t.title}</div>
                         <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
                           {t.owner_name && <span>{t.owner_name}</span>}
-                          {grant && <span>· {grant.title}</span>}
-                          {project && <span>· {project.name}</span>}
+                          {application && <Link href={`/dashboard/applications/${application.id}`} className="text-primary hover:underline">· Application: {application.title}</Link>}
+                          {grant && <Link href={`/dashboard/grants/${grant.id}`} className="text-primary hover:underline">· Grant: {grant.title}</Link>}
+                          {project && <Link href={`/dashboard/projects/${project.slug}`} className="text-primary hover:underline">· Project: {project.name}</Link>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">

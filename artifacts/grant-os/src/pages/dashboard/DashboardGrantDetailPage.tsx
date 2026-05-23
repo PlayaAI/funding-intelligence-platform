@@ -132,6 +132,35 @@ function OverviewCard({ label, value, hint }: { label: string; value: ReactNode;
   );
 }
 
+const DEFAULT_APPLICATION_TASKS = [
+  "Confirm eligibility",
+  "Review grant guidelines and source documents",
+  "Draft problem statement",
+  "Draft project/program description",
+  "Draft budget and budget narrative",
+  "Gather proof items / evidence",
+  "Collect partner/support materials",
+  "Final review",
+  "Submit application",
+  "Record submitted status and confirmation",
+];
+
+function checklistDueDate(deadline: string | null | undefined, index: number) {
+  if (!deadline) return null;
+  const date = new Date(deadline);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setDate(date.getDate() - Math.max(1, (DEFAULT_APPLICATION_TASKS.length - index) * 2));
+  return date.toISOString().slice(0, 10);
+}
+
+function checklistPriority(deadline: string | null | undefined): TaskDbPriority {
+  const days = daysUntil(deadline);
+  if (days == null) return "Medium";
+  if (days <= 14) return "Urgent";
+  if (days <= 30) return "High";
+  return "Medium";
+}
+
 export default function DashboardGrantDetailPage() {
   const [, params] = useRoute("/dashboard/grants/:id");
   const [, navigate] = useLocation();
@@ -234,6 +263,41 @@ export default function DashboardGrantDetailPage() {
   const sourceRows = sourceFields(grantRow);
   const preferredProjectId = grantRow.related_project_id ?? bestMatch?.project_id ?? relatedApps.find((app) => app.project_id)?.project_id ?? null;
   const preferredProject = preferredProjectId ? projectById.get(preferredProjectId) : null;
+  const applicationInitialValues: Partial<ApplicationFormValues> = {
+    title: `${grantRow.title} — ${preferredProject?.name ?? "Project"} Application`,
+    status: "Not Started",
+    grant_id: grantRow.id,
+    project_id: preferredProjectId ?? "",
+    portal_url: grantRow.application_url ?? "",
+    notes: grantRow.funder_name ? `Application workspace for ${grantRow.funder_name}.` : "",
+  };
+
+  const createDefaultChecklist = async (applicationId: string, projectId: string | null | undefined) => {
+    const priority = checklistPriority(grantRow.deadline);
+    for (const [index, title] of DEFAULT_APPLICATION_TASKS.entries()) {
+      await createTask.mutateAsync({
+        title,
+        description: null,
+        owner_name: null,
+        status: "Not Started",
+        priority,
+        due_date: checklistDueDate(grantRow.deadline, index),
+        related_grant_id: grantRow.id,
+        related_project_id: projectId || preferredProjectId,
+        related_application_id: applicationId,
+        notes: "Default application checklist item.",
+      });
+    }
+  };
+
+  const openOrStartApplication = () => {
+    const existing = relatedApps.find((app) => app.project_id === preferredProjectId) ?? (relatedApps.length === 1 ? relatedApps[0] : null);
+    if (existing) {
+      navigate(`/dashboard/applications/${existing.id}`);
+      return;
+    }
+    setCreateAppOpen(true);
+  };
 
   const handleExportGrant = async () => {
     try {
@@ -254,19 +318,29 @@ export default function DashboardGrantDetailPage() {
 
   const handleCreateApp = async (values: ApplicationFormValues) => {
     try {
-      await createApp.mutateAsync({
+      const selectedProjectId = values.project_id || preferredProjectId || null;
+      const existing = relatedApps.find((app) => (app.project_id ?? null) === selectedProjectId);
+      if (existing) {
+        toast({ title: "Application already exists", description: "Opening the existing workspace instead." });
+        setCreateAppOpen(false);
+        navigate(`/dashboard/applications/${existing.id}`);
+        return;
+      }
+      const created = await createApp.mutateAsync({
         title: values.title,
-        status: (values.status as ApplicationDbStatus) ?? "Drafting",
+        status: (values.status as ApplicationDbStatus) ?? "Not Started",
         owner_name: values.owner_name || null,
         grant_id: grantRow.id,
-        project_id: values.project_id || preferredProjectId,
+        project_id: selectedProjectId,
         google_doc_url: values.google_doc_url || null,
         drive_folder_url: values.drive_folder_url || null,
         portal_url: values.portal_url || grantRow.application_url || null,
         notes: values.notes || null,
       });
+      await createDefaultChecklist(created.id, selectedProjectId);
       toast({ title: "Application created", description: values.title });
       setCreateAppOpen(false);
+      navigate(`/dashboard/applications/${created.id}`);
     } catch (e) {
       toast({ title: "Failed to create application", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
     }
@@ -357,7 +431,7 @@ export default function DashboardGrantDetailPage() {
         </Link>
         <div className="flex flex-wrap justify-end gap-2">
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportGrant}><Download size={12} />Export JSON</Button>
-          {canCreateTable("applications") && <Button size="sm" className="gap-1.5 text-xs" onClick={() => setCreateAppOpen(true)}><Plus size={12} />Start Application</Button>}
+          {canCreateTable("applications") && <Button size="sm" className="gap-1.5 text-xs" onClick={openOrStartApplication}><Plus size={12} />Start Application</Button>}
         </div>
       </div>
 
@@ -516,7 +590,7 @@ export default function DashboardGrantDetailPage() {
                     <div className="flex flex-wrap gap-2 md:justify-end">
                       <Badge variant="outline" className={`text-xs ${DECISION_CLASSES[match.decision_label] ?? DECISION_CLASSES.needs_review}`}>{DECISION_LABELS[match.decision_label] ?? "Needs Review"}</Badge>
                       {match.project?.slug && <Link href={`/dashboard/projects/${match.project.slug}`}><Button size="sm" variant="outline" className="h-8 text-xs">Open Project</Button></Link>}
-                      {canCreateTable("applications") && <Button size="sm" className="h-8 text-xs" onClick={() => setCreateAppOpen(true)}>Create Application</Button>}
+                      {canCreateTable("applications") && <Button size="sm" className="h-8 text-xs" onClick={openOrStartApplication}>Create Application</Button>}
                     </div>
                   </div>
                 </CardContent>
@@ -539,7 +613,7 @@ export default function DashboardGrantDetailPage() {
               </Card>
             );
           })}
-          {relatedApps.length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center"><p className="text-sm text-slate-500 mb-4">No application workspace exists for this grant yet.</p>{canCreateTable("applications") && <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateAppOpen(true)}><Plus size={12} />Start Application</Button>}</CardContent></Card>}
+          {relatedApps.length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center"><p className="text-sm text-slate-500 mb-4">No application workspace exists for this grant yet.</p>{canCreateTable("applications") && <Button size="sm" className="gap-2 text-xs" onClick={openOrStartApplication}><Plus size={12} />Start Application</Button>}</CardContent></Card>}
         </TabsContent>
 
         <TabsContent value="tasks" className="mt-4 space-y-2">
@@ -580,7 +654,7 @@ export default function DashboardGrantDetailPage() {
       </Tabs>
 
       <GrantFormDialog open={editOpen} onOpenChange={setEditOpen} onSubmit={handleEdit} defaultValues={grantRow} title="Edit grant" submitLabel="Save changes" loading={updateGrant.isPending} />
-      <ApplicationFormDialog open={createAppOpen} onOpenChange={setCreateAppOpen} onSubmit={handleCreateApp} title="New application for this grant" submitLabel="Create application" loading={createApp.isPending} lockedGrantId={grantRow.id} lockedProjectId={preferredProjectId ?? undefined} />
+      <ApplicationFormDialog open={createAppOpen} onOpenChange={setCreateAppOpen} onSubmit={handleCreateApp} title="New application for this grant" submitLabel="Create application" loading={createApp.isPending || createTask.isPending} lockedGrantId={grantRow.id} initialValues={applicationInitialValues} />
       <TaskFormDialog open={addTaskOpen} onOpenChange={setAddTaskOpen} onSubmit={handleCreateTask} title="Add task for this grant" submitLabel="Create task" loading={createTask.isPending} lockedGrantId={grantRow.id} lockedProjectId={preferredProjectId ?? undefined} />
       <DocumentFormDialog open={addDocOpen} onOpenChange={setAddDocOpen} onSubmit={handleCreateDocument} loading={createDoc.isPending || uploadDoc.isPending} projects={projectRows} grants={[grantRow]} funders={funder ? [funder] : funderRows} applications={relatedApps.length ? relatedApps : applications} />
 

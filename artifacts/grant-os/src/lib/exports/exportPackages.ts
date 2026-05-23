@@ -113,7 +113,7 @@ export async function exportGrantPackage(grantId: string, filenameHint: string) 
 
 export async function exportApplicationPackage(applicationId: string, filenameHint: string) {
   const application: any = await selectOne("applications", "id", applicationId);
-  const [grant, project, questions, requiredDocs, tasks, documents, agentNotes, agentReports] = await Promise.all([
+  const [grant, project, questions, requiredDocs, tasks, applicationDocuments, agentNotes, agentReports] = await Promise.all([
     application?.grant_id ? selectOne("grants", "id", application.grant_id) : Promise.resolve(null),
     application?.project_id ? selectOne("projects", "id", application.project_id) : Promise.resolve(null),
     selectMany("application_questions", "application_id", applicationId),
@@ -123,7 +123,44 @@ export async function exportApplicationPackage(applicationId: string, filenameHi
     selectMany("agent_notes", "related_application_id", applicationId),
     selectMany("agent_reports", "related_application_id", applicationId),
   ]);
-  const payload = packageBase("application", { application, grant, project, questions, required_documents: requiredDocs, tasks, documents, agent_notes: agentNotes, agent_reports: agentReports });
+  const [funder, grantDocuments, projectDocuments, proofItems, grantMatch] = await Promise.all([
+    (grant as any)?.funder_id ? selectOne("funders", "id", (grant as any).funder_id) : Promise.resolve(null),
+    grant ? listGrantDocuments({
+      grantId: (grant as any).id,
+      funderId: (grant as any).funder_id,
+      title: (grant as any).title,
+      funderName: (grant as any).funder_name,
+      sourceUrl: (grant as any).source_url,
+      applicationUrl: (grant as any).application_url,
+    }) : Promise.resolve([]),
+    application?.project_id ? selectMany("documents", "related_project_id", application.project_id) : Promise.resolve([]),
+    application?.project_id ? selectMany("proof_items", "project_id", application.project_id) : Promise.resolve([]),
+    application?.project_id && application?.grant_id
+      ? db.from("grant_matches").select("*").eq("project_id", application.project_id).eq("grant_id", application.grant_id).maybeSingle().then((result: SupabaseResult<any>) => {
+          if (result.error) throw new Error(result.error.message);
+          return result.data;
+        })
+      : Promise.resolve(null),
+  ]);
+  const docsById = new Map([...(applicationDocuments as any[]), ...(grantDocuments as any[]), ...(projectDocuments as any[])].map((doc) => [doc.id, doc]));
+  const payload = {
+    ...packageBase("application", {
+      application,
+      grant,
+      funder,
+      project,
+      questions,
+      required_documents: requiredDocs,
+      tasks,
+      documents: [...docsById.values()],
+      proof_items: proofItems,
+      agent_notes: agentNotes,
+      agent_reports: agentReports,
+      grant_match: grantMatch,
+      generated_at: new Date().toISOString(),
+    }),
+    generated_at: new Date().toISOString(),
+  };
   downloadJson(`grant-os-application-${cleanName(filenameHint)}.json`, payload);
   return payload;
 }

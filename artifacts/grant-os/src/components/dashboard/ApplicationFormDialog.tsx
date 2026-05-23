@@ -57,12 +57,13 @@ interface Props {
   loading: boolean;
   lockedGrantId?: string;
   lockedProjectId?: string;
+  initialValues?: Partial<ApplicationFormValues>;
 }
 
 export default function ApplicationFormDialog({
   open, onOpenChange, onSubmit, defaultValues,
   title, submitLabel, loading,
-  lockedGrantId, lockedProjectId,
+  lockedGrantId, lockedProjectId, initialValues,
 }: Props) {
   const { data: grants = [] } = useGrants();
   const { data: projects = [] } = useProjects();
@@ -91,12 +92,18 @@ export default function ApplicationFormDialog({
       });
     } else {
       reset({
-        title: "", status: "Drafting", owner_name: "",
-        grant_id: lockedGrantId ?? "", project_id: lockedProjectId ?? "",
-        google_doc_url: "", drive_folder_url: "", portal_url: "", notes: "",
+        title: initialValues?.title ?? "",
+        status: initialValues?.status ?? "Drafting",
+        owner_name: initialValues?.owner_name ?? "",
+        grant_id: lockedGrantId ?? initialValues?.grant_id ?? "",
+        project_id: lockedProjectId ?? initialValues?.project_id ?? "",
+        google_doc_url: initialValues?.google_doc_url ?? "",
+        drive_folder_url: initialValues?.drive_folder_url ?? "",
+        portal_url: initialValues?.portal_url ?? "",
+        notes: initialValues?.notes ?? "",
       });
     }
-  }, [defaultValues, open, reset, lockedGrantId, lockedProjectId]);
+  }, [defaultValues, open, reset, lockedGrantId, lockedProjectId, initialValues]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
