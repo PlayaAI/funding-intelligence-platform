@@ -20,6 +20,15 @@ export type DocumentFilters = {
   includeArchived?: boolean;
 };
 
+export type GrantDocumentLookup = {
+  grantId: string;
+  funderId?: string | null;
+  title?: string | null;
+  funderName?: string | null;
+  sourceUrl?: string | null;
+  applicationUrl?: string | null;
+};
+
 export async function listDocuments(filters?: DocumentFilters): Promise<DocumentRow[]> {
   let query = db.from("documents").select("*").order("created_at", { ascending: false });
   if (!filters?.includeArchived) query = query.is("archived_at", null);
@@ -37,6 +46,38 @@ export async function listDocuments(filters?: DocumentFilters): Promise<Document
     [doc.title, doc.file_name, doc.source_url, doc.extraction_status, doc.document_type]
       .some((value) => (value ?? "").toLowerCase().includes(q))
   );
+}
+
+function normalize(value: string | null | undefined) {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function containsAny(haystack: string, needles: string[]) {
+  return needles.some((needle) => needle.length >= 8 && haystack.includes(needle));
+}
+
+export async function listGrantDocuments(input: GrantDocumentLookup): Promise<DocumentRow[]> {
+  const queries: Promise<DocumentRow[]>[] = [listDocuments({ relatedGrantId: input.grantId })];
+  if (input.funderId) queries.push(listDocuments({ relatedFunderId: input.funderId }));
+
+  const rows = (await Promise.all(queries)).flat();
+  const byId = new Map(rows.map((doc) => [doc.id, doc]));
+  const docs = [...byId.values()];
+  const sourceUrls = [input.sourceUrl, input.applicationUrl].filter(Boolean) as string[];
+  const needles = [
+    normalize(input.title),
+    normalize(input.funderName),
+    ...sourceUrls.map(normalize),
+  ].filter(Boolean);
+
+  return docs.filter((doc) => {
+    if (doc.related_grant_id === input.grantId) return true;
+    if (input.funderId && doc.related_funder_id === input.funderId) {
+      const haystack = normalize(`${doc.title} ${doc.file_name ?? ""} ${doc.source_url ?? ""} ${JSON.stringify(doc.metadata ?? {})}`);
+      return containsAny(haystack, needles) || sourceUrls.some((url) => doc.source_url === url);
+    }
+    return sourceUrls.some((url) => doc.source_url === url);
+  });
 }
 
 export async function getDocument(id: string): Promise<DocumentRow | null> {

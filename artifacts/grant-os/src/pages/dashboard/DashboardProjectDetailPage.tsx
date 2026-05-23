@@ -9,7 +9,7 @@ import { useGenerateMatchesForProject, useGrantMatchesForProject, useHideMatch, 
 import { matchJsonArray } from "@/lib/matching/matchesService";
 import { DECISION_CLASSES, DECISION_LABELS, deadlineLanguage } from "@/lib/matching/matchPresentation";
 import { useTasksByProject } from "@/hooks/useTasks";
-import { documents } from "@/data/documents";
+import { useDocuments } from "@/hooks/useDocuments";
 import ProofItemFormDialog, { PROOF_TYPE_LABELS, parseTagsString, type ProofItemFormValues } from "@/components/dashboard/ProofItemFormDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -75,6 +75,7 @@ export default function DashboardProjectDetailPage() {
   const { grants: allGrants } = useMappedGrants();
   const { data: relatedApps = [] } = useApplicationsByProject(project?.id);
   const { data: relatedTasks = [] } = useTasksByProject(project?.id);
+  const { data: relatedDocs = [] } = useDocuments({ relatedProjectId: project?.id ?? "all" });
   const createProofItem = useCreateProofItem();
   const { canWriteTable, canCreateTable, canDeleteRecords, canContribute } = usePermissions();
   const { user } = useAuth();
@@ -122,7 +123,6 @@ export default function DashboardProjectDetailPage() {
   }
 
   const relatedGrants = allGrants.filter((g) => g.relatedProjectSlug === project.slug);
-  const relatedDocs = documents.filter((d) => d.relatedProjectSlug === project.slug);
   const color = PROJECT_COLORS[project.slug] ?? "#94a3b8";
   const stage = project.stage ?? "Unknown";
 
@@ -553,13 +553,13 @@ export default function DashboardProjectDetailPage() {
                     <FileText size={14} className="text-slate-400 flex-shrink-0" />
                     <div className="min-w-0">
                       <div className="font-medium text-sm text-slate-800 truncate">{doc.title}</div>
-                      {doc.description && <div className="text-xs text-slate-400 mt-0.5 truncate">{doc.description}</div>}
+                      <div className="text-xs text-slate-400 mt-0.5 truncate">{doc.file_name ?? doc.source_url ?? "No source URL"}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <Badge variant="secondary" className="text-xs">{doc.type}</Badge>
-                    {doc.url && (
-                      <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                    <Badge variant="secondary" className="text-xs">{doc.document_type.replace(/_/g, " ")}</Badge>
+                    {(doc.source_url || doc.file_url) && (
+                      <a href={doc.source_url ?? doc.file_url ?? "#"} target="_blank" rel="noopener noreferrer">
                         <ExternalLink size={13} className="text-slate-400 hover:text-primary" />
                       </a>
                     )}

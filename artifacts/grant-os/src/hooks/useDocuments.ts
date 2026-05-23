@@ -6,6 +6,7 @@ import {
   extractDocumentText,
   getDocument,
   getDocumentSignedUrl,
+  listGrantDocuments,
   listDocuments,
   updateDocument,
   uploadDocumentFile,
@@ -13,9 +14,10 @@ import {
   type DocumentInsert,
   type DocumentRow,
   type DocumentUpdate,
+  type GrantDocumentLookup,
 } from "@/lib/documentsService";
 
-export type { DocumentFilters, DocumentInsert, DocumentRow, DocumentUpdate };
+export type { DocumentFilters, DocumentInsert, DocumentRow, DocumentUpdate, GrantDocumentLookup };
 
 export const DOCUMENTS_QUERY_KEY = ["documents"] as const;
 
@@ -32,6 +34,15 @@ export function useDocument(id: string | undefined) {
     queryKey: [...DOCUMENTS_QUERY_KEY, id],
     queryFn: () => getDocument(id!),
     enabled: Boolean(id),
+    staleTime: 1000 * 60,
+  });
+}
+
+export function useGrantDocuments(input: GrantDocumentLookup | null | undefined) {
+  return useQuery({
+    queryKey: [...DOCUMENTS_QUERY_KEY, "grant-intelligence", input],
+    queryFn: () => listGrantDocuments(input!),
+    enabled: Boolean(input?.grantId),
     staleTime: 1000 * 60,
   });
 }

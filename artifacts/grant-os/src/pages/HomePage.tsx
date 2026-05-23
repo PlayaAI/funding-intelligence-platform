@@ -6,6 +6,9 @@ import { workshops } from "@/data/workshops";
 import { teamMembers } from "@/data/team";
 import ProjectCard from "@/components/public/ProjectCard";
 import ProofItemCard from "@/components/public/ProofItemCard";
+import { usePublicProjects } from "@/hooks/usePublicProjects";
+import { usePublicProofItems } from "@/hooks/usePublicProofItems";
+import { publicProjectToCard, publicProofToCard } from "@/lib/public/publicDataService";
 
 const featuredProjects = projects.filter((p) => p.featured).slice(0, 3);
 const highlightProof = proofItems.slice(0, 3);
@@ -25,6 +28,25 @@ const credentialChips = [
 ];
 
 export default function HomePage() {
+  const { data: publicProjects = [] } = usePublicProjects();
+  const { data: publicProof = [] } = usePublicProofItems();
+  const proofCountByProject = new Map<string, number>();
+  publicProof.forEach((item) => {
+    if (item.project_id) proofCountByProject.set(item.project_id, (proofCountByProject.get(item.project_id) ?? 0) + 1);
+  });
+  const displayedProjects = publicProjects.length
+    ? publicProjects.filter((project) => project.featured).slice(0, 3).map((project) => publicProjectToCard(project, proofCountByProject.get(project.id) ?? 0))
+    : featuredProjects;
+  const displayedProof = publicProof.length ? publicProof.slice(0, 3).map(publicProofToCard) : highlightProof;
+  const displayedStats = publicProjects.length || publicProof.length
+    ? [
+        { value: String(publicProjects.length), label: "Public projects", sub: "published portfolio records" },
+        { value: String(publicProof.length), label: "Public proof items", sub: "visible evidence records" },
+        { value: String(publicProof.filter((item) => item.type === "workshop").length), label: "Workshops delivered", sub: "public workshop proof" },
+        stats[3],
+      ]
+    : stats;
+
   return (
     <div>
       {/* Hero */}
@@ -89,7 +111,7 @@ export default function HomePage() {
       <section className="border-b border-border bg-card" aria-label="Impact numbers">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0 divide-border">
-            {stats.map((stat) => (
+            {displayedStats.map((stat) => (
               <div key={stat.label} className="py-8 px-6 text-center">
                 <div className="text-3xl sm:text-4xl font-bold text-primary">{stat.value}</div>
                 <div className="text-sm font-semibold text-foreground mt-1">{stat.label}</div>
@@ -165,7 +187,7 @@ export default function HomePage() {
             </Link>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {featuredProjects.map((project) => (
+            {displayedProjects.map((project) => (
               <ProjectCard key={project.slug} project={project} />
             ))}
           </div>
@@ -204,7 +226,7 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {highlightProof.map((item) => (
+            {displayedProof.map((item) => (
               <ProofItemCard key={item.id} item={item} />
             ))}
           </div>

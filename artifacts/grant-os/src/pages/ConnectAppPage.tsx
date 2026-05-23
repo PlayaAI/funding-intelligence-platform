@@ -1,6 +1,8 @@
 import { Link } from "wouter";
 import { ArrowLeft, ArrowRight, CheckCircle2, Users, MessageCircle, Eye, PhoneOff, Shield } from "lucide-react";
 import StatusBadge from "@/components/public/StatusBadge";
+import { usePublicProject } from "@/hooks/usePublicProjects";
+import { usePublicProofItems } from "@/hooks/usePublicProofItems";
 
 const steps = [
   {
@@ -41,6 +43,12 @@ const grantRelevancePoints = [
 ];
 
 export default function ConnectAppPage() {
+  const { data: connectProject } = usePublicProject("connect-app");
+  const { data: publicProof = [] } = usePublicProofItems(connectProject?.id, { requireProjectId: true });
+  const proofBullets = publicProof.length
+    ? publicProof.slice(0, 4).map((item) => item.title)
+    : proofItems;
+
   return (
     <div>
       {/* Breadcrumb */}
@@ -185,7 +193,7 @@ export default function ConnectAppPage() {
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-8">Tested in real community settings</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
             <ul className="space-y-4">
-              {proofItems.map((item) => (
+              {proofBullets.map((item) => (
                 <li key={item} className="flex items-start gap-3 text-sm text-muted-foreground">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
                   <span className="leading-relaxed">{item}</span>

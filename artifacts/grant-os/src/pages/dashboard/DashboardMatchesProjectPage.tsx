@@ -3,7 +3,7 @@ import { useRoute, Link } from "wouter";
 import { PROJECT_COLORS } from "@/data/grants";
 import { useProject } from "@/hooks/useProjects";
 import { useMappedGrants } from "@/hooks/useGrants";
-import { funders as funderList } from "@/data/funders";
+import { useFunders } from "@/hooks/useFunders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,7 @@ export default function DashboardMatchesProjectPage() {
   const slug = params?.projectId;
   const { data: project, isLoading: projectLoading } = useProject(slug);
   const { grants, isLoading: grantsLoading, isError } = useMappedGrants();
+  const { data: funderRows = [] } = useFunders();
 
   const projectGrants = useMemo(
     () => grants.filter((g) => g.relatedProjectSlug === slug),
@@ -43,7 +44,7 @@ export default function DashboardMatchesProjectPage() {
 
   const selectedGrant =
     projectGrants.find((g) => g.id === selectedGrantId) ?? displayGrants[0];
-  const selectedFunder = funderList.find((f) => f.id === selectedGrant?.funderId);
+  const selectedFunder = funderRows.find((f) => f.id === selectedGrant?.funderId || f.legacy_id === selectedGrant?.funderId || f.name === selectedGrant?.funderName);
 
   if (!isSupabaseConfigured) {
     return (
@@ -122,18 +123,18 @@ export default function DashboardMatchesProjectPage() {
 
           <div className="flex-1 overflow-y-auto">
             {matchTab === "Funder Matches" ? (
-              funderList.slice(0, 5).map((f) => (
+              funderRows.slice(0, 5).map((f) => (
                 <div key={f.id} className="px-4 py-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer">
                   <div className="font-medium text-sm text-slate-800">{f.name}</div>
                   <div className="text-xs text-slate-400 mt-0.5">{f.location}</div>
                   <div className="flex items-center justify-between mt-1.5">
                     <span className="text-xs text-slate-500">
-                      Median: ${(f.medianGrantAmount / 1000).toFixed(0)}K
+                      Median: {f.median_grant_amount ? `$${(f.median_grant_amount / 1000).toFixed(0)}K` : "Unknown"}
                     </span>
                     <span className={`text-[11px] px-1.5 py-0.5 rounded-full border ${
-                      f.openApplications ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-100 text-slate-500 border-slate-200"
+                      f.open_applications ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-100 text-slate-500 border-slate-200"
                     }`}>
-                      {f.openApplications ? "Open" : "By invite"}
+                      {f.open_applications ? "Open" : "By invite"}
                     </span>
                   </div>
                 </div>
@@ -216,9 +217,9 @@ export default function DashboardMatchesProjectPage() {
                   <div className="text-sm font-semibold text-slate-800 mb-2">Funder: {selectedFunder.name}</div>
                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
                     <div><span className="text-slate-400">Location: </span>{selectedFunder.location}</div>
-                    <div><span className="text-slate-400">Median grant: </span>${(selectedFunder.medianGrantAmount / 1000).toFixed(0)}K</div>
-                    <div><span className="text-slate-400">Applications: </span>{selectedFunder.openApplications ? "Open" : "By invitation"}</div>
-                    <div><span className="text-slate-400">Relationship: </span>{selectedFunder.relationshipStatus}</div>
+                    <div><span className="text-slate-400">Median grant: </span>{selectedFunder.median_grant_amount ? `$${(selectedFunder.median_grant_amount / 1000).toFixed(0)}K` : "Unknown"}</div>
+                    <div><span className="text-slate-400">Applications: </span>{selectedFunder.open_applications ? "Open" : "By invitation"}</div>
+                    <div><span className="text-slate-400">Relationship: </span>{selectedFunder.relationship_status ?? "Unknown"}</div>
                   </div>
                 </div>
               )}

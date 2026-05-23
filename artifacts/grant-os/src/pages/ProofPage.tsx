@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { proofItems, ProofItemType, proofTypeLabels } from "@/data/proofItems";
+import { ProofItemType, proofTypeLabels } from "@/data/proofItems";
 import ProofItemCard from "@/components/public/ProofItemCard";
 import PageHeader from "@/components/public/PageHeader";
 import { FileText, Presentation, BarChart3, Monitor, Clock } from "lucide-react";
+import { usePublicProofItems } from "@/hooks/usePublicProofItems";
+import { publicProofToCard } from "@/lib/public/publicDataService";
 
 const allTypes: Array<"All" | ProofItemType> = ["All", "workshop", "app_demo", "document", "metric"];
 
@@ -16,6 +18,8 @@ const typeDescriptions: Record<string, { desc: string; Icon: React.FC<{ classNam
 
 export default function ProofPage() {
   const [activeType, setActiveType] = useState<"All" | ProofItemType>("All");
+  const { data: publicProof = [], isLoading, isError, error } = usePublicProofItems();
+  const proofItems = publicProof.map(publicProofToCard);
 
   const filtered = activeType === "All" ? proofItems : proofItems.filter((p) => p.type === activeType);
 
@@ -60,6 +64,16 @@ export default function ProofPage() {
         </div>
 
         {/* Filter tabs */}
+        {isLoading && (
+          <div className="mb-6 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+            Loading public proof items...
+          </div>
+        )}
+        {isError && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            Could not load public proof items: {error instanceof Error ? error.message : "Unknown error"}
+          </div>
+        )}
         <div className="flex flex-wrap gap-2 mb-8" data-testid="proof-filters">
           {allTypes.map((type) => (
             <button
@@ -89,7 +103,7 @@ export default function ProofPage() {
           ))}
           {filtered.length === 0 && (
             <div className="col-span-3 text-center py-16 text-muted-foreground text-sm">
-              No proof items in this category yet.
+              {isLoading ? "Loading proof items..." : "No public proof items in this category yet."}
             </div>
           )}
         </div>

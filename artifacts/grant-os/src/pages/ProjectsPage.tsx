@@ -2,15 +2,26 @@ import { useState } from "react";
 import { projects } from "@/data/projects";
 import ProjectCard from "@/components/public/ProjectCard";
 import PageHeader from "@/components/public/PageHeader";
-
-const allCategories = ["All", ...Array.from(new Set(projects.map((p) => p.category)))];
-const allStatuses = ["All", ...Array.from(new Set(projects.map((p) => p.status)))];
+import { usePublicProjects } from "@/hooks/usePublicProjects";
+import { usePublicProofItems } from "@/hooks/usePublicProofItems";
+import { publicProjectToCard } from "@/lib/public/publicDataService";
 
 export default function ProjectsPage() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+  const { data: publicProjects = [], isLoading, isError } = usePublicProjects();
+  const { data: publicProof = [] } = usePublicProofItems();
+  const proofCountByProject = new Map<string, number>();
+  publicProof.forEach((item) => {
+    if (item.project_id) proofCountByProject.set(item.project_id, (proofCountByProject.get(item.project_id) ?? 0) + 1);
+  });
+  const sourceProjects = publicProjects.length
+    ? publicProjects.map((project) => publicProjectToCard(project, proofCountByProject.get(project.id) ?? 0))
+    : projects.filter((project) => ["connect-app", "ikigai", "bm-packing"].includes(project.slug));
+  const allCategories = ["All", ...Array.from(new Set(sourceProjects.map((p) => p.category)))];
+  const allStatuses = ["All", ...Array.from(new Set(sourceProjects.map((p) => p.status)))];
 
-  const filtered = projects.filter((p) => {
+  const filtered = sourceProjects.filter((p) => {
     const matchCat = categoryFilter === "All" || p.category === categoryFilter;
     const matchStatus = statusFilter === "All" || p.status === statusFilter;
     return matchCat && matchStatus;
@@ -25,6 +36,16 @@ export default function ProjectsPage() {
       />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {isError && (
+          <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            Public project data is temporarily unavailable. Showing curated public portfolio items.
+          </div>
+        )}
+        {isLoading && (
+          <div className="mb-5 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+            Loading public projects...
+          </div>
+        )}
         {/* Filters */}
         <div className="bg-card border border-border rounded-xl p-5 mb-8" data-testid="project-filters">
           <div className="flex flex-wrap gap-6">

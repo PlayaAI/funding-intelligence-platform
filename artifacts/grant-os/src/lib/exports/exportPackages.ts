@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { listGrantDocuments } from "@/lib/documentsService";
 
 type PackageType = "project" | "grant" | "application" | "funder" | "document";
 
@@ -17,6 +18,13 @@ async function selectOne<T>(table: string, column: string, value: string): Promi
   const result: SupabaseResult<T | null> = await db.from(table).select("*").eq(column, value).maybeSingle();
   if (result.error) throw new Error(result.error.message);
   return result.data;
+}
+
+async function selectIn<T>(table: string, column: string, values: string[]): Promise<T[]> {
+  if (!values.length) return [];
+  const result: SupabaseResult<T[]> = await db.from(table).select("*").in(column, values);
+  if (result.error) throw new Error(result.error.message);
+  return result.data ?? [];
 }
 
 function packageBase(packageType: PackageType, records: Record<string, unknown>) {
@@ -58,18 +66,47 @@ export async function exportProjectPackage(projectId: string, filenameHint: stri
 
 export async function exportGrantPackage(grantId: string, filenameHint: string) {
   const grant: any = await selectOne("grants", "id", grantId);
-  const [funder, project, applications, tasks, documents, agentNotes, agentReports, grantMatches] = await Promise.all([
+  const [funder, applications, tasks, agentNotes, agentReports, grantMatches] = await Promise.all([
     grant?.funder_id ? selectOne("funders", "id", grant.funder_id) : Promise.resolve(null),
-    grant?.related_project_id ? selectOne("projects", "id", grant.related_project_id) : Promise.resolve(null),
     selectMany("applications", "grant_id", grantId),
     selectMany("tasks", "related_grant_id", grantId),
-    selectMany("documents", "related_grant_id", grantId),
     selectMany("agent_notes", "related_grant_id", grantId),
     selectMany("agent_reports", "related_grant_id", grantId),
     selectMany("grant_matches", "grant_id", grantId),
   ]);
-  const proofItems = grant?.related_project_id ? await selectMany("proof_items", "project_id", grant.related_project_id) : [];
-  const payload = packageBase("grant", { grant, funder, project, applications, tasks, proof_items: proofItems, documents, agent_notes: agentNotes, agent_reports: agentReports, grant_matches: grantMatches });
+  const projectIds = Array.from(new Set([
+    grant?.related_project_id,
+    ...applications.map((app: any) => app.project_id),
+    ...grantMatches.map((match: any) => match.project_id),
+  ].filter(Boolean)));
+  const [projects, proofItems, documents] = await Promise.all([
+    selectIn("projects", "id", projectIds),
+    projectIds.length ? selectIn("proof_items", "project_id", projectIds) : Promise.resolve([]),
+    grant ? listGrantDocuments({
+      grantId,
+      funderId: (funder as any)?.id ?? grant.funder_id,
+      title: grant.title,
+      funderName: grant.funder_name,
+      sourceUrl: grant.source_url,
+      applicationUrl: grant.application_url,
+    }) : Promise.resolve([]),
+  ]);
+  const payload = {
+    ...packageBase("grant", {
+      grant,
+      funder,
+      related_projects: projects,
+      applications,
+      tasks,
+      proof_items: proofItems,
+      documents,
+      agent_notes: agentNotes,
+      agent_reports: agentReports,
+      grant_matches: grantMatches,
+      generated_at: new Date().toISOString(),
+    }),
+    generated_at: new Date().toISOString(),
+  };
   downloadJson(`grant-os-grant-${cleanName(filenameHint)}.json`, payload);
   return payload;
 }

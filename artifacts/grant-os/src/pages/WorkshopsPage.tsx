@@ -3,6 +3,9 @@ import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { workshops } from "@/data/workshops";
 import WorkshopCard from "@/components/public/WorkshopCard";
 import PageHeader from "@/components/public/PageHeader";
+import { usePublicProofItems } from "@/hooks/usePublicProofItems";
+import { publicProofToCard } from "@/lib/public/publicDataService";
+import ProofItemCard from "@/components/public/ProofItemCard";
 
 const byTheNumbers = [
   { num: "4", label: "Workshops completed" },
@@ -21,6 +24,9 @@ const lessons = [
 ];
 
 export default function WorkshopsPage() {
+  const { data: publicProof = [] } = usePublicProofItems();
+  const workshopProof = publicProof.filter((item) => item.type === "workshop").map(publicProofToCard);
+
   return (
     <div>
       <PageHeader
@@ -67,11 +73,20 @@ export default function WorkshopsPage() {
             <div className="w-4 h-px bg-primary" />
             <h2 className="text-xs font-semibold text-primary uppercase tracking-widest">Workshop archive</h2>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {workshops.map((workshop) => (
-              <WorkshopCard key={workshop.id} workshop={workshop} />
-            ))}
-          </div>
+          {workshopProof.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {workshopProof.map((item) => <ProofItemCard key={item.id} item={item} />)}
+            </div>
+          ) : (
+            <>
+              <p className="mb-5 text-sm text-muted-foreground">No public workshop records are published in Supabase yet, so this section is showing the program overview archive.</p>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {workshops.map((workshop) => (
+                  <WorkshopCard key={workshop.id} workshop={workshop} />
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Lessons learned */}

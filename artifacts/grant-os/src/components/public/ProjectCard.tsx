@@ -58,18 +58,14 @@ export default function ProjectCard({ project, className }: ProjectCardProps) {
             </span>
           </div>
 
-          {isConnectApp ? (
-            <Link
-              href="/projects/connect-app"
-              className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
-              data-testid="project-card-case-study-link"
-            >
-              View case study
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          ) : (
-            <span className="text-xs text-muted-foreground/50 italic">Detail coming</span>
-          )}
+          <Link
+            href={`/projects/${project.slug}`}
+            className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+            data-testid="project-card-case-study-link"
+          >
+            {isConnectApp ? "View case study" : "View details"}
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
       </div>
     </div>

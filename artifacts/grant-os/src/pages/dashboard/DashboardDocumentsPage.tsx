@@ -52,17 +52,22 @@ export default function DashboardDocumentsPage() {
   const archiveDoc = useArchiveDocument();
   const deleteDoc = useDeleteDocument();
 
-  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
-  const grantById = useMemo(() => new Map(grants.map((g) => [g.id, g.title])), [grants]);
-  const funderById = useMemo(() => new Map(funders.map((f) => [f.id, f.name])), [funders]);
-  const appById = useMemo(() => new Map(applications.map((a) => [a.id, a.title])), [applications]);
+  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  const grantById = useMemo(() => new Map(grants.map((g) => [g.id, g])), [grants]);
+  const funderById = useMemo(() => new Map(funders.map((f) => [f.id, f])), [funders]);
+  const appById = useMemo(() => new Map(applications.map((a) => [a.id, a])), [applications]);
 
-  const linkedLabel = (doc: DocumentRow) => {
-    if (doc.related_project_id) return `Project: ${projectById.get(doc.related_project_id) ?? "Linked project"}`;
-    if (doc.related_grant_id) return `Grant: ${grantById.get(doc.related_grant_id) ?? "Linked grant"}`;
-    if (doc.related_application_id) return `Application: ${appById.get(doc.related_application_id) ?? "Linked application"}`;
-    if (doc.related_funder_id) return `Funder: ${funderById.get(doc.related_funder_id) ?? "Linked funder"}`;
-    return "Unlinked";
+  const linkedRecords = (doc: DocumentRow) => {
+    const rows = [];
+    const grant = doc.related_grant_id ? grantById.get(doc.related_grant_id) : null;
+    const project = doc.related_project_id ? projectById.get(doc.related_project_id) : null;
+    const funder = doc.related_funder_id ? funderById.get(doc.related_funder_id) : null;
+    const app = doc.related_application_id ? appById.get(doc.related_application_id) : null;
+    if (grant) rows.push(<Link key="grant" href={`/dashboard/grants/${grant.id}`}><span className="text-primary hover:underline">Grant: {grant.title}</span></Link>);
+    if (project) rows.push(<Link key="project" href={`/dashboard/projects/${project.slug}`}><span className="text-primary hover:underline">Project: {project.name}</span></Link>);
+    if (funder) rows.push(<Link key="funder" href={`/dashboard/funders/${funder.legacy_id ?? funder.id}`}><span className="text-primary hover:underline">Funder: {funder.name}</span></Link>);
+    if (app) rows.push(<Link key="app" href={`/dashboard/applications/${app.id}`}><span className="text-primary hover:underline">Application: {app.title}</span></Link>);
+    return rows.length ? rows : [<span key="none" className="text-slate-400">Unlinked</span>];
   };
 
   const handleCreate = async (values: DocumentFormValues) => {
@@ -115,7 +120,7 @@ export default function DashboardDocumentsPage() {
         {isLoading && <div className="flex justify-center gap-2 py-10 text-sm text-slate-400"><Loader2 size={16} className="animate-spin" />Loading documents...</div>}
         {isError && <div className="text-sm text-red-600">Could not load documents: {error instanceof Error ? error.message : String(error)}</div>}
         {!isLoading && !isError && <Table><TableHeader><TableRow><TableHead>Document</TableHead><TableHead>Linked object</TableHead><TableHead>File / source</TableHead><TableHead>Extraction</TableHead><TableHead>Date added</TableHead><TableHead className="w-44">Actions</TableHead></TableRow></TableHeader><TableBody>
-          {docs.map((doc) => <TableRow key={doc.id}><TableCell><div className="flex items-center gap-2"><span className="h-8 w-8 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center">{typeIcon(doc)}</span><div><Link href={`/dashboard/documents/${doc.id}`}><div className="font-medium text-slate-900 hover:text-primary cursor-pointer">{doc.title}</div></Link><div className="text-xs text-slate-500">{doc.document_type.replace(/_/g, " ")}</div></div></div></TableCell><TableCell className="text-slate-600 text-sm">{linkedLabel(doc)}</TableCell><TableCell className="text-slate-600 text-sm">{doc.file_name ?? doc.source_url ?? "-"}</TableCell><TableCell><Badge variant="outline" className={`text-[11px] ${STATUS_COLORS[doc.extraction_status]}`}>{doc.extraction_status.replace(/_/g, " ")}</Badge></TableCell><TableCell className="text-slate-600 text-sm">{new Date(doc.created_at).toLocaleDateString()}</TableCell><TableCell><div className="flex items-center gap-1"><Link href={`/dashboard/documents/${doc.id}`}><Button variant="ghost" size="icon" className="h-8 w-8"><Eye size={14} /></Button></Link><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openDoc(doc)}><ExternalLink size={14} /></Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => extractDoc.mutate(doc.id)} disabled={extractDoc.isPending}><Download size={14} /></Button>{canUpdateTable("documents") && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => archiveDoc.mutate(doc.id)}><Archive size={14} /></Button>}{canDeleteRecords && <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => deleteDoc.mutate(doc.id)}><Trash2 size={14} /></Button>}</div></TableCell></TableRow>)}
+          {docs.map((doc) => <TableRow key={doc.id}><TableCell><div className="flex items-center gap-2"><span className="h-8 w-8 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center">{typeIcon(doc)}</span><div><Link href={`/dashboard/documents/${doc.id}`}><div className="font-medium text-slate-900 hover:text-primary cursor-pointer">{doc.title}</div></Link><div className="text-xs text-slate-500">{doc.document_type.replace(/_/g, " ")}</div></div></div></TableCell><TableCell className="text-slate-600 text-sm"><div className="flex flex-col gap-1">{linkedRecords(doc)}</div></TableCell><TableCell className="text-slate-600 text-sm">{doc.file_name ?? doc.source_url ?? "-"}</TableCell><TableCell><Badge variant="outline" className={`text-[11px] ${STATUS_COLORS[doc.extraction_status]}`}>{doc.extraction_status.replace(/_/g, " ")}</Badge></TableCell><TableCell className="text-slate-600 text-sm">{new Date(doc.created_at).toLocaleDateString()}</TableCell><TableCell><div className="flex items-center gap-1"><Link href={`/dashboard/documents/${doc.id}`}><Button variant="ghost" size="icon" className="h-8 w-8"><Eye size={14} /></Button></Link><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openDoc(doc)}><ExternalLink size={14} /></Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => extractDoc.mutate(doc.id)} disabled={extractDoc.isPending}><Download size={14} /></Button>{canUpdateTable("documents") && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => archiveDoc.mutate(doc.id)}><Archive size={14} /></Button>}{canDeleteRecords && <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => deleteDoc.mutate(doc.id)}><Trash2 size={14} /></Button>}</div></TableCell></TableRow>)}
           {docs.length === 0 && <TableRow><TableCell colSpan={6} className="py-10 text-center text-sm text-slate-500">No documents match your filters.</TableCell></TableRow>}
         </TableBody></Table>}
       </CardContent></Card>

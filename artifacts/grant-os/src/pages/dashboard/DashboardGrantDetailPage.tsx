@@ -1,35 +1,43 @@
 import { useMemo, useState } from "react";
-import { useRoute, Link, useLocation } from "wouter";
+import type { ReactNode } from "react";
+import { Link, useLocation, useRoute } from "wouter";
+import { useApplications, useApplicationsByGrant, useCreateApplication } from "@/hooks/useApplications";
+import { useCreateDocument, useGrantDocuments, useUploadDocumentFile } from "@/hooks/useDocuments";
 import { useFunders } from "@/hooks/useFunders";
 import { funderDetailPath } from "@/lib/funderMappers";
 import {
-  useMappedGrant,
-  useUpdateGrant,
   useArchiveGrant,
   useDeleteGrant,
+  useMappedGrant,
   useSetGrantTopThree,
+  useUpdateGrant,
 } from "@/hooks/useGrants";
 import { useProjects } from "@/hooks/useProjects";
+import { useCreateTask, useTasks, useTasksByGrant } from "@/hooks/useTasks";
+import { useAgentReports } from "@/hooks/useAgentReports";
 import { useGenerateMatchesForGrant, useGrantMatchesForGrant } from "@/hooks/useGrantMatches";
 import { matchJsonArray } from "@/lib/matching/matchesService";
 import { DECISION_CLASSES, DECISION_LABELS, deadlineLanguage } from "@/lib/matching/matchPresentation";
-import { useApplicationsByGrant } from "@/hooks/useApplications";
-import { useTasksByGrant, useCreateTask } from "@/hooks/useTasks";
+import { getDocumentSignedUrl } from "@/lib/documentsService";
+import { exportGrantPackage } from "@/lib/exports/exportPackages";
 import GrantFormDialog, { type GrantFormValues } from "@/components/dashboard/GrantFormDialog";
 import ApplicationFormDialog, { type ApplicationFormValues } from "@/components/dashboard/ApplicationFormDialog";
+import DocumentFormDialog, { type DocumentFormValues } from "@/components/dashboard/DocumentFormDialog";
 import TaskFormDialog, { type TaskFormValues } from "@/components/dashboard/TaskFormDialog";
+import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
+import AgentNotesPanel from "@/components/dashboard/AgentNotesPanel";
+import ScoreBar from "@/components/dashboard/ScoreBar";
 import { grantFormValuesToInsert } from "@/lib/grantFormUtils";
-import { useCreateApplication } from "@/hooks/useApplications";
-import { documents } from "@/data/documents";
-import type { ApplicationDbStatus, TaskDbStatus, TaskDbPriority } from "@/types/database";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
+import { useCreateAgentActivity } from "@/hooks/useAgentActivity";
+import { usePermissions } from "@/hooks/usePermissions";
+import { toast } from "@/hooks/use-toast";
+import type { ApplicationDbStatus, GrantRow, TaskDbPriority, TaskDbStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
-import ScoreBar from "@/components/dashboard/ScoreBar";
-import AgentNotesPanel from "@/components/dashboard/AgentNotesPanel";
-import { toast } from "@/hooks/use-toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,146 +49,208 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  ArrowLeft,
-  Star,
-  Sparkles,
-  ExternalLink,
-  CalendarClock,
-  Building2,
-  FolderOpen,
-  Plus,
-  FileText,
-  Eye,
-  EyeOff,
-  StarOff,
-  Pencil,
   Archive,
-  Trash2,
-  Loader2,
+  ArrowLeft,
+  Building2,
+  CalendarClock,
+  Clipboard,
   Download,
+  ExternalLink,
+  FileText,
+  FolderOpen,
+  Loader2,
+  Pencil,
+  Plus,
+  Sparkles,
+  Star,
+  StarOff,
+  Trash2,
 } from "lucide-react";
-import { isSupabaseConfigured } from "@/lib/supabase";
-import { exportGrantPackage } from "@/lib/exports/exportPackages";
-import { usePermissions } from "@/hooks/usePermissions";
-import { useCreateAgentActivity } from "@/hooks/useAgentActivity";
-import { useAuth } from "@/contexts/AuthContext";
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-}
-function daysUntil(d: string) {
-  return Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
-}
-function fmt(n: number) {
-  return n >= 1000000 ? `$${(n / 1000000).toFixed(1)}M` : `$${(n / 1000).toFixed(0)}K`;
+function formatDate(value: string | null | undefined) {
+  if (!value) return "No deadline";
+  return new Date(value).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
-type WatchStatus = "Apply" | "Watch" | "Ignore" | null;
+function compactDate(value: string | null | undefined) {
+  if (!value) return "No due date";
+  return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function daysUntil(value: string | null | undefined) {
+  if (!value) return null;
+  return Math.ceil((new Date(value).getTime() - Date.now()) / 86400000);
+}
+
+function fmtAmount(value: number | null | undefined) {
+  if (!value) return null;
+  return value >= 1000000 ? `$${(value / 1000000).toFixed(1)}M` : `$${(value / 1000).toFixed(0)}K`;
+}
+
+function amountRange(min?: number | null, max?: number | null, display?: string | null) {
+  if (display) return display;
+  if (min && max) return min === max ? fmtAmount(min) : `${fmtAmount(min)}-${fmtAmount(max)}`;
+  return fmtAmount(min) ?? fmtAmount(max) ?? "Amount not listed";
+}
+
+function textOrPlaceholder(value: string | null | undefined, fallback = "Not listed") {
+  return value?.trim() || fallback;
+}
+
+function readableList(values: string[] | null | undefined) {
+  return values?.length ? values.join(", ") : "Not listed";
+}
+
+function cleanNotes(notes: string | null | undefined) {
+  if (!notes) return "";
+  return notes
+    .split(/\n+/)
+    .map((line) => line.replace(/^\s*(raw|import|metadata|source)\s*[:=-]\s*/i, "").trim())
+    .filter((line) => line && !/^[{}\[\]",:0-9a-f-]+$/i.test(line))
+    .slice(0, 8)
+    .join("\n");
+}
+
+function sourceFields(grantRow: GrantRow) {
+  return [
+    ["Source URL", grantRow.source_url],
+    ["Application URL", grantRow.application_url],
+    ["Next deadline", grantRow.next_deadline],
+    ["Import/source notes", grantRow.notes],
+  ].filter(([, value]) => Boolean(value));
+}
+
+function OverviewCard({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+  return (
+    <Card className="border-slate-200">
+      <CardContent className="p-4">
+        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+        <div className="mt-1 text-sm font-semibold text-slate-900">{value}</div>
+        {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function DashboardGrantDetailPage() {
   const [, params] = useRoute("/dashboard/grants/:id");
   const [, navigate] = useLocation();
-  const [watchStatus, setWatchStatus] = useState<WatchStatus>(null);
+  const grantId = params?.id;
   const [editOpen, setEditOpen] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [createAppOpen, setCreateAppOpen] = useState(false);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
+  const [addDocOpen, setAddDocOpen] = useState(false);
 
-  const grantId = params?.id;
   const { grant, grantRow, isLoading, isError, error } = useMappedGrant(grantId);
-  // Fix #5: lightweight funder lookup — don't load all grants+projects+peer records
   const { data: funderRows = [] } = useFunders();
   const { data: projectRows = [] } = useProjects();
+  const { data: applications = [] } = useApplications();
+  const { data: relatedApps = [] } = useApplicationsByGrant(grantRow?.id);
+  const { data: grantTasks = [] } = useTasksByGrant(grantRow?.id);
+  const { data: allTasks = [] } = useTasks();
+  const { data: grantReports = [] } = useAgentReports({ relatedGrantId: grantRow?.id });
+  const grantMatchesQuery = useGrantMatchesForGrant(grantRow?.id);
+
   const updateGrant = useUpdateGrant();
   const archiveGrant = useArchiveGrant();
   const deleteGrant = useDeleteGrant();
   const setTopThree = useSetGrantTopThree();
-  const { data: relatedApps = [] } = useApplicationsByGrant(grantRow?.id);
-  const { data: relatedTasks = [] } = useTasksByGrant(grantRow?.id);
   const createApp = useCreateApplication();
   const createTask = useCreateTask();
+  const createDoc = useCreateDocument();
+  const uploadDoc = useUploadDocumentFile();
+  const generateGrantMatches = useGenerateMatchesForGrant();
+  const createActivity = useCreateAgentActivity();
   const { canWriteTable, canCreateTable, canDeleteRecords } = usePermissions();
   const { user } = useAuth();
-  const createActivity = useCreateAgentActivity();
-  const grantMatchesQuery = useGrantMatchesForGrant(grantRow?.id);
-  const generateGrantMatches = useGenerateMatchesForGrant();
 
   const funder = useMemo(() => {
-    if (!grant) return null;
-    const fid = grant.funderId;
-    const nameLower = grant.funderName.toLowerCase();
-    const matchedRow = funderRows.find(
-      (f) => f.id === fid || f.legacy_id === fid || f.name.toLowerCase() === nameLower
-    );
-    if (!matchedRow) return null;
-    return {
-      id: matchedRow.id,
-      legacyId: matchedRow.legacy_id ?? undefined,
-      name: matchedRow.name,
-      relationshipStatus: (matchedRow.relationship_status as string) ?? "None",
-      notes: matchedRow.notes ?? undefined,
-    };
-  }, [grant, funderRows]);
+    if (!grantRow && !grant) return null;
+    const fid = grantRow?.funder_id ?? grant?.funderId;
+    const name = (grantRow?.funder_name ?? grant?.funderName ?? "").toLowerCase();
+    return funderRows.find((f) => f.id === fid || f.legacy_id === fid || f.name.toLowerCase() === name) ?? null;
+  }, [funderRows, grant, grantRow]);
 
-  const handleAI = (action: string) =>
-    toast({ title: action, description: "AI workflow will be connected in a later phase." });
+  const { data: relatedDocs = [], isLoading: docsLoading } = useGrantDocuments(
+    grantRow
+      ? {
+          grantId: grantRow.id,
+          funderId: funder?.id ?? grantRow.funder_id,
+          title: grantRow.title,
+          funderName: grantRow.funder_name,
+          sourceUrl: grantRow.source_url,
+          applicationUrl: grantRow.application_url,
+        }
+      : null
+  );
+
+  const projectById = useMemo(() => new Map(projectRows.map((p) => [p.id, p])), [projectRows]);
+  const applicationById = useMemo(() => new Map(relatedApps.map((a) => [a.id, a])), [relatedApps]);
+  const matchedProjectIds = useMemo(
+    () => new Set((grantMatchesQuery.data ?? []).map((match) => match.project_id)),
+    [grantMatchesQuery.data]
+  );
+  const relatedProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (grantRow?.related_project_id) ids.add(grantRow.related_project_id);
+    relatedApps.forEach((app) => app.project_id && ids.add(app.project_id));
+    matchedProjectIds.forEach((id) => ids.add(id));
+    return ids;
+  }, [grantRow?.related_project_id, matchedProjectIds, relatedApps]);
+  const relatedTasks = useMemo(() => {
+    const appIds = new Set(relatedApps.map((app) => app.id));
+    const byId = new Map(grantTasks.map((task) => [task.id, task]));
+    allTasks.forEach((task) => {
+      if (
+        task.related_grant_id === grantRow?.id ||
+        (task.related_application_id && appIds.has(task.related_application_id)) ||
+        (task.related_project_id && relatedProjectIds.has(task.related_project_id))
+      ) {
+        byId.set(task.id, task);
+      }
+    });
+    return [...byId.values()].filter((task) => task.status !== "Archived").slice(0, 20);
+  }, [allTasks, grantRow?.id, grantTasks, relatedApps, relatedProjectIds]);
+
+  if (!isSupabaseConfigured) {
+    return <div className="p-8 text-center text-amber-700 text-sm">Configure Supabase to view grant details.</div>;
+  }
+  if (isLoading) {
+    return <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" />Loading grant...</div>;
+  }
+  if (isError) {
+    return <div className="p-8 text-center text-red-600 text-sm">Could not load grant: {error instanceof Error ? error.message : String(error)}</div>;
+  }
+  if (!grant || !grantRow) {
+    return <div className="p-8 text-center text-slate-500"><p>Grant not found.</p><Link href="/dashboard/grants"><Button variant="ghost" className="mt-4 gap-2"><ArrowLeft size={14} />Back to Grants</Button></Link></div>;
+  }
+
+  const bestMatch = (grantMatchesQuery.data ?? [])[0];
+  const days = daysUntil(grantRow.deadline);
+  const amount = amountRange(grantRow.amount_min, grantRow.amount_max, grantRow.amount_display);
+  const displayNotes = cleanNotes(grantRow.notes);
+  const sourceRows = sourceFields(grantRow);
+  const preferredProjectId = grantRow.related_project_id ?? bestMatch?.project_id ?? relatedApps.find((app) => app.project_id)?.project_id ?? null;
+  const preferredProject = preferredProjectId ? projectById.get(preferredProjectId) : null;
 
   const handleExportGrant = async () => {
     try {
-      await exportGrantPackage(grantRow!.id, grantRow!.title);
-      await createActivity.mutateAsync({ actor_source: "human", action_type: "export_created", title: `Exported grant package: ${grantRow!.title}`, related_grant_id: grantRow!.id, related_project_id: grantRow!.related_project_id ?? null, created_by: user?.id ?? null });
+      await exportGrantPackage(grantRow.id, grantRow.title);
+      await createActivity.mutateAsync({
+        actor_source: "human",
+        action_type: "export_created",
+        title: `Exported grant package: ${grantRow.title}`,
+        related_grant_id: grantRow.id,
+        related_project_id: grantRow.related_project_id ?? null,
+        created_by: user?.id ?? null,
+      });
       toast({ title: "Grant package exported", description: "JSON download created." });
     } catch (e) {
       toast({ title: "Export failed", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
     }
   };
-
-  if (!isSupabaseConfigured) {
-    return (
-      <div className="p-8 text-center text-amber-700 text-sm">Configure Supabase to view grant details.</div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm">
-        <Loader2 size={16} className="animate-spin" />
-        Loading grant…
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="p-8 text-center text-red-600 text-sm">
-        Could not load grant: {error instanceof Error ? error.message : String(error)}
-      </div>
-    );
-  }
-
-  if (!grant || !grantRow) {
-    return (
-      <div className="p-8 text-center text-slate-500">
-        <p>Grant not found.</p>
-        <Link href="/dashboard/grants">
-          <Button variant="ghost" className="mt-4 gap-2">
-            <ArrowLeft size={14} />
-            Back to grants
-          </Button>
-        </Link>
-      </div>
-    );
-  }
-
-  const relatedDocs = documents.filter(
-    (d) => {
-      const legacyId = (grant as any).legacyId;
-      return d.relatedGrantId === grant.id || (legacyId != null && d.relatedGrantId === legacyId);
-    }
-  );
-  const days = daysUntil(grant.deadline);
-  const top3 = grant.isTop3;
 
   const handleCreateApp = async (values: ApplicationFormValues) => {
     try {
@@ -188,11 +258,11 @@ export default function DashboardGrantDetailPage() {
         title: values.title,
         status: (values.status as ApplicationDbStatus) ?? "Drafting",
         owner_name: values.owner_name || null,
-        grant_id: grant.id,
-        project_id: values.project_id || null,
+        grant_id: grantRow.id,
+        project_id: values.project_id || preferredProjectId,
         google_doc_url: values.google_doc_url || null,
         drive_folder_url: values.drive_folder_url || null,
-        portal_url: values.portal_url || null,
+        portal_url: values.portal_url || grantRow.application_url || null,
         notes: values.notes || null,
       });
       toast({ title: "Application created", description: values.title });
@@ -211,8 +281,8 @@ export default function DashboardGrantDetailPage() {
         status: (values.status as TaskDbStatus) ?? "Not Started",
         priority: (values.priority as TaskDbPriority) ?? "Medium",
         due_date: values.due_date || null,
-        related_grant_id: grant.id,
-        related_project_id: values.related_project_id || null,
+        related_grant_id: grantRow.id,
+        related_project_id: values.related_project_id || preferredProjectId,
         related_application_id: values.related_application_id || null,
         notes: values.notes || null,
       });
@@ -223,545 +293,308 @@ export default function DashboardGrantDetailPage() {
     }
   };
 
-  const handleEdit = async (values: GrantFormValues) => {
+  const handleCreateDocument = async (values: DocumentFormValues) => {
     try {
-      await updateGrant.mutateAsync({
-        id: grant.id,
-        updates: grantFormValuesToInsert(values, projectRows),
-      });
-      toast({ title: "Grant updated", description: values.title });
-      setEditOpen(false);
+      const metadata = {
+        title: values.title,
+        document_type: values.document_type,
+        source_url: values.source_url,
+        related_project_id: values.related_project_id || preferredProjectId,
+        related_grant_id: grantRow.id,
+        related_funder_id: values.related_funder_id || funder?.id || grantRow.funder_id,
+        related_application_id: values.related_application_id,
+        metadata: values.metadata,
+        uploaded_by: user?.id ?? null,
+      };
+      if (values.file) await uploadDoc.mutateAsync({ file: values.file, metadata });
+      else await createDoc.mutateAsync({ ...metadata, extraction_status: "not_started" });
+      toast({ title: "Document saved", description: values.title });
+      setAddDocOpen(false);
     } catch (e) {
-      toast({
-        title: "Failed to update grant",
-        description: e instanceof Error ? e.message : "Unknown error",
-        variant: "destructive",
-      });
-      throw e;
+      toast({ title: "Failed to save document", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+    }
+  };
+
+  const handleEdit = async (values: GrantFormValues) => {
+    await updateGrant.mutateAsync({ id: grantRow.id, updates: grantFormValuesToInsert(values, projectRows) });
+    toast({ title: "Grant updated", description: values.title });
+    setEditOpen(false);
+  };
+
+  const copyUrl = async (value: string | null | undefined) => {
+    if (!value) return;
+    await navigator.clipboard.writeText(value);
+    toast({ title: "Source URL copied" });
+  };
+
+  const openDoc = async (doc: (typeof relatedDocs)[number]) => {
+    try {
+      const url = await getDocumentSignedUrl(doc);
+      if (!url) throw new Error("No source URL or uploaded file is available.");
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast({ title: "Could not open document", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
     }
   };
 
   const handleArchive = async () => {
-    try {
-      await archiveGrant.mutateAsync(grant.id);
-      toast({ title: "Grant archived", description: grant.title });
-      setConfirmArchive(false);
-      navigate("/dashboard/grants");
-    } catch (e) {
-      toast({
-        title: "Failed to archive grant",
-        description: e instanceof Error ? e.message : "Unknown error",
-        variant: "destructive",
-      });
-    }
+    await archiveGrant.mutateAsync(grantRow.id);
+    toast({ title: "Grant archived", description: grantRow.title });
+    navigate("/dashboard/grants");
   };
 
   const handleDelete = async () => {
-    try {
-      await deleteGrant.mutateAsync(grant.id);
-      toast({ title: "Grant deleted", description: grant.title });
-      setConfirmDelete(false);
-      navigate("/dashboard/grants");
-    } catch (e) {
-      toast({
-        title: "Failed to delete grant",
-        description: e instanceof Error ? e.message : "Unknown error",
-        variant: "destructive",
-      });
-    }
+    await deleteGrant.mutateAsync(grantRow.id);
+    toast({ title: "Grant deleted", description: grantRow.title });
+    navigate("/dashboard/grants");
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-5">
-      <div className="flex items-center gap-3">
+    <div className="p-6 max-w-6xl mx-auto space-y-5">
+      <div className="flex items-center justify-between gap-3">
         <Link href="/dashboard/grants">
-          <Button variant="ghost" size="sm" className="gap-2 text-xs h-8">
-            <ArrowLeft size={14} />
-            Grants
-          </Button>
+          <Button variant="ghost" size="sm" className="gap-2 text-xs h-8"><ArrowLeft size={14} />Back to Grants</Button>
         </Link>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportGrant}><Download size={12} />Export JSON</Button>
+          {canCreateTable("applications") && <Button size="sm" className="gap-1.5 text-xs" onClick={() => setCreateAppOpen(true)}><Plus size={12} />Start Application</Button>}
+        </div>
       </div>
 
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-start md:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            {top3 && <Star size={15} className="text-amber-400 fill-amber-400 flex-shrink-0" />}
-            <h1 className="text-xl font-bold text-slate-900">{grant.title}</h1>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            {grantRow.is_top_three && <Star size={15} className="text-amber-400 fill-amber-400" />}
+            <h1 className="text-2xl font-bold text-slate-900">{grantRow.title}</h1>
           </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <Building2 size={13} />
-              {grant.funderName}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <CalendarClock size={13} />
-              {formatDate(grant.deadline)}
-              {!["Awarded", "Declined", "Archived", "Submitted"].includes(grant.status) && days > 0 && (
-                <span className={`font-semibold text-xs ml-1 ${days <= 14 ? "text-red-500" : days <= 30 ? "text-amber-500" : "text-slate-400"}`}>
-                  ({days} days)
-                </span>
-              )}
-            </span>
-            {grant.relatedProjectName && (
-              <span className="flex items-center gap-1.5">
-                <FolderOpen size={13} />
-                {grant.relatedProjectName}
-              </span>
-            )}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
+            <span className="flex items-center gap-1.5"><Building2 size={13} />{textOrPlaceholder(grantRow.funder_name)}</span>
+            <span className="flex items-center gap-1.5"><CalendarClock size={13} />{formatDate(grantRow.deadline)}</span>
+            <span className="font-medium text-slate-700">{amount}</span>
+            {preferredProject && <span className="flex items-center gap-1.5"><FolderOpen size={13} />{preferredProject.name}</span>}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <GrantStatusBadge status={grantRow.status} />
+            {bestMatch && <Badge variant="outline" className={`text-xs ${DECISION_CLASSES[bestMatch.decision_label] ?? DECISION_CLASSES.needs_review}`}>{DECISION_LABELS[bestMatch.decision_label] ?? "Needs Review"} · {bestMatch.match_score}</Badge>}
+            {grantRow.source_url && <a href={grantRow.source_url} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs"><ExternalLink size={12} />Source</Button></a>}
+            {grantRow.application_url && <a href={grantRow.application_url} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs"><ExternalLink size={12} />Portal</Button></a>}
           </div>
         </div>
-        <div className="flex flex-col items-end gap-2 flex-shrink-0">
-          <GrantStatusBadge status={grant.status} />
-          <div className="text-sm font-medium text-slate-700">{fmt(grant.amountMin)}–{fmt(grant.amountMax)}</div>
+        <div className="flex flex-wrap justify-start gap-2 md:justify-end">
+          {canWriteTable("grants") && <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}><Pencil size={12} />Edit</Button>}
+          {canWriteTable("grants") && <Button size="sm" variant={grantRow.is_top_three ? "default" : "outline"} className="gap-1.5 text-xs" disabled={setTopThree.isPending} onClick={() => setTopThree.mutate({ id: grantRow.id, isTopThree: !grantRow.is_top_three })}>{grantRow.is_top_three ? <StarOff size={12} /> : <Star size={12} />}{grantRow.is_top_three ? "Remove Top 3" : "Top 3"}</Button>}
+          {canWriteTable("grants") && <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}><Archive size={12} />Archive</Button>}
+          {canDeleteRecords && <Button size="sm" variant="outline" className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => setConfirmDelete(true)}><Trash2 size={12} />Delete</Button>}
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" className="gap-1.5 text-xs" onClick={() => handleAI("Analyze Fit")}>
-          <Sparkles size={12} />
-          Analyze Fit
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleAI("Summarize Grant")}>
-          <Sparkles size={12} />
-          Summarize
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleAI("Suggest Proof")}>
-          <Sparkles size={12} />
-          Suggest Proof
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportGrant}>
-          <Download size={12} />
-          Export JSON
-        </Button>
-        {canCreateTable("applications") && (
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setCreateAppOpen(true)}>
-            <Plus size={12} />
-            Create Application
-          </Button>
-        )}
-        {canWriteTable("grants") && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5 text-xs"
-            onClick={() => setEditOpen(true)}
-          >
-            <Pencil size={12} />
-            Edit
-          </Button>
-        )}
-        {canWriteTable("grants") && (
-        <Button
-          size="sm"
-          variant={top3 ? "default" : "outline"}
-          className="gap-1.5 text-xs"
-          disabled={setTopThree.isPending}
-          onClick={async () => {
-            try {
-              await setTopThree.mutateAsync({ id: grant.id, isTopThree: !top3 });
-              toast({
-                title: top3 ? "Removed from Top 3" : "Added to Top 3",
-                description: top3
-                  ? "Grant removed from Top 3 Focus."
-                  : "Grant added to Top 3 Focus.",
-              });
-            } catch (e) {
-              toast({
-                title: "Failed to update Top 3",
-                description: e instanceof Error ? e.message : "Unknown error",
-                variant: "destructive",
-              });
-            }
-          }}
-        >
-          {top3 ? <StarOff size={12} /> : <Star size={12} />}
-          {top3 ? "Remove from Top 3" : "Add to Top 3"}
-        </Button>
-        )}
-        {canWriteTable("grants") && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 text-xs"
-          onClick={() => setConfirmArchive(true)}
-        >
-          <Archive size={12} />
-          Archive
-        </Button>
-        )}
-        {canDeleteRecords && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50"
-          onClick={() => setConfirmDelete(true)}
-        >
-          <Trash2 size={12} />
-          Delete
-        </Button>
-        )}
-        {grant.applicationUrl && (
-          <a href={grant.applicationUrl} target="_blank" rel="noopener noreferrer">
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-              <ExternalLink size={12} />
-              Portal
-            </Button>
-          </a>
-        )}
-      </div>
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <OverviewCard label="Deadline" value={formatDate(grantRow.deadline)} hint={days == null ? "No date listed" : days < 0 ? `${Math.abs(days)} days past` : days === 0 ? "Due today" : `${days} days left`} />
+        <OverviewCard label="Amount Range" value={amount} />
+        <OverviewCard label="Funder" value={funder ? <Link href={funderDetailPath(funder)} className="text-primary hover:underline">{funder.name}</Link> : textOrPlaceholder(grantRow.funder_name)} />
+        <OverviewCard label="Project" value={preferredProject ? <Link href={`/dashboard/projects/${preferredProject.slug}`} className="text-primary hover:underline">{preferredProject.name}</Link> : "No project linked"} />
+        <OverviewCard label="Match" value={bestMatch ? `${bestMatch.match_score} · ${DECISION_LABELS[bestMatch.decision_label] ?? "Needs Review"}` : "No match yet"} />
+        <OverviewCard label="Eligibility" value={grantRow.eligibility ? "Available" : "Not listed"} />
+        <OverviewCard label="Documents" value={docsLoading ? "Loading..." : relatedDocs.length} />
+        <OverviewCard label="Applications" value={relatedApps.length ? `${relatedApps.length} linked` : "Not started"} />
+        <OverviewCard label="Tasks" value={relatedTasks.length} />
+        <OverviewCard label="Readiness" value={grantRow.application_readiness ?? grantRow.proof_readiness ?? "Not scored"} />
+      </section>
 
-      <div className="flex flex-wrap gap-1.5">
-        {(["Apply", "Watch", "Ignore"] as WatchStatus[]).map((s) => (
-          <button
-            key={s!}
-            onClick={() => {
-              setWatchStatus(s);
-              toast({ title: `Marked: ${s}`, description: `Grant marked as "${s}".` });
-            }}
-            className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${
-              watchStatus === s
-                ? s === "Apply" ? "bg-violet-600 text-white border-violet-600"
-                  : s === "Watch" ? "bg-amber-500 text-white border-amber-500"
-                  : "bg-slate-500 text-white border-slate-500"
-                : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            {s === "Apply" && <span className="mr-1">Apply</span>}
-            {s === "Watch" && (
-              <span className="flex items-center gap-1"><Eye size={11} />Watch</span>
-            )}
-            {s === "Ignore" && (
-              <span className="flex items-center gap-1"><EyeOff size={11} />Ignore</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <Tabs defaultValue="summary">
-        <TabsList className="h-9 flex-wrap">
-          <TabsTrigger value="summary" className="text-xs">Summary</TabsTrigger>
-          <TabsTrigger value="fit" className="text-xs">Fit Analysis</TabsTrigger>
-          <TabsTrigger value="project-matches" className="text-xs">Project Matches</TabsTrigger>
-          <TabsTrigger value="requirements" className="text-xs">Requirements</TabsTrigger>
-          <TabsTrigger value="workspace" className="text-xs">Workspace ({relatedApps.length})</TabsTrigger>
-          <TabsTrigger value="tasks" className="text-xs">Tasks ({relatedTasks.length})</TabsTrigger>
+      <Tabs defaultValue="overview">
+        <TabsList className="h-auto flex-wrap justify-start">
+          <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
           <TabsTrigger value="documents" className="text-xs">Documents ({relatedDocs.length})</TabsTrigger>
-          <TabsTrigger value="ai-notes" className="text-xs">AI Notes</TabsTrigger>
+          <TabsTrigger value="matches" className="text-xs">Project Matches</TabsTrigger>
+          <TabsTrigger value="applications" className="text-xs">Applications</TabsTrigger>
+          <TabsTrigger value="tasks" className="text-xs">Tasks</TabsTrigger>
+          <TabsTrigger value="notes" className="text-xs">Agent Notes</TabsTrigger>
+          <TabsTrigger value="source" className="text-xs">Source Metadata</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="summary" className="mt-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <TabsContent value="overview" className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Card className="border-slate-200 lg:col-span-2">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Description</CardTitle></CardHeader>
+              <CardContent className="space-y-5 text-sm text-slate-700">
+                <section><h2 className="text-sm font-semibold text-slate-900">About this opportunity</h2><p className="mt-1 whitespace-pre-wrap">{displayNotes || textOrPlaceholder(grantRow.notes, "No narrative summary is stored yet.")}</p></section>
+                <section><h2 className="text-sm font-semibold text-slate-900">Eligibility</h2><p className="mt-1 whitespace-pre-wrap">{textOrPlaceholder(grantRow.eligibility)}</p></section>
+                <section><h2 className="text-sm font-semibold text-slate-900">Funding use / focus areas</h2><p className="mt-1">{readableList(grantRow.focus_areas)}</p></section>
+                <section><h2 className="text-sm font-semibold text-slate-900">Requirements</h2><p className="mt-1">{readableList(grantRow.required_documents)}</p></section>
+                <section><h2 className="text-sm font-semibold text-slate-900">Important notes</h2><p className="mt-1 whitespace-pre-wrap">{grantRow.geography ? `Geography: ${grantRow.geography}` : "No additional notes listed."}</p></section>
+              </CardContent>
+            </Card>
+
             <Card className="border-slate-200">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Grant Details</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Related Funder</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
-                <div>
-                  <span className="text-slate-500 text-xs">Funder</span>
-                  {funder ? (
-                    <Link href={funderDetailPath(funder)}>
-                      <div className="font-medium text-primary mt-0.5 hover:underline">{grant.funderName}</div>
-                    </Link>
-                  ) : (
-                    <div className="font-medium text-slate-800 mt-0.5">{grant.funderName}</div>
-                  )}
-                </div>
-                <div><span className="text-slate-500 text-xs">Amount Range</span><div className="font-medium text-slate-800 mt-0.5">{fmt(grant.amountMin)} – {fmt(grant.amountMax)}</div></div>
-                <div><span className="text-slate-500 text-xs">Deadline</span><div className="font-medium text-slate-800 mt-0.5">{formatDate(grant.deadline)}</div></div>
-                <div><span className="text-slate-500 text-xs">Geography</span><div className="font-medium text-slate-800 mt-0.5">{grant.geography}</div></div>
-                <div><span className="text-slate-500 text-xs">Assigned Owner</span><div className="font-medium text-slate-800 mt-0.5">{grant.assignedOwner}</div></div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-slate-200">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Focus Areas</CardTitle></CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-1.5">
-                  {grant.focusAreas.map((a) => (
-                    <Badge key={a} variant="secondary" className="text-xs">{a}</Badge>
-                  ))}
-                </div>
-                {funder && (
-                  <div className="mt-4 pt-4 border-t border-slate-100">
-                    <div className="text-xs text-slate-500 mb-2">Funder relationship</div>
-                    <Badge variant="outline" className="text-xs">{funder.relationshipStatus}</Badge>
-                    {funder.notes && <p className="text-xs text-slate-500 mt-2">{funder.notes}</p>}
-                  </div>
+                {funder ? (
+                  <>
+                    <div><div className="font-semibold text-slate-900">{funder.name}</div><div className="text-xs text-slate-500">{funder.openness_to_new_grantees ?? "Funder profile"}</div></div>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div><span className="text-slate-500">Location</span><div className="font-medium text-slate-800">{textOrPlaceholder(funder.location, "-")}</div></div>
+                      <div><span className="text-slate-500">EIN</span><div className="font-medium text-slate-800">{textOrPlaceholder(funder.ein, "-")}</div></div>
+                      <div><span className="text-slate-500">Median grant</span><div className="font-medium text-slate-800">{fmtAmount(funder.median_grant_amount) ?? "-"}</div></div>
+                      <div><span className="text-slate-500">Invite-only</span><div className="font-medium text-slate-800">{funder.open_applications ? "No" : "Possible"}</div></div>
+                    </div>
+                    {funder.website && <a href={funder.website} target="_blank" rel="noopener noreferrer" className="block text-xs text-primary hover:underline break-all">{funder.website}</a>}
+                    <Link href={funderDetailPath(funder)}><Button size="sm" variant="outline" className="w-full gap-2 text-xs">Open Funder</Button></Link>
+                  </>
+                ) : (
+                  <div className="py-8 text-center text-sm text-slate-500">No funder profile is linked yet.</div>
                 )}
               </CardContent>
             </Card>
           </div>
 
-          {grant.notes && (
-            <Card className="border-amber-200 bg-amber-50/40">
-              <CardContent className="pt-4">
-                <div className="text-xs font-semibold text-amber-800 mb-1">Internal Notes</div>
-                <p className="text-sm text-amber-900">{grant.notes}</p>
-              </CardContent>
-            </Card>
-          )}
-
           <Card className="border-slate-200">
-            <CardHeader className="pb-2"><CardTitle className="text-sm">Eligibility</CardTitle></CardHeader>
-            <CardContent>
-              <p className="text-sm text-slate-700">{grant.eligibility}</p>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Scores</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <ScoreBar label="Fit Score" value={grant.fitScore} />
+              <ScoreBar label="Priority Score" value={grant.priorityScore} />
+              <ScoreBar label="Urgency Score" value={grant.urgencyScore} />
+              <ScoreBar label="Ease" value={100 - grant.difficultyScore} />
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="fit" className="mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="border-slate-200">
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Scores</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <ScoreBar label="Fit Score" value={grant.fitScore} />
-                <ScoreBar label="Priority Score" value={grant.priorityScore} />
-                <ScoreBar label="Urgency Score" value={grant.urgencyScore} />
-                <ScoreBar label="Ease (inverse difficulty)" value={100 - grant.difficultyScore} />
-              </CardContent>
-            </Card>
-            <Card className="border-slate-200">
-              <CardHeader className="pb-3"><CardTitle className="text-sm">AI Fit Analysis</CardTitle></CardHeader>
-              <CardContent>
-                <div className="text-sm text-slate-500 mb-4">No AI analysis run yet.</div>
-                <Button size="sm" className="gap-2 text-xs w-full" onClick={() => handleAI("Analyze Fit")}>
-                  <Sparkles size={12} />
-                  Run Fit Analysis
-                </Button>
-                <p className="text-[11px] text-slate-400 mt-2 text-center">AI workflow will be connected in a later phase.</p>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="project-matches" className="mt-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-800">Project Matches</div>
-              <p className="text-xs text-slate-500 mt-0.5">Projects ranked against this grant by deterministic fit and readiness.</p>
-            </div>
-            {canWriteTable("grant_matches") && (
-              <Button size="sm" className="gap-2 text-xs" disabled={generateGrantMatches.isPending} onClick={async () => {
-                const rows = await generateGrantMatches.mutateAsync(grant.id);
-                toast({ title: "Project matches generated", description: ` matches updated.` });
-              }}>
-                {generateGrantMatches.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                Generate
-              </Button>
-            )}
-          </div>
-          {grantMatchesQuery.isLoading && <div className="py-8 text-center text-sm text-slate-400">Loading project matches...</div>}
-          {(grantMatchesQuery.data ?? []).slice(0, 10).map((match) => {
-            const reasons = matchJsonArray(match.fit_reasons).slice(0, 2);
-            const risks = matchJsonArray(match.risks);
-            const deadline = deadlineLanguage(match.grant?.deadline);
-            return (
-              <Card key={match.id} className="border-slate-200">
-                <CardContent className="pt-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      {match.project?.slug ? <Link href={`/dashboard/projects/${match.project.slug}`}><div className="font-medium text-sm text-primary hover:underline">{match.project.name}</div></Link> : <div className="font-medium text-sm text-slate-800">Unknown project</div>}
-                      <div className="text-xs text-slate-500 mt-0.5">Score {match.match_score} · Readiness {match.readiness_score} · {deadline.label} · {match.match_tier.replace("_", " ")}</div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <Badge variant="outline" className={`text-xs ${DECISION_CLASSES[match.decision_label] ?? DECISION_CLASSES.needs_review}`}>
-                        {DECISION_LABELS[match.decision_label] ?? "Needs Review"}
-                      </Badge>
-                      <Badge variant="outline" className="text-xs">{match.status}</Badge>
-                    </div>
-                  </div>
-                  <div className="mt-3 space-y-1">
-                    {reasons.map((reason) => <div key={reason} className="text-xs text-slate-600">• {reason}</div>)}
-                    {risks[0] && <div className="text-xs text-red-600">Risk: {risks[0]}</div>}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-          {!grantMatchesQuery.isLoading && (grantMatchesQuery.data ?? []).length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center text-sm text-slate-500">No project matches generated for this grant yet.</CardContent></Card>}
-        </TabsContent>
-
-        <TabsContent value="requirements" className="mt-4">
-          <Card className="border-slate-200">
-            <CardContent className="pt-4">
-              <div className="text-sm text-slate-700 mb-3">{grant.eligibility}</div>
-              <div className="text-xs text-slate-400">Detailed requirements not yet extracted. Use AI to extract from the grant page.</div>
-              <Button size="sm" variant="outline" className="gap-2 text-xs mt-4" onClick={() => handleAI("Extract Requirements")}>
-                <Sparkles size={12} />
-                Extract Requirements
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="workspace" className="mt-4">
-          {relatedApps.length > 0 ? (
-            <div className="space-y-3">
-              {relatedApps.map((a) => (
-                <Link href={`/dashboard/applications/${a.id}`} key={a.id}>
-                  <Card className="border-slate-200 hover:border-primary/40 cursor-pointer transition-colors">
-                    <CardContent className="pt-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-slate-800">{a.title}</div>
-                          <div className="text-xs text-slate-500 mt-0.5">{a.owner_name ?? "Unassigned"}</div>
-                        </div>
-                        <Badge variant="secondary">{a.status}</Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <Card className="border-slate-200">
-              <CardContent className="pt-6 pb-6 text-center">
-                <p className="text-sm text-slate-500 mb-4">No application workspace yet. Create one to start drafting.</p>
-                {canCreateTable("applications") && (
-                <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateAppOpen(true)}>
-                  <Plus size={12} />
-                  Create Application Workspace
-                </Button>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="tasks" className="mt-4">
-          {relatedTasks.length > 0 ? (
-            <div className="space-y-2">
-              {relatedTasks.map((t) => (
-                <Card key={t.id} className="border-slate-200">
-                  <CardContent className="pt-3 pb-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-sm text-slate-800">{t.title}</div>
-                        <div className="text-xs text-slate-400 mt-0.5">
-                          {t.owner_name ?? "Unassigned"} · {t.due_date ? `Due ${new Date(t.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "No due date"}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={t.priority === "High" || t.priority === "Urgent" ? "destructive" : "secondary"} className="text-xs">{t.priority}</Badge>
-                        <Badge variant="outline" className="text-xs">{t.status}</Badge>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card className="border-slate-200">
-              <CardContent className="pt-6 pb-6 text-center text-sm text-slate-400">
-                No tasks linked to this grant.
-              </CardContent>
-            </Card>
-          )}
-          {canWriteTable("tasks") && (
-          <Button size="sm" variant="outline" className="gap-2 text-xs mt-3" onClick={() => setAddTaskOpen(true)}>
-            <Plus size={12} />
-            Add task
-          </Button>
-          )}
         </TabsContent>
 
         <TabsContent value="documents" className="mt-4 space-y-3">
-          {relatedDocs.map((doc) => (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><div className="text-sm font-semibold text-slate-800">Documents / Source Files</div><p className="text-xs text-slate-500">Direct grant documents plus funder/source-linked files that appear to belong to this opportunity.</p></div>
+            <div className="flex gap-2">
+              {canCreateTable("documents") && <Button size="sm" className="gap-2 text-xs" onClick={() => setAddDocOpen(true)}><Plus size={12} />Add Document</Button>}
+              <Link href={`/dashboard/documents?grant=${grantRow.id}`}><Button size="sm" variant="outline" className="gap-2 text-xs">Link Existing Document</Button></Link>
+            </div>
+          </div>
+          {docsLoading && <div className="py-8 text-center text-sm text-slate-400">Loading documents...</div>}
+          {!docsLoading && relatedDocs.map((doc) => (
             <Card key={doc.id} className="border-slate-200">
-              <CardContent className="pt-3 pb-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileText size={14} className="text-slate-400 flex-shrink-0" />
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0 flex items-start gap-3">
+                    <FileText size={16} className="mt-0.5 text-slate-400" />
                     <div className="min-w-0">
-                      <div className="font-medium text-sm text-slate-800 truncate">{doc.title}</div>
-                      {doc.description && <div className="text-xs text-slate-400 mt-0.5 truncate">{doc.description}</div>}
+                      <Link href={`/dashboard/documents/${doc.id}`}><div className="font-medium text-sm text-primary hover:underline">{doc.title}</div></Link>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                        <Badge variant="secondary" className="text-[11px]">{doc.document_type.replace(/_/g, " ")}</Badge>
+                        <Badge variant="outline" className="text-[11px]">{doc.extraction_status.replace(/_/g, " ")}</Badge>
+                        {doc.related_project_id && <span>Project: {projectById.get(doc.related_project_id)?.name ?? "Linked project"}</span>}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500 break-all">{doc.file_name ?? doc.source_url ?? "No file/source URL"}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <Badge variant="secondary" className="text-xs">{doc.type}</Badge>
-                    {doc.url && (
-                      <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink size={13} className="text-slate-400 hover:text-primary" />
-                      </a>
-                    )}
+                  <div className="flex flex-wrap gap-2 md:justify-end">
+                    <Link href={`/dashboard/documents/${doc.id}`}><Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">Open Document</Button></Link>
+                    <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => openDoc(doc)}><ExternalLink size={12} />Open Source</Button>
+                    {doc.source_url && <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" onClick={() => copyUrl(doc.source_url)}><Clipboard size={12} />Copy URL</Button>}
                   </div>
                 </div>
               </CardContent>
             </Card>
           ))}
-          {relatedDocs.length === 0 && (
-            <div className="text-center py-10 text-slate-400 text-sm">No documents linked to this grant.</div>
-          )}
-          <Button size="sm" variant="outline" className="gap-2 text-xs" onClick={() =>
-            toast({ title: "Add document", description: "Document creation coming in next phase." })
-          }>
-            <Plus size={12} />
-            Add document
-          </Button>
+          {!docsLoading && relatedDocs.length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center text-sm text-slate-500">No documents are linked to this grant yet. Add guidelines, application instructions, or source files.</CardContent></Card>}
         </TabsContent>
 
-        <TabsContent value="ai-notes" className="mt-4">
-          <AgentNotesPanel relatedGrantId={grant.id} relatedProjectId={grantRow.related_project_id ?? undefined} />
+        <TabsContent value="matches" className="mt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div><div className="text-sm font-semibold text-slate-800">Project Matches</div><p className="text-xs text-slate-500">Projects ranked against this grant by fit and readiness.</p></div>
+            {canWriteTable("grant_matches") && <Button size="sm" className="gap-2 text-xs" disabled={generateGrantMatches.isPending} onClick={async () => { const rows = await generateGrantMatches.mutateAsync(grantRow.id); toast({ title: "Project matches generated", description: `${rows.length} matches updated.` }); }}>{generateGrantMatches.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}Generate</Button>}
+          </div>
+          {grantMatchesQuery.isLoading && <div className="py-8 text-center text-sm text-slate-400">Loading project matches...</div>}
+          {(grantMatchesQuery.data ?? []).slice(0, 10).map((match) => {
+            const risks = matchJsonArray(match.risks);
+            const deadline = deadlineLanguage(match.grant?.deadline);
+            return (
+              <Card key={match.id} className="border-slate-200">
+                <CardContent className="p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      {match.project?.slug ? <Link href={`/dashboard/projects/${match.project.slug}`}><div className="font-medium text-primary hover:underline">{match.project.name}</div></Link> : <div className="font-medium text-slate-800">Unknown project</div>}
+                      <div className="text-xs text-slate-500 mt-1">Score {match.match_score} · Readiness {match.readiness_score} · {deadline.label} · {match.match_tier.replace("_", " ")}</div>
+                      <div className="text-xs text-red-600 mt-2">Top risk: {risks[0] ?? "No major risk stored"}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 md:justify-end">
+                      <Badge variant="outline" className={`text-xs ${DECISION_CLASSES[match.decision_label] ?? DECISION_CLASSES.needs_review}`}>{DECISION_LABELS[match.decision_label] ?? "Needs Review"}</Badge>
+                      {match.project?.slug && <Link href={`/dashboard/projects/${match.project.slug}`}><Button size="sm" variant="outline" className="h-8 text-xs">Open Project</Button></Link>}
+                      {canCreateTable("applications") && <Button size="sm" className="h-8 text-xs" onClick={() => setCreateAppOpen(true)}>Create Application</Button>}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+          {!grantMatchesQuery.isLoading && (grantMatchesQuery.data ?? []).length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center text-sm text-slate-500">No project match data yet. Generate matches from the Matching page.</CardContent></Card>}
+        </TabsContent>
+
+        <TabsContent value="applications" className="mt-4 space-y-3">
+          {relatedApps.map((app) => {
+            const openTasks = relatedTasks.filter((task) => task.related_application_id === app.id && task.status !== "Complete").length;
+            const project = app.project_id ? projectById.get(app.project_id) : null;
+            return (
+              <Card key={app.id} className="border-slate-200">
+                <CardContent className="p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div><Link href={`/dashboard/applications/${app.id}`}><div className="font-medium text-primary hover:underline">{app.title}</div></Link><div className="text-xs text-slate-500 mt-1">{project?.name ?? "No project"} · {openTasks} open tasks · Updated {compactDate(app.updated_at)}</div></div>
+                  <div className="flex items-center gap-2"><Badge variant="secondary">{app.status}</Badge><Link href={`/dashboard/applications/${app.id}`}><Button size="sm" variant="outline" className="text-xs">Open Application</Button></Link></div>
+                </CardContent>
+              </Card>
+            );
+          })}
+          {relatedApps.length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center"><p className="text-sm text-slate-500 mb-4">No application workspace exists for this grant yet.</p>{canCreateTable("applications") && <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateAppOpen(true)}><Plus size={12} />Start Application</Button>}</CardContent></Card>}
+        </TabsContent>
+
+        <TabsContent value="tasks" className="mt-4 space-y-2">
+          {relatedTasks.map((task) => (
+            <Card key={task.id} className="border-slate-200">
+              <CardContent className="p-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div><div className="font-medium text-sm text-slate-800">{task.title}</div><div className="text-xs text-slate-500 mt-0.5">{task.related_application_id ? applicationById.get(task.related_application_id)?.title ?? "Linked application" : task.related_project_id ? projectById.get(task.related_project_id)?.name ?? "Linked project" : "Grant task"} · {compactDate(task.due_date)}</div></div>
+                <div className="flex items-center gap-2"><Badge variant={task.priority === "High" || task.priority === "Urgent" ? "destructive" : "secondary"} className="text-xs">{task.priority}</Badge><Badge variant="outline" className="text-xs">{task.status}</Badge></div>
+              </CardContent>
+            </Card>
+          ))}
+          {relatedTasks.length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center text-sm text-slate-500">No tasks linked to this grant, its applications, or related projects.</CardContent></Card>}
+          {canWriteTable("tasks") && <Button size="sm" variant="outline" className="gap-2 text-xs mt-3" onClick={() => setAddTaskOpen(true)}><Plus size={12} />Add Task</Button>}
+        </TabsContent>
+
+        <TabsContent value="notes" className="mt-4 space-y-4">
+          <AgentNotesPanel relatedGrantId={grantRow.id} relatedProjectId={preferredProjectId ?? undefined} />
+          <Card className="border-slate-200">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Agent Reports</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {grantReports.map((report) => <div key={report.id} className="rounded-md border border-slate-200 p-3"><div className="text-sm font-medium text-slate-800">{report.title}</div><div className="text-xs text-slate-500 mt-1">{report.report_type.replace(/_/g, " ")} · {compactDate(report.created_at)}</div></div>)}
+              {grantReports.length === 0 && <div className="py-6 text-center text-sm text-slate-500">No agent reports linked to this grant.</div>}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="source" className="mt-4">
+          <details className="rounded-lg border border-slate-200 bg-white p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-800">Source Metadata</summary>
+            <div className="mt-4 space-y-3 text-sm">
+              {sourceRows.map(([label, value]) => (
+                <div key={label}><div className="text-xs text-slate-500">{label}</div><div className="break-all whitespace-pre-wrap text-slate-800">{value}</div></div>
+              ))}
+              {sourceRows.length === 0 && <div className="text-sm text-slate-500">No source metadata is stored for this grant.</div>}
+            </div>
+          </details>
         </TabsContent>
       </Tabs>
 
-      <GrantFormDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        onSubmit={handleEdit}
-        defaultValues={grantRow}
-        title="Edit grant"
-        submitLabel="Save changes"
-        loading={updateGrant.isPending}
-      />
-
-      <ApplicationFormDialog
-        open={createAppOpen}
-        onOpenChange={setCreateAppOpen}
-        onSubmit={handleCreateApp}
-        title="New application for this grant"
-        submitLabel="Create application"
-        loading={createApp.isPending}
-        lockedGrantId={grant.id}
-      />
-
-      <TaskFormDialog
-        open={addTaskOpen}
-        onOpenChange={setAddTaskOpen}
-        onSubmit={handleCreateTask}
-        title="Add task for this grant"
-        submitLabel="Create task"
-        loading={createTask.isPending}
-        lockedGrantId={grant.id}
-      />
+      <GrantFormDialog open={editOpen} onOpenChange={setEditOpen} onSubmit={handleEdit} defaultValues={grantRow} title="Edit grant" submitLabel="Save changes" loading={updateGrant.isPending} />
+      <ApplicationFormDialog open={createAppOpen} onOpenChange={setCreateAppOpen} onSubmit={handleCreateApp} title="New application for this grant" submitLabel="Create application" loading={createApp.isPending} lockedGrantId={grantRow.id} lockedProjectId={preferredProjectId ?? undefined} />
+      <TaskFormDialog open={addTaskOpen} onOpenChange={setAddTaskOpen} onSubmit={handleCreateTask} title="Add task for this grant" submitLabel="Create task" loading={createTask.isPending} lockedGrantId={grantRow.id} lockedProjectId={preferredProjectId ?? undefined} />
+      <DocumentFormDialog open={addDocOpen} onOpenChange={setAddDocOpen} onSubmit={handleCreateDocument} loading={createDoc.isPending || uploadDoc.isPending} projects={projectRows} grants={[grantRow]} funders={funder ? [funder] : funderRows} applications={relatedApps.length ? relatedApps : applications} />
 
       <AlertDialog open={confirmArchive} onOpenChange={setConfirmArchive}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Archive this grant?</AlertDialogTitle>
-            <AlertDialogDescription>
-              &quot;{grant.title}&quot; will be archived and hidden from the main grants list.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleArchive}>Archive</AlertDialogAction>
-          </AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>Archive this grant?</AlertDialogTitle><AlertDialogDescription>&quot;{grantRow.title}&quot; will be archived and hidden from the main grants list.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={handleArchive}>Archive</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Permanently delete this grant?</AlertDialogTitle>
-            <AlertDialogDescription>
-              &quot;{grant.title}&quot; will be removed from the database. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>Permanently delete this grant?</AlertDialogTitle><AlertDialogDescription>&quot;{grantRow.title}&quot; will be removed from the database. This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete}>Delete</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>

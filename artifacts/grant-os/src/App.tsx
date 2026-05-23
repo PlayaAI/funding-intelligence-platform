@@ -11,6 +11,7 @@ import DashboardShell from "@/components/dashboard/DashboardShell";
 import HomePage from "@/pages/HomePage";
 import ProjectsPage from "@/pages/ProjectsPage";
 import ConnectAppPage from "@/pages/ConnectAppPage";
+import PublicProjectDetailPage from "@/pages/PublicProjectDetailPage";
 import WorkshopsPage from "@/pages/WorkshopsPage";
 import ProofPage from "@/pages/ProofPage";
 import TeamPage from "@/pages/TeamPage";
@@ -181,6 +182,7 @@ function Router() {
       <Switch>
         <Route path="/" component={HomePage} />
         <Route path="/projects/connect-app" component={ConnectAppPage} />
+        <Route path="/projects/:slug" component={PublicProjectDetailPage} />
         <Route path="/projects" component={ProjectsPage} />
         <Route path="/workshops" component={WorkshopsPage} />
         <Route path="/proof" component={ProofPage} />
