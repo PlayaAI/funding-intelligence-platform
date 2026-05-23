@@ -1,42 +1,161 @@
--- Manual cleanup template. Review preview_demo_data_cleanup.sql output first.
--- This file is intentionally commented out and should not be run as-is.
--- Prefer archive/status changes over deletes.
+-- V1.2.2 Manual Cleanup Template
+-- DO NOT RUN AS-IS.
+--
+-- This file intentionally contains only commented statements.
+-- It must be manually reviewed, edited, and uncommented block-by-block.
+--
+-- Rules:
+--   1. Run preview_demo_data_cleanup.sql first.
+--   2. Export or screenshot the preview output for review.
+--   3. Never delete real imported Instrumentl records.
+--   4. Prefer archived_at/status changes over deletes.
+--   5. Only consider hard deletes for records that are clearly disposable test/mock/sample rows
+--      and have no useful links.
+--   6. Keep public portfolio records that are intentionally published.
 
+-- ---------------------------------------------------------------------------
+-- Transaction wrapper for manual use.
+-- Leave rollback in place until the reviewed row count looks correct.
+-- ---------------------------------------------------------------------------
 -- begin;
 
--- Example: archive clearly identified legacy projects.
+-- ---------------------------------------------------------------------------
+-- PROJECTS
+-- Purpose: archive legacy seed projects only after confirming they are not part
+-- of the current public portfolio or dashboard workflows.
+-- Safe default: do not archive connect-app if it is still public/featured.
+-- ---------------------------------------------------------------------------
 -- update projects
--- set archived_at = now(), updated_at = now()
--- where slug in ('ikigai','bm-packing','biohack-burn','oracle','relationship-tool')
---   and archived_at is null;
+-- set archived_at = now(), updated_at = now(), public_visibility = false
+-- where archived_at is null
+--   and slug in ('ikigai','bm-packing','biohack-burn','oracle','relationship-tool')
+--   and public_visibility = false;
 
--- Example: archive old seed tasks.
+-- ---------------------------------------------------------------------------
+-- TASKS
+-- Purpose: archive stale operational seed tasks from early mock application work.
+-- Tasks support archived_at, so prefer archive over delete.
+-- ---------------------------------------------------------------------------
 -- update tasks
 -- set archived_at = now(), updated_at = now()
 -- where archived_at is null
 --   and (
---     title ilike any(array['%Wellspring%','%Connect App%','%Aaron Coombs%','%MIT Solve%'])
---     or owner_name ilike '%Aaron Coombs%'
+--     owner_name ilike '%Aaron Coombs%'
+--     or title ilike any(array[
+--       '%Wellspring%',
+--       '%Connect App%',
+--       '%MIT Solve%',
+--       '%Knight Foundation%',
+--       '%Mozilla Foundation%',
+--       '%Ikigai%'
+--     ])
 --   );
 
--- Example: archive old proof items after confirming they are not part of the public proof record.
+-- ---------------------------------------------------------------------------
+-- PROOF ITEMS
+-- Purpose: archive private seed proof items only after deciding they should not
+-- remain public proof. Public proof should usually be kept.
+-- ---------------------------------------------------------------------------
 -- update proof_items
 -- set archived_at = now(), updated_at = now()
 -- where archived_at is null
 --   and public_visibility = false
---   and title ilike any(array['%Connect App%','%Burning Man%','%Biohack%','%Oracle%','%Ikigai%']);
+--   and (
+--     title ilike any(array[
+--       '%Connect App%',
+--       '%Burning Man Packing List%',
+--       '%Biohack Your Burn%',
+--       '%Oracle Art Demo%',
+--       '%Ikigai%',
+--       '%demo%',
+--       '%seed%',
+--       '%mock%',
+--       '%sample%',
+--       '%test%'
+--     ])
+--     or grant_relevance ilike any(array['%Wellspring%','%Mozilla Foundation%','%Knight Foundation%'])
+--   );
 
--- Example: archive legacy application workspaces.
+-- ---------------------------------------------------------------------------
+-- APPLICATIONS
+-- Purpose: close out old seed application workspaces. Applications support both
+-- status and archived_at, so mark Archived rather than deleting.
+-- ---------------------------------------------------------------------------
 -- update applications
 -- set archived_at = now(), updated_at = now(), status = 'Archived'
 -- where archived_at is null
---   and title ilike any(array['%Wellspring%','%Burning Man%','%MIT Solve%']);
+--   and (
+--     owner_name ilike '%Aaron Coombs%'
+--     or title ilike any(array['%Wellspring%','%Connect App%','%Burning Man%','%Oracle%','%MIT Solve%'])
+--   );
 
--- Example: archive legacy documents only after confirming they are duplicates.
+-- ---------------------------------------------------------------------------
+-- PEER ORGANIZATIONS
+-- Purpose: archive synthetic peer intelligence examples from early seed data.
+-- Do not archive a peer if it has been updated into a real relationship record.
+-- ---------------------------------------------------------------------------
+-- update peer_organizations
+-- set archived_at = now(), updated_at = now()
+-- where archived_at is null
+--   and (
+--     name ilike any(array['%demo%','%seed%','%mock%','%sample%','%test%'])
+--     or notes ilike any(array['%Connect App%','%Ikigai%','%Wellspring%','%Mozilla%','%Knight%'])
+--     or saved_opportunities::text ilike any(array['%Knight Foundation%','%Wellspring%','%Mozilla Foundation%'])
+--   );
+
+-- ---------------------------------------------------------------------------
+-- DOCUMENTS
+-- Purpose: archive duplicate/manual seed documents only. Do not touch imported
+-- Instrumentl source documents or documents with useful source/file links.
+-- ---------------------------------------------------------------------------
 -- update documents
 -- set archived_at = now(), updated_at = now()
 -- where archived_at is null
---   and title ilike any(array['%Connect App%','%Wellspring%','%Biohack%','%Oracle Art%']);
+--   and (
+--     title ilike any(array['%demo%','%seed%','%mock%','%sample%','%test%'])
+--     or title ilike any(array['%Connect App%','%Wellspring%','%Biohack%','%Oracle Art%'])
+--   )
+--   and coalesce(source_url, '') not ilike '%instrumentl%'
+--   and metadata::text not ilike '%instrumentl%';
 
+-- ---------------------------------------------------------------------------
+-- AGENT NOTES
+-- Purpose: archive stale seed/review notes. Agent notes support archived_at.
+-- ---------------------------------------------------------------------------
+-- update agent_notes
+-- set archived_at = now(), updated_at = now()
+-- where archived_at is null
+--   and (
+--     title ilike any(array['%demo%','%seed%','%mock%','%sample%','%test%'])
+--     or content ilike any(array['%Aaron Coombs%','%Connect App%','%Wellspring%','%Biohack%','%Oracle%','%Burning Man%','%Ikigai%'])
+--   );
+
+-- ---------------------------------------------------------------------------
+-- AGENT REPORTS
+-- Purpose: archive stale seed/review reports. Agent reports support archived_at.
+-- ---------------------------------------------------------------------------
+-- update agent_reports
+-- set archived_at = now(), updated_at = now()
+-- where archived_at is null
+--   and (
+--     title ilike any(array['%demo%','%seed%','%mock%','%sample%','%test%'])
+--     or content ilike any(array['%Aaron Coombs%','%Connect App%','%Wellspring%','%Biohack%','%Oracle%','%Burning Man%','%Ikigai%'])
+--   );
+
+-- ---------------------------------------------------------------------------
+-- HARD DELETE TEMPLATE
+-- Use only for rows explicitly reviewed as disposable test/mock/sample records.
+-- Keep this commented unless a human has confirmed the exact IDs.
+-- ---------------------------------------------------------------------------
+-- delete from tasks
+-- where id in (
+--   '00000000-0000-0000-0000-000000000000'
+-- );
+
+-- ---------------------------------------------------------------------------
+-- End transaction.
+-- First run with rollback. Replace rollback with commit only after verifying
+-- affected row counts and reviewing the target IDs.
+-- ---------------------------------------------------------------------------
 -- rollback;
--- Replace rollback with commit only after manual review.
+-- commit;

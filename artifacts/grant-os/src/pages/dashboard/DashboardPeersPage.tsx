@@ -70,6 +70,7 @@ export default function DashboardPeersPage() {
       ),
     [peers, search]
   );
+  const hasPeers = peers.length > 0;
 
   useEffect(() => {
     if (peers.length === 0) {
@@ -177,7 +178,12 @@ export default function DashboardPeersPage() {
       <div className="w-72 flex-shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-hidden">
         <div className="p-3 border-b border-slate-100 flex-shrink-0">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-700">Peer Organizations</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-700">Peer Organizations</span>
+              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                {peers.length}
+              </span>
+            </div>
             {canWriteTable("peer_organizations") && (
               <Button
                 size="sm"
@@ -225,13 +231,58 @@ export default function DashboardPeersPage() {
             );
           })}
           {filtered.length === 0 && (
-            <div className="p-6 text-center text-slate-400 text-xs">No peers found.</div>
+            <div className="p-6 text-center text-slate-400 text-xs">
+              {hasPeers ? "No peers match this search." : "No peer organizations yet."}
+            </div>
           )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto bg-slate-50/40 p-5">
-        {selected && (
+        {!hasPeers ? (
+          <div className="min-h-full flex items-center justify-center">
+            <div className="w-full max-w-3xl">
+              <div className="bg-white border border-slate-200 rounded-xl p-8 shadow-sm">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                  <Network size={22} className="text-primary" />
+                </div>
+                <div className="mx-auto max-w-xl text-center">
+                  <h2 className="text-xl font-semibold text-slate-900">No peer organizations yet</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Peer intelligence will help Playa AI track similar organizations, discover who funds them, and compare funding patterns before outreach.
+                  </p>
+                </div>
+
+                <div className="mt-6 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <Search size={16} className="mb-2 text-slate-500" />
+                    <div className="text-sm font-medium text-slate-800">Identify similar organizations</div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <FileBarChart2 size={16} className="mb-2 text-slate-500" />
+                    <div className="text-sm font-medium text-slate-800">Track known funders and funding history</div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <Sparkles size={16} className="mb-2 text-slate-500" />
+                    <div className="text-sm font-medium text-slate-800">Use peer patterns to guide grant strategy</div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-col items-center gap-3">
+                  {canWriteTable("peer_organizations") && (
+                    <Button className="gap-2" onClick={() => setPeerDialogOpen(true)}>
+                      <Plus size={15} />
+                      Add peer organization
+                    </Button>
+                  )}
+                  <p className="max-w-lg text-center text-xs leading-5 text-slate-500">
+                    Old demo peer records were archived during cleanup. Add only real organizations or verified research notes.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : selected ? (
           <div className="max-w-2xl mx-auto space-y-4">
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-start justify-between gap-4 mb-3">
@@ -487,6 +538,10 @@ export default function DashboardPeersPage() {
                 </CardContent>
               </Card>
             )}
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-slate-400">
+            Select a peer organization to view its funding profile.
           </div>
         )}
       </div>
