@@ -14,12 +14,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import type { PeerFundingRecordRow } from "@/types/database";
+import { useFunders } from "@/hooks/useFunders";
 
 const schema = z.object({
   funder_name: z.string().min(1, "Funder name is required"),
-  year: z.coerce.number().min(1900).max(2100),
-  amount: z.coerce.number().min(0),
+  funder_id: z.string().optional(),
+  award_year: z.coerce.number().min(1900).max(2100).optional().or(z.literal("")),
+  amount_exact: z.coerce.number().min(0).optional().or(z.literal("")),
+  amount_min: z.coerce.number().min(0).optional().or(z.literal("")),
+  amount_max: z.coerce.number().min(0).optional().or(z.literal("")),
+  purpose: z.string().optional(),
+  program_area: z.string().optional(),
   source_url: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  confidence: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -38,9 +45,15 @@ interface Props {
 function rowToForm(row: Partial<PeerFundingRecordRow>): PeerFundingRecordFormValues {
   return {
     funder_name: row.funder_name ?? "",
-    year: row.year ?? new Date().getFullYear(),
-    amount: Number(row.amount ?? 0),
+    funder_id: row.funder_id ?? "",
+    award_year: row.award_year ?? row.year ?? "",
+    amount_exact: row.amount_exact ?? row.amount ?? "",
+    amount_min: row.amount_min ?? "",
+    amount_max: row.amount_max ?? "",
+    purpose: row.purpose ?? "",
+    program_area: row.program_area ?? "",
     source_url: row.source_url ?? "",
+    confidence: row.confidence ?? "manual",
     notes: row.notes ?? "",
   };
 }
@@ -54,6 +67,7 @@ export default function PeerFundingRecordFormDialog({
   submitLabel,
   loading,
 }: Props) {
+  const { data: funders = [] } = useFunders();
   const {
     register,
     handleSubmit,
@@ -90,14 +104,49 @@ export default function PeerFundingRecordFormDialog({
             )}
           </div>
 
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Linked funder (optional)</Label>
+            <select {...register("funder_id")} className="w-full h-8 rounded-lg border border-slate-200 bg-white px-2 text-sm">
+              <option value="">None</option>
+              {funders.map((funder) => <option key={funder.id} value={funder.id}>{funder.name}</option>)}
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Year *</Label>
-              <Input type="number" {...register("year")} className="h-8 text-sm" />
+              <Label className="text-xs font-medium">Award year</Label>
+              <Input type="number" {...register("award_year")} className="h-8 text-sm" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Amount ($) *</Label>
-              <Input type="number" {...register("amount")} className="h-8 text-sm" />
+              <Label className="text-xs font-medium">Exact amount ($)</Label>
+              <Input type="number" {...register("amount_exact")} className="h-8 text-sm" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Amount min ($)</Label>
+              <Input type="number" {...register("amount_min")} className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Amount max ($)</Label>
+              <Input type="number" {...register("amount_max")} className="h-8 text-sm" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Purpose</Label>
+            <Textarea {...register("purpose")} rows={2} className="text-sm" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Program area</Label>
+              <Input {...register("program_area")} className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Confidence/source</Label>
+              <Input {...register("confidence")} className="h-8 text-sm" />
             </div>
           </div>
 

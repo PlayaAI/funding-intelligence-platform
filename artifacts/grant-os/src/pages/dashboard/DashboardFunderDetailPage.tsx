@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { useFunder, useUpdateFunder, useArchiveFunder } from "@/hooks/useFunders";
+import { useFunder, useUpdateFunder, useArchiveFunder, useAllPeerFundingRecords } from "@/hooks/useFunders";
 import { useGrants } from "@/hooks/useGrants";
 import { useProjects } from "@/hooks/useProjects";
 import { useDocuments } from "@/hooks/useDocuments";
 import { useGrantMatches } from "@/hooks/useGrantMatches";
 import { useAgentReports } from "@/hooks/useAgentReports";
+import { usePeerOrganizations } from "@/hooks/usePeers";
 import AgentNotesPanel from "@/components/dashboard/AgentNotesPanel";
 import FunderFormDialog, { type FunderFormValues } from "@/components/dashboard/FunderFormDialog";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
@@ -122,6 +123,8 @@ export default function DashboardFunderDetailPage() {
   const { data: documents = [] } = useDocuments();
   const { data: matches = [] } = useGrantMatches({ status: "all" });
   const { data: agentReports = [] } = useAgentReports();
+  const { data: peerFundingRecords = [] } = useAllPeerFundingRecords();
+  const { data: peerOrganizations = [] } = usePeerOrganizations();
   const updateFunder = useUpdateFunder();
   const archiveFunder = useArchiveFunder();
   const { canWriteTable } = usePermissions();
@@ -157,6 +160,15 @@ export default function DashboardFunderDetailPage() {
     () => agentReports.filter((report) => report.related_grant_id && relatedGrantIds.has(report.related_grant_id)),
     [agentReports, relatedGrantIds]
   );
+  const peerById = useMemo(() => new Map(peerOrganizations.map((peer) => [peer.id, peer])), [peerOrganizations]);
+  const relatedPeerFunding = useMemo(() => {
+    if (!funder) return [];
+    const name = funder.name.toLowerCase();
+    return peerFundingRecords.filter((record) =>
+      record.funder_id === funder.id ||
+      (record.funder_name ?? "").toLowerCase() === name
+    );
+  }, [funder, peerFundingRecords]);
 
   const projectMatchRows = useMemo(() => {
     const byProject = new Map<string, { projectName: string; bestScore: number; count: number; bestDecision: string }>();
@@ -383,6 +395,29 @@ export default function DashboardFunderDetailPage() {
         </div>
 
         <div className="space-y-5">
+          <Card className="border-slate-200">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Peer Intelligence</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {relatedPeerFunding.slice(0, 10).map((record) => {
+                const peer = peerById.get(record.peer_organization_id);
+                return (
+                  <div key={record.id} className="rounded-lg border border-slate-100 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-sm text-slate-800">{peer?.name ?? "Unknown peer"}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{record.award_year ?? record.year ?? "Year unknown"} · {formatMoney(record.amount_exact ?? record.amount ?? record.amount_max ?? record.amount_min)}</div>
+                        {record.purpose && <div className="text-xs text-slate-600 mt-1">{record.purpose}</div>}
+                      </div>
+                      {peer && <Link href={`/dashboard/peers/${peer.id}`}><Button size="sm" variant="outline" className="h-7 text-xs">Open Peer</Button></Link>}
+                    </div>
+                    {record.source_url && <a href={record.source_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-xs text-primary hover:underline">Source</a>}
+                  </div>
+                );
+              })}
+              {relatedPeerFunding.length === 0 && <div className="text-center py-6 text-sm text-slate-400">No peer funding records linked to this funder yet.</div>}
+            </CardContent>
+          </Card>
+
           <Card className="border-slate-200">
             <CardHeader className="pb-2"><CardTitle className="text-sm">Related Projects / Matches</CardTitle></CardHeader>
             <CardContent className="space-y-3">

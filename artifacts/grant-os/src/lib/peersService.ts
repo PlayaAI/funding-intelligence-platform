@@ -25,12 +25,17 @@ const db = supabase as any;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export async function listPeerOrganizations(): Promise<PeerOrganizationRow[]> {
-  const result: SupabaseResult<PeerOrganizationRow[]> = await db
+export type ListPeerOrganizationsOptions = {
+  includeArchived?: boolean;
+};
+
+export async function listPeerOrganizations(opts?: ListPeerOrganizationsOptions): Promise<PeerOrganizationRow[]> {
+  let query = db
     .from("peer_organizations")
     .select("*")
-    .is("archived_at", null)
     .order("name", { ascending: true });
+  if (!opts?.includeArchived) query = query.is("archived_at", null);
+  const result: SupabaseResult<PeerOrganizationRow[]> = await query;
 
   if (result.error) throw new Error(result.error.message);
   return result.data ?? [];
@@ -61,7 +66,8 @@ export async function listAllPeerFundingRecords(): Promise<PeerFundingRecordRow[
   const result: SupabaseResult<PeerFundingRecordRow[]> = await db
     .from("peer_funding_records")
     .select("*")
-    .order("year", { ascending: false });
+    .is("archived_at", null)
+    .order("award_year", { ascending: false, nullsFirst: false });
 
   if (result.error) throw new Error(result.error.message);
   return result.data ?? [];
@@ -74,7 +80,8 @@ export async function listPeerFundingRecords(
     .from("peer_funding_records")
     .select("*")
     .eq("peer_organization_id", peerOrganizationId)
-    .order("year", { ascending: false });
+    .is("archived_at", null)
+    .order("award_year", { ascending: false, nullsFirst: false });
 
   if (result.error) throw new Error(result.error.message);
   return result.data ?? [];
@@ -156,6 +163,15 @@ export async function updatePeerFundingRecord(
   if (result.error) throw new Error(result.error.message);
   if (!result.data) throw new Error("No data returned from update");
   return result.data;
+}
+
+export async function archivePeerFundingRecord(id: string): Promise<void> {
+  const result: SupabaseResult<null> = await db
+    .from("peer_funding_records")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (result.error) throw new Error(result.error.message);
 }
 
 export async function deletePeerFundingRecord(id: string): Promise<void> {

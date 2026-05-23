@@ -11,6 +11,7 @@ import {
   deletePeerOrganization,
   createPeerFundingRecord,
   updatePeerFundingRecord,
+  archivePeerFundingRecord,
   deletePeerFundingRecord,
   type PeerOrganizationRow,
   type PeerOrganizationInsert,
@@ -18,6 +19,7 @@ import {
   type PeerFundingRecordRow,
   type PeerFundingRecordInsert,
   type PeerFundingRecordUpdate,
+  type ListPeerOrganizationsOptions,
 } from "@/lib/peersService";
 import { mapPeerRow } from "@/lib/peerMappers";
 import type { PeerOrg } from "@/data/peers";
@@ -30,14 +32,15 @@ export type {
   PeerFundingRecordRow,
   PeerFundingRecordInsert,
   PeerFundingRecordUpdate,
+  ListPeerOrganizationsOptions,
 };
 
 export const PEERS_QUERY_KEY = ["peer_organizations"] as const;
 
-export function usePeerOrganizations() {
+export function usePeerOrganizations(opts?: ListPeerOrganizationsOptions) {
   return useQuery({
-    queryKey: PEERS_QUERY_KEY,
-    queryFn: listPeerOrganizations,
+    queryKey: opts?.includeArchived ? [...PEERS_QUERY_KEY, "includeArchived"] : PEERS_QUERY_KEY,
+    queryFn: () => listPeerOrganizations(opts),
     staleTime: 1000 * 60,
   });
 }
@@ -60,8 +63,8 @@ export function usePeerFundingRecords(peerId: string | undefined) {
   });
 }
 
-export function useMappedPeers() {
-  const peersQuery = usePeerOrganizations();
+export function useMappedPeers(opts?: ListPeerOrganizationsOptions) {
+  const peersQuery = usePeerOrganizations(opts);
   const recordsQuery = useQuery({
     queryKey: PEER_FUNDING_ALL_KEY,
     queryFn: listAllPeerFundingRecords,
@@ -179,6 +182,17 @@ export function useUpdatePeerFundingRecord() {
       id: string;
       updates: Omit<PeerFundingRecordUpdate, "id" | "created_at">;
     }) => updatePeerFundingRecord(id, updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: PEERS_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: PEER_FUNDING_ALL_KEY });
+    },
+  });
+}
+
+export function useArchivePeerFundingRecord() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => archivePeerFundingRecord(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: PEERS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: PEER_FUNDING_ALL_KEY });

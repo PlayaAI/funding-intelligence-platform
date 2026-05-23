@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { listGrantDocuments } from "@/lib/documentsService";
 
-type PackageType = "project" | "grant" | "application" | "funder" | "document";
+type PackageType = "project" | "grant" | "application" | "funder" | "document" | "peer";
 
 type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { message: string } };
 
@@ -175,5 +175,24 @@ export async function exportFunderPackage(funderId: string, filenameHint: string
   ]);
   const payload = packageBase("funder", { funder, grants, peer_funding_records: peerFundingRecords, documents, agent_notes: agentNotes, agent_reports: [] });
   downloadJson(`grant-os-funder-${cleanName(filenameHint)}.json`, payload);
+  return payload;
+}
+
+export async function exportPeerPackage(peerId: string, filenameHint: string) {
+  const peer: any = await selectOne("peer_organizations", "id", peerId);
+  const fundingRecords: any[] = await selectMany("peer_funding_records", "peer_organization_id", peerId);
+  const funderIds = Array.from(new Set(fundingRecords.map((record) => record.funder_id).filter(Boolean)));
+  const linkedFunders = await selectIn("funders", "id", funderIds);
+  const payload = {
+    ...packageBase("peer", {
+      peer_organization: peer,
+      funding_records: fundingRecords,
+      linked_funders: linkedFunders,
+      source_metadata: peer?.source_metadata ?? {},
+      generated_at: new Date().toISOString(),
+    }),
+    generated_at: new Date().toISOString(),
+  };
+  downloadJson(`grant-os-peer-${cleanName(filenameHint)}.json`, payload);
   return payload;
 }

@@ -12,8 +12,8 @@ export function mapFundingRecordRow(row: PeerFundingRecordRow): FundingRecord {
     id: row.id,
     funderName: row.funder_name ?? "Unknown funder",
     year: row.year ?? 0,
-    amount: Number(row.amount ?? 0),
-    notes: row.notes ?? undefined,
+    amount: Number(row.amount_exact ?? row.amount ?? row.amount_max ?? row.amount_min ?? 0),
+    notes: row.purpose ?? row.notes ?? undefined,
   };
 }
 
@@ -35,7 +35,7 @@ export function mapPeerRow(
     focusAreas: row.focus_areas ?? [],
     fundingRecords: fundingRecords.map(mapFundingRecordRow),
     notes: row.notes ?? undefined,
-    relevance: row.relevance ?? "",
+    relevance: row.relevance_to_playa ?? row.relevance ?? "",
     contactName: primary?.name,
     contactTitle: primary?.title,
     contactEmail: primary?.email,

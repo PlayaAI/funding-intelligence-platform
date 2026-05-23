@@ -19,12 +19,18 @@ import { parseKeyPeople } from "@/lib/funderMappers";
 const schema = z.object({
   name: z.string().min(1, "Name is required"),
   legacy_id: z.string().optional(),
-  website: z.string().optional(),
+  website: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   ein: z.string().optional(),
   location: z.string().optional(),
   description: z.string().optional(),
   focus_areas: z.string().optional(),
   relevance: z.string().optional(),
+  similarity_score: z.coerce.number().min(0).max(100).optional().or(z.literal("")),
+  known_funders: z.string().optional(),
+  source_url: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  confidence: z.string().optional(),
+  import_source: z.string().optional(),
+  last_researched_at: z.string().optional(),
   contact_name: z.string().optional(),
   contact_title: z.string().optional(),
   contact_email: z.string().email("Invalid email").optional().or(z.literal("")),
@@ -72,7 +78,13 @@ function rowToForm(row: Partial<PeerOrganizationRow>): PeerOrganizationFormValue
     location: row.location ?? "",
     description: row.description ?? "",
     focus_areas: (row.focus_areas ?? []).join(", "),
-    relevance: row.relevance ?? "",
+    relevance: row.relevance_to_playa ?? row.relevance ?? "",
+    similarity_score: row.similarity_score ?? "",
+    known_funders: (row.known_funders ?? []).join(", "),
+    source_url: row.source_url ?? "",
+    confidence: row.confidence ?? "",
+    import_source: row.import_source ?? "",
+    last_researched_at: row.last_researched_at ? row.last_researched_at.slice(0, 10) : "",
     contact_name: primary?.name ?? "",
     contact_title: primary?.title ?? "",
     contact_email: primary?.email ?? "",
@@ -149,6 +161,32 @@ export default function PeerOrganizationFormDialog({
 
           <FormField label="Relevance to Playa AI">
             <Textarea {...register("relevance")} rows={2} className="text-sm" />
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Similarity score" error={errors.similarity_score?.message}>
+              <Input type="number" min={0} max={100} {...register("similarity_score")} className="h-8 text-sm" />
+            </FormField>
+            <FormField label="Confidence/source label">
+              <Input {...register("confidence")} placeholder="manual, verified, imported" className="h-8 text-sm" />
+            </FormField>
+          </div>
+
+          <FormField label="Known funders (comma-separated)">
+            <Input {...register("known_funders")} className="h-8 text-sm" />
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Source URL" error={errors.source_url?.message}>
+              <Input {...register("source_url")} className="h-8 text-sm" />
+            </FormField>
+            <FormField label="Last researched">
+              <Input type="date" {...register("last_researched_at")} className="h-8 text-sm" />
+            </FormField>
+          </div>
+
+          <FormField label="Import/source">
+            <Input {...register("import_source")} placeholder="manual research" className="h-8 text-sm" />
           </FormField>
 
           <FormField label="Primary contact">

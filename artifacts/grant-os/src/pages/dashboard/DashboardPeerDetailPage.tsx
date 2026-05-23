@@ -5,8 +5,12 @@ import {
   useUpdatePeerOrganization,
   useArchivePeerOrganization,
   useDeletePeerOrganization,
+  usePeerFundingRecords,
   useCreatePeerFundingRecord,
+  useUpdatePeerFundingRecord,
+  useArchivePeerFundingRecord,
 } from "@/hooks/usePeers";
+import { useFunders } from "@/hooks/useFunders";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +23,7 @@ import PeerFundingRecordFormDialog, {
 } from "@/components/dashboard/PeerFundingRecordFormDialog";
 import { peerFormValuesToInsert } from "@/lib/peerFormUtils";
 import { peerFundingRecordFormValuesToInsert } from "@/lib/peerFundingRecordFormUtils";
+import { exportPeerPackage } from "@/lib/exports/exportPackages";
 import { toast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
@@ -41,10 +46,19 @@ import {
   Archive,
   Trash2,
   Loader2,
+  Download,
 } from "lucide-react";
 
 function fmtAmount(n: number) {
   return n >= 1000000 ? `$${(n / 1000000).toFixed(1)}M` : `$${(n / 1000).toFixed(0)}K`;
+}
+
+function formatFundingAmount(record: { amount_exact?: number | null; amount_min?: number | null; amount_max?: number | null; amount?: number | null }) {
+  if (record.amount_exact ?? record.amount) return fmtAmount(Number(record.amount_exact ?? record.amount));
+  if (record.amount_min && record.amount_max) return `${fmtAmount(Number(record.amount_min))}-${fmtAmount(Number(record.amount_max))}`;
+  if (record.amount_min) return `${fmtAmount(Number(record.amount_min))}+`;
+  if (record.amount_max) return `Up to ${fmtAmount(Number(record.amount_max))}`;
+  return "Amount unknown";
 }
 
 export default function DashboardPeerDetailPage() {
@@ -56,10 +70,14 @@ export default function DashboardPeerDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { peer, peerRow, isLoading, isError, error } = useMappedPeer(params?.id);
+  const { data: fundingRecords = [] } = usePeerFundingRecords(peerRow?.id);
+  const { data: funders = [] } = useFunders();
   const updatePeer = useUpdatePeerOrganization();
   const archivePeer = useArchivePeerOrganization();
   const deletePeer = useDeletePeerOrganization();
   const createRecord = useCreatePeerFundingRecord();
+  const updateRecord = useUpdatePeerFundingRecord();
+  const archiveRecord = useArchivePeerFundingRecord();
   const { canWriteTable, canDeleteRecords } = usePermissions();
 
   if (isLoading) {
@@ -90,8 +108,10 @@ export default function DashboardPeerDetailPage() {
     );
   }
 
-  const handleAI = (action: string) =>
-    toast({ title: action, description: "AI workflow will be connected in a later phase." });
+  const handleExport = async () => {
+    await exportPeerPackage(peer.id, peer.name);
+    toast({ title: "Peer intelligence exported", description: "JSON download created." });
+  };
 
   const handleEdit = async (values: PeerOrganizationFormValues) => {
     try {
@@ -156,8 +176,9 @@ export default function DashboardPeerDetailPage() {
     }
   };
 
-  const uniqueFunders = [...new Set(peer.fundingRecords.map((r) => r.funderName))];
-  const totalFunding = peer.fundingRecords.reduce((s, r) => s + r.amount, 0);
+  const uniqueFunders = [...new Set([...(peerRow.known_funders ?? []), ...fundingRecords.map((r) => r.funder_name).filter(Boolean) as string[]])];
+  const totalFunding = fundingRecords.reduce((s, r) => s + Number(r.amount_exact ?? r.amount ?? 0), 0);
+  const funderByName = new Map(funders.map((funder) => [funder.name.toLowerCase(), funder]));
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
@@ -189,13 +210,9 @@ export default function DashboardPeerDetailPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" className="gap-1.5 text-xs" onClick={() => handleAI("Analyze Funding Patterns")}>
-          <Sparkles size={12} />
-          Analyze Funding Patterns
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleAI("Recommend Funders")}>
-          <Sparkles size={12} />
-          Recommend Funders to Pursue
+        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExport}>
+          <Download size={12} />
+          Export Peer Intelligence JSON
         </Button>
         {canWriteTable("peer_organizations") && (
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
@@ -226,7 +243,7 @@ export default function DashboardPeerDetailPage() {
         <Card className="border-slate-200">
           <CardContent className="pt-4 pb-4">
             <div className="text-xs text-slate-500">Funding records</div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">{peer.fundingRecords.length}</div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{fundingRecords.length}</div>
           </CardContent>
         </Card>
         <Card className="border-slate-200">
@@ -247,13 +264,21 @@ export default function DashboardPeerDetailPage() {
         <TabsList className="h-9">
           <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
           <TabsTrigger value="funding" className="text-xs">Funding History</TabsTrigger>
+          <TabsTrigger value="funders" className="text-xs">Known Funders</TabsTrigger>
+          <TabsTrigger value="strategy" className="text-xs">Strategy</TabsTrigger>
           <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
           <Card className="border-slate-200">
             <CardContent className="pt-4">
-              <p className="text-sm text-slate-700">{peer.description}</p>
+              <div className="grid grid-cols-2 gap-3 text-xs mb-4">
+                <div><span className="text-slate-500">Confidence</span><div className="font-medium text-slate-800">{peerRow.confidence ?? "Not labeled"}</div></div>
+                <div><span className="text-slate-500">Similarity</span><div className="font-medium text-slate-800">{peerRow.similarity_score != null ? `${peerRow.similarity_score}%` : "Not scored"}</div></div>
+                <div><span className="text-slate-500">Last researched</span><div className="font-medium text-slate-800">{peerRow.last_researched_at ? new Date(peerRow.last_researched_at).toLocaleDateString() : "Not recorded"}</div></div>
+                <div><span className="text-slate-500">Source</span><div className="font-medium text-slate-800">{peerRow.import_source ?? "manual"}</div></div>
+              </div>
+              <p className="text-sm text-slate-700">{peer.description || "No mission/focus summary yet."}</p>
               <div className="flex flex-wrap gap-1.5 mt-3">
                 {peer.focusAreas.map((a) => (
                   <Badge key={a} variant="secondary" className="text-xs">{a}</Badge>
@@ -284,28 +309,60 @@ export default function DashboardPeerDetailPage() {
         </TabsContent>
 
         <TabsContent value="funding" className="mt-4 space-y-3">
-          {peer.fundingRecords.map((r) => (
+          {fundingRecords.map((r) => (
             <Card key={r.id} className="border-slate-200">
               <CardContent className="pt-3 pb-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-medium text-sm text-slate-800">{r.funderName}</div>
-                    {r.notes && <div className="text-xs text-slate-400 mt-0.5">{r.notes}</div>}
+                    <div className="font-medium text-sm text-slate-800">{r.funder_name}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{r.program_area ?? "No program area"} · {r.confidence}</div>
+                    {r.purpose && <div className="text-xs text-slate-600 mt-1">{r.purpose}</div>}
+                    {r.source_url && <a href={r.source_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline mt-1 inline-flex gap-1"><ExternalLink size={10} />Source</a>}
                   </div>
                   <div className="text-right">
-                    <div className="font-semibold text-slate-800">{fmtAmount(r.amount)}</div>
-                    <div className="text-xs text-slate-400">{r.year}</div>
+                    <div className="font-semibold text-slate-800">{formatFundingAmount(r)}</div>
+                    <div className="text-xs text-slate-400">{r.award_year ?? r.year ?? "Year unknown"}</div>
+                    {canWriteTable("peer_funding_records") && <Button size="sm" variant="ghost" className="mt-1 h-7 text-xs" onClick={() => archiveRecord.mutate(r.id)}>Archive</Button>}
                   </div>
                 </div>
               </CardContent>
             </Card>
           ))}
+          {fundingRecords.length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center text-sm text-slate-500">No funding records yet. Add verified funding history manually.</CardContent></Card>}
           {canWriteTable("peer_funding_records") && (
             <Button size="sm" variant="outline" className="gap-2 text-xs mt-2" onClick={() => setRecordDialogOpen(true)}>
               <Plus size={12} />
               Add funding record
             </Button>
           )}
+        </TabsContent>
+
+        <TabsContent value="funders" className="mt-4">
+          <Card className="border-slate-200">
+            <CardContent className="pt-4">
+              <div className="flex flex-wrap gap-2">
+                {uniqueFunders.map((name) => {
+                  const linked = funderByName.get(name.toLowerCase());
+                  return linked ? (
+                    <Link key={name} href={`/dashboard/funders/${linked.id}`} className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-full font-medium hover:underline">{name}</Link>
+                  ) : (
+                    <span key={name} className="text-xs bg-slate-50 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-full font-medium">{name}</span>
+                  );
+                })}
+                {uniqueFunders.length === 0 && <div className="text-sm text-slate-500">No known funders recorded yet.</div>}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="strategy" className="mt-4 space-y-3">
+          <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-sm">Strategic Takeaways</CardTitle></CardHeader><CardContent className="space-y-3 text-sm text-slate-700">
+            <p><span className="font-medium text-slate-900">Positioning signal:</span> {peer.relevance || "Add why this peer matters to Playa AI."}</p>
+            <p><span className="font-medium text-slate-900">Likely funder categories:</span> {uniqueFunders.length ? uniqueFunders.join(", ") : "Add funding records to reveal funder patterns."}</p>
+            <p><span className="font-medium text-slate-900">Evidence gaps:</span> Record source URLs, award years, and purposes for stronger confidence.</p>
+            <p><span className="font-medium text-slate-900">Outreach ideas:</span> Use verified funder overlap to prioritize warm research and relationship mapping.</p>
+          </CardContent></Card>
+          <Card className="border-slate-200"><CardContent className="py-8 text-center text-sm text-slate-500">Connect to projects later.</CardContent></Card>
         </TabsContent>
 
         <TabsContent value="notes" className="mt-4">
@@ -316,6 +373,11 @@ export default function DashboardPeerDetailPage() {
               ) : (
                 <p className="text-sm text-slate-400">No notes yet.</p>
               )}
+              {peerRow.source_url && <a href={peerRow.source_url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex text-xs text-primary hover:underline">Open source link</a>}
+              <details className="mt-4 rounded-lg border border-slate-200 p-3">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-700">Source metadata</summary>
+                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-slate-500">{JSON.stringify(peerRow.source_metadata ?? {}, null, 2)}</pre>
+              </details>
               {canWriteTable("peer_organizations") && (
                 <Button size="sm" variant="outline" className="gap-2 text-xs mt-4" onClick={() => setEditOpen(true)}>
                   Edit Notes

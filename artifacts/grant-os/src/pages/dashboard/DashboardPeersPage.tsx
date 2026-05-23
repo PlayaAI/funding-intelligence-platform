@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import type { FundingRecord, PeerOrg } from "@/data/peers";
 import {
   useMappedPeers,
@@ -52,24 +52,43 @@ export default function DashboardPeersPage() {
   const [peerDialogOpen, setPeerDialogOpen] = useState(false);
   const [recordDialogOpen, setRecordDialogOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<FundingRecord | null>(null);
+  const [focusFilter, setFocusFilter] = useState("all");
+  const [funderFilter, setFunderFilter] = useState("all");
+  const [confidenceFilter, setConfidenceFilter] = useState("all");
+  const [sortBy, setSortBy] = useState<"researched" | "similarity" | "name" | "funding_records">("researched");
+  const [, navigate] = useLocation();
 
-  const { peers, isLoading, isError, error } = useMappedPeers();
+  const { peers, peerRows, isLoading, isError, error } = useMappedPeers();
   const createPeer = useCreatePeerOrganization();
   const createRecord = useCreatePeerFundingRecord();
   const updateRecord = useUpdatePeerFundingRecord();
   const deleteRecord = useDeletePeerFundingRecord();
   const { canWriteTable, canDeleteRecords } = usePermissions();
 
-  const filtered = useMemo(
-    () =>
-      peers.filter(
-        (p) =>
-          !search ||
-          p.name.toLowerCase().includes(search.toLowerCase()) ||
-          p.focusAreas.some((a) => a.toLowerCase().includes(search.toLowerCase()))
-      ),
-    [peers, search]
-  );
+  const rowById = useMemo(() => new Map(peerRows.map((row) => [row.id, row])), [peerRows]);
+  const focusOptions = useMemo(() => [...new Set(peers.flatMap((p) => p.focusAreas))].sort(), [peers]);
+  const funderOptions = useMemo(() => [...new Set(peerRows.flatMap((row) => row.known_funders ?? []))].sort(), [peerRows]);
+  const confidenceOptions = useMemo(() => [...new Set(peerRows.map((row) => row.confidence).filter(Boolean) as string[])].sort(), [peerRows]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return peers
+      .filter((p) => {
+        const row = rowById.get(p.id);
+        if (q && ![p.name, p.location, p.relevance, row?.source_url, row?.notes].some((value) => (value ?? "").toLowerCase().includes(q)) && !p.focusAreas.some((a) => a.toLowerCase().includes(q))) return false;
+        if (focusFilter !== "all" && !p.focusAreas.includes(focusFilter)) return false;
+        if (funderFilter !== "all" && !(row?.known_funders ?? []).includes(funderFilter) && !p.fundingRecords.some((r) => r.funderName === funderFilter)) return false;
+        if (confidenceFilter !== "all" && row?.confidence !== confidenceFilter) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const aRow = rowById.get(a.id);
+        const bRow = rowById.get(b.id);
+        if (sortBy === "name") return a.name.localeCompare(b.name);
+        if (sortBy === "similarity") return (bRow?.similarity_score ?? -1) - (aRow?.similarity_score ?? -1);
+        if (sortBy === "funding_records") return b.fundingRecords.length - a.fundingRecords.length;
+        return new Date(bRow?.last_researched_at ?? bRow?.updated_at ?? 0).getTime() - new Date(aRow?.last_researched_at ?? aRow?.updated_at ?? 0).getTime();
+      });
+  }, [confidenceFilter, focusFilter, funderFilter, peers, rowById, search, sortBy]);
   const hasPeers = peers.length > 0;
 
   useEffect(() => {
@@ -84,10 +103,11 @@ export default function DashboardPeersPage() {
 
   const handleCreatePeer = async (values: PeerOrganizationFormValues) => {
     try {
-      await createPeer.mutateAsync(peerFormValuesToInsert(values));
+      const created = await createPeer.mutateAsync(peerFormValuesToInsert(values));
       toast({ title: "Peer organization created", description: values.name });
       setPeerDialogOpen(false);
       setSelected(null);
+      navigate(`/dashboard/peers/${created.id}`);
     } catch (e) {
       toast({
         title: "Failed to create peer",
@@ -205,12 +225,33 @@ export default function DashboardPeersPage() {
               className="pl-6 h-7 text-xs"
             />
           </div>
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            <select value={focusFilter} onChange={(e) => setFocusFilter(e.target.value)} className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[11px]">
+              <option value="all">All focus</option>
+              {focusOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+            <select value={funderFilter} onChange={(e) => setFunderFilter(e.target.value)} className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[11px]">
+              <option value="all">All funders</option>
+              {funderOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+            <select value={confidenceFilter} onChange={(e) => setConfidenceFilter(e.target.value)} className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[11px]">
+              <option value="all">All sources</option>
+              {confidenceOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[11px]">
+              <option value="researched">Researched</option>
+              <option value="similarity">Similarity</option>
+              <option value="name">Name</option>
+              <option value="funding_records">Records</option>
+            </select>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {filtered.map((p) => {
             const totalFunding = p.fundingRecords.reduce((s, r) => s + r.amount, 0);
             const isSelected = selected?.id === p.id;
+            const row = rowById.get(p.id);
             return (
               <div
                 key={p.id}
@@ -223,9 +264,15 @@ export default function DashboardPeersPage() {
               >
                 <div className="font-medium text-sm text-slate-800 line-clamp-1">{p.name}</div>
                 <div className="text-xs text-slate-400 mt-0.5">{p.location}</div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {p.focusAreas.slice(0, 2).map((area) => <span key={area} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{area}</span>)}
+                </div>
                 <div className="flex items-center justify-between mt-1.5">
                   <span className="text-[11px] text-slate-500">{p.fundingRecords.length} funding records</span>
                   <span className="text-[11px] font-medium text-slate-700">{fmtAmount(totalFunding)}</span>
+                </div>
+                <div className="mt-1 text-[10px] text-slate-400">
+                  {row?.confidence ?? "unknown source"}{row?.similarity_score != null ? ` · ${row.similarity_score}% similar` : ""}
                 </div>
               </div>
             );
