@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ProofItemType, proofTypeLabels } from "@/data/proofItems";
+import { ProofItemType, proofItems as fallbackProofItems, proofTypeLabels } from "@/data/proofItems";
 import ProofItemCard from "@/components/public/ProofItemCard";
 import PageHeader from "@/components/public/PageHeader";
 import { FileText, Presentation, BarChart3, Monitor, Clock } from "lucide-react";
@@ -19,7 +19,9 @@ const typeDescriptions: Record<string, { desc: string; Icon: React.FC<{ classNam
 export default function ProofPage() {
   const [activeType, setActiveType] = useState<"All" | ProofItemType>("All");
   const { data: publicProof = [], isLoading, isError, error } = usePublicProofItems();
-  const proofItems = publicProof.map(publicProofToCard);
+  const proofItems = isError
+    ? fallbackProofItems.filter((item) => item.isPublic)
+    : publicProof.map(publicProofToCard);
 
   const filtered = activeType === "All" ? proofItems : proofItems.filter((p) => p.type === activeType);
 
@@ -70,8 +72,9 @@ export default function ProofPage() {
           </div>
         )}
         {isError && (
-          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            Could not load public proof items: {error instanceof Error ? error.message : "Unknown error"}
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            Public proof data is temporarily unavailable. Showing curated public proof items.
+            <span className="block text-xs mt-1">{error instanceof Error ? error.message : "Unknown error"}</span>
           </div>
         )}
         <div className="flex flex-wrap gap-2 mb-8" data-testid="proof-filters">

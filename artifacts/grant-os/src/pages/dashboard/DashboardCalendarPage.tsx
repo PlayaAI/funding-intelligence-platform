@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Filter, Share2 } from "lucide-react";
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Filter, Loader2, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -48,8 +48,8 @@ function monthDays(current: Date) {
 export default function DashboardCalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [projectFilter, setProjectFilter] = useState("all");
-  const { grants } = useMappedGrants();
-  const { data: tasks = [] } = useTasks();
+  const { grants, isLoading: grantsLoading, isError: grantsError, error: grantsErrorValue } = useMappedGrants();
+  const { data: tasks = [], isLoading: tasksLoading, isError: tasksError, error: tasksErrorValue } = useTasks();
   const { data: projects = [] } = useProjects();
 
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
@@ -97,6 +97,10 @@ export default function DashboardCalendarPage() {
     setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
   }
 
+  const isLoading = grantsLoading || tasksLoading;
+  const isError = grantsError || tasksError;
+  const error = grantsErrorValue ?? tasksErrorValue;
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -127,7 +131,34 @@ export default function DashboardCalendarPage() {
         </div>
       </div>
 
-      <Card className="border-slate-200 shadow-sm">
+      {isLoading && (
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-10 text-sm text-slate-400">
+          <Loader2 size={16} className="animate-spin" />
+          Loading calendar records...
+        </div>
+      )}
+
+      {isError && (
+        <div className="flex gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold">Could not load calendar records</p>
+            <p className="mt-1 text-xs">{error instanceof Error ? error.message : "Unknown error"}</p>
+          </div>
+        </div>
+      )}
+
+      {!isLoading && !isError && events.length === 0 && (
+        <Card className="border-dashed border-slate-200 shadow-sm">
+          <CardContent className="py-10 text-center">
+            <CalendarDays size={26} className="mx-auto mb-3 text-slate-300" />
+            <div className="text-sm font-medium text-slate-800">No dated grant or task records yet</div>
+            <p className="mt-1 text-xs text-slate-500">Calendar items appear when grants have deadlines or tasks have due dates.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoading && !isError && <Card className="border-slate-200 shadow-sm">
         <CardContent className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftMonth(-1)}><ChevronLeft size={14} /></Button>
@@ -162,7 +193,7 @@ export default function DashboardCalendarPage() {
             })}
           </div>
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }

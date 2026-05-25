@@ -150,7 +150,7 @@ export default function DashboardApplicationsPage() {
       </div>
 
       {applications.length === 0 && (
-        <Card className="border-slate-200"><CardContent className="py-16 text-center"><FileArchive size={26} className="mx-auto mb-3 text-slate-300" /><h2 className="text-sm font-semibold text-slate-800">No application workspaces yet</h2><p className="mt-1 text-sm text-slate-500">Start from a grant detail page or create an application manually.</p></CardContent></Card>
+        <Card className="border-dashed border-slate-200"><CardContent className="py-16 text-center"><FileArchive size={26} className="mx-auto mb-3 text-slate-300" /><h2 className="text-sm font-semibold text-slate-800">No active applications yet</h2><p className="mt-1 text-sm text-slate-500">Start from a grant to create an application workspace, or create one manually when needed.</p><div className="mt-4 flex justify-center gap-2">{canCreateTable("applications") && <Button size="sm" className="gap-2 text-xs" onClick={() => setCreateOpen(true)}><Plus size={14} />New application</Button>}<Link href="/dashboard/grants"><Button size="sm" variant="outline" className="text-xs">Browse grants</Button></Link></div></CardContent></Card>
       )}
 
       {applications.length > 0 && (

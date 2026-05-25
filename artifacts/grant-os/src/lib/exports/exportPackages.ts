@@ -14,6 +14,16 @@ async function selectMany<T>(table: string, column: string, value: string): Prom
   return result.data ?? [];
 }
 
+async function selectManyActive<T>(table: string, column: string, value: string): Promise<T[]> {
+  const result: SupabaseResult<T[]> = await db
+    .from(table)
+    .select("*")
+    .eq(column, value)
+    .is("archived_at", null);
+  if (result.error) throw new Error(result.error.message);
+  return result.data ?? [];
+}
+
 async function selectOne<T>(table: string, column: string, value: string): Promise<T | null> {
   const result: SupabaseResult<T | null> = await db.from(table).select("*").eq(column, value).maybeSingle();
   if (result.error) throw new Error(result.error.message);
@@ -23,6 +33,17 @@ async function selectOne<T>(table: string, column: string, value: string): Promi
 async function selectIn<T>(table: string, column: string, values: string[]): Promise<T[]> {
   if (!values.length) return [];
   const result: SupabaseResult<T[]> = await db.from(table).select("*").in(column, values);
+  if (result.error) throw new Error(result.error.message);
+  return result.data ?? [];
+}
+
+async function selectInActive<T>(table: string, column: string, values: string[]): Promise<T[]> {
+  if (!values.length) return [];
+  const result: SupabaseResult<T[]> = await db
+    .from(table)
+    .select("*")
+    .in(column, values)
+    .is("archived_at", null);
   if (result.error) throw new Error(result.error.message);
   return result.data ?? [];
 }
@@ -50,13 +71,13 @@ function cleanName(value: string) {
 export async function exportProjectPackage(projectId: string, filenameHint: string) {
   const project = await selectOne("projects", "id", projectId);
   const [grants, proofItems, applications, tasks, documents, agentNotes, agentReports, grantMatches] = await Promise.all([
-    selectMany("grants", "related_project_id", projectId),
-    selectMany("proof_items", "project_id", projectId),
-    selectMany("applications", "project_id", projectId),
-    selectMany("tasks", "related_project_id", projectId),
-    selectMany("documents", "related_project_id", projectId),
-    selectMany("agent_notes", "related_project_id", projectId),
-    selectMany("agent_reports", "related_project_id", projectId),
+    selectManyActive("grants", "related_project_id", projectId),
+    selectManyActive("proof_items", "project_id", projectId),
+    selectManyActive("applications", "project_id", projectId),
+    selectManyActive("tasks", "related_project_id", projectId),
+    selectManyActive("documents", "related_project_id", projectId),
+    selectManyActive("agent_notes", "related_project_id", projectId),
+    selectManyActive("agent_reports", "related_project_id", projectId),
     selectMany("grant_matches", "project_id", projectId),
   ]);
   const payload = packageBase("project", { project, grants, proof_items: proofItems, applications, tasks, documents, agent_notes: agentNotes, agent_reports: agentReports, grant_matches: grantMatches });
@@ -68,10 +89,10 @@ export async function exportGrantPackage(grantId: string, filenameHint: string) 
   const grant: any = await selectOne("grants", "id", grantId);
   const [funder, applications, tasks, agentNotes, agentReports, grantMatches] = await Promise.all([
     grant?.funder_id ? selectOne("funders", "id", grant.funder_id) : Promise.resolve(null),
-    selectMany("applications", "grant_id", grantId),
-    selectMany("tasks", "related_grant_id", grantId),
-    selectMany("agent_notes", "related_grant_id", grantId),
-    selectMany("agent_reports", "related_grant_id", grantId),
+    selectManyActive("applications", "grant_id", grantId),
+    selectManyActive("tasks", "related_grant_id", grantId),
+    selectManyActive("agent_notes", "related_grant_id", grantId),
+    selectManyActive("agent_reports", "related_grant_id", grantId),
     selectMany("grant_matches", "grant_id", grantId),
   ]);
   const projectIds = Array.from(new Set([
@@ -80,8 +101,8 @@ export async function exportGrantPackage(grantId: string, filenameHint: string) 
     ...grantMatches.map((match: any) => match.project_id),
   ].filter(Boolean)));
   const [projects, proofItems, documents] = await Promise.all([
-    selectIn("projects", "id", projectIds),
-    projectIds.length ? selectIn("proof_items", "project_id", projectIds) : Promise.resolve([]),
+    selectInActive("projects", "id", projectIds),
+    projectIds.length ? selectInActive("proof_items", "project_id", projectIds) : Promise.resolve([]),
     grant ? listGrantDocuments({
       grantId,
       funderId: (funder as any)?.id ?? grant.funder_id,
@@ -118,10 +139,10 @@ export async function exportApplicationPackage(applicationId: string, filenameHi
     application?.project_id ? selectOne("projects", "id", application.project_id) : Promise.resolve(null),
     selectMany("application_questions", "application_id", applicationId),
     selectMany("application_required_documents", "application_id", applicationId),
-    selectMany("tasks", "related_application_id", applicationId),
-    selectMany("documents", "related_application_id", applicationId),
-    selectMany("agent_notes", "related_application_id", applicationId),
-    selectMany("agent_reports", "related_application_id", applicationId),
+    selectManyActive("tasks", "related_application_id", applicationId),
+    selectManyActive("documents", "related_application_id", applicationId),
+    selectManyActive("agent_notes", "related_application_id", applicationId),
+    selectManyActive("agent_reports", "related_application_id", applicationId),
   ]);
   const [funder, grantDocuments, projectDocuments, proofItems, grantMatch] = await Promise.all([
     (grant as any)?.funder_id ? selectOne("funders", "id", (grant as any).funder_id) : Promise.resolve(null),
@@ -133,8 +154,8 @@ export async function exportApplicationPackage(applicationId: string, filenameHi
       sourceUrl: (grant as any).source_url,
       applicationUrl: (grant as any).application_url,
     }) : Promise.resolve([]),
-    application?.project_id ? selectMany("documents", "related_project_id", application.project_id) : Promise.resolve([]),
-    application?.project_id ? selectMany("proof_items", "project_id", application.project_id) : Promise.resolve([]),
+    application?.project_id ? selectManyActive("documents", "related_project_id", application.project_id) : Promise.resolve([]),
+    application?.project_id ? selectManyActive("proof_items", "project_id", application.project_id) : Promise.resolve([]),
     application?.project_id && application?.grant_id
       ? db.from("grant_matches").select("*").eq("project_id", application.project_id).eq("grant_id", application.grant_id).maybeSingle().then((result: SupabaseResult<any>) => {
           if (result.error) throw new Error(result.error.message);
@@ -168,10 +189,10 @@ export async function exportApplicationPackage(applicationId: string, filenameHi
 export async function exportFunderPackage(funderId: string, filenameHint: string) {
   const funder = await selectOne("funders", "id", funderId);
   const [grants, peerFundingRecords, documents, agentNotes] = await Promise.all([
-    selectMany("grants", "funder_id", funderId),
-    selectMany("peer_funding_records", "funder_id", funderId),
-    selectMany("documents", "related_funder_id", funderId),
-    selectMany("agent_notes", "related_funder_id", funderId),
+    selectManyActive("grants", "funder_id", funderId),
+    selectManyActive("peer_funding_records", "funder_id", funderId),
+    selectManyActive("documents", "related_funder_id", funderId),
+    selectManyActive("agent_notes", "related_funder_id", funderId),
   ]);
   const payload = packageBase("funder", { funder, grants, peer_funding_records: peerFundingRecords, documents, agent_notes: agentNotes, agent_reports: [] });
   downloadJson(`grant-os-funder-${cleanName(filenameHint)}.json`, payload);
@@ -180,9 +201,9 @@ export async function exportFunderPackage(funderId: string, filenameHint: string
 
 export async function exportPeerPackage(peerId: string, filenameHint: string) {
   const peer: any = await selectOne("peer_organizations", "id", peerId);
-  const fundingRecords: any[] = await selectMany("peer_funding_records", "peer_organization_id", peerId);
+  const fundingRecords: any[] = await selectManyActive("peer_funding_records", "peer_organization_id", peerId);
   const funderIds = Array.from(new Set(fundingRecords.map((record) => record.funder_id).filter(Boolean)));
-  const linkedFunders = await selectIn("funders", "id", funderIds);
+  const linkedFunders = await selectInActive("funders", "id", funderIds);
   const payload = {
     ...packageBase("peer", {
       peer_organization: peer,

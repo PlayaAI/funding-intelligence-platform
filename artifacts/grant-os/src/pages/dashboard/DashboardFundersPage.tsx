@@ -329,7 +329,14 @@ export default function DashboardFundersPage() {
 
         {filtered.length === 0 && (
           <div className="text-center py-16 text-slate-400 text-sm">
-            No funders match your filters.
+            <div className="font-medium text-slate-700">{funders.length === 0 ? "No active funders yet" : "No funders match your filters"}</div>
+            <p className="mt-1">{funders.length === 0 ? "Import verified funders or add a real funder manually." : "Reset filters to return to the full active funder list."}</p>
+            {funders.length === 0 && canWriteTable("funders") && (
+              <Button size="sm" className="mt-4 gap-2 text-xs" onClick={() => setDialogOpen(true)}>
+                <Plus size={14} />
+                Add funder
+              </Button>
+            )}
           </div>
         )}
 

@@ -38,7 +38,7 @@ export default function Footer() {
 
         <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">{site.location} &middot; {site.email}</p>
-          <p className="text-xs text-muted-foreground/60 border border-border rounded px-2 py-0.5">Demo prototype — content is representative</p>
+          <p className="text-xs text-muted-foreground/60 border border-border rounded px-2 py-0.5">Public proof site - private workspace data stays internal</p>
         </div>
       </div>
     </footer>

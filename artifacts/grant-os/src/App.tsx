@@ -21,6 +21,7 @@ import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/LoginPage";
 import AuthProfileErrorScreen from "@/components/auth/AuthProfileErrorScreen";
 import { authDebug } from "@/lib/authDebug";
+import RouteErrorBoundary from "@/components/RouteErrorBoundary";
 
 import DashboardHomePage from "@/pages/dashboard/DashboardHomePage";
 import DashboardTrackerPage from "@/pages/dashboard/DashboardTrackerPage";
@@ -142,54 +143,58 @@ function Router() {
 
   if (isDashboard) {
     return (
-      <Switch>
-        <Route path="/dashboard" component={ProtectedDashboardHome} />
-        <Route path="/dashboard/tracker" component={ProtectedDashboardTracker} />
-        <Route path="/dashboard/matches/:projectId" component={ProtectedDashboardMatchesProject} />
-        <Route path="/dashboard/matching" component={ProtectedDashboardMatches} />
-        <Route path="/dashboard/matches" component={ProtectedDashboardMatches} />
-        <Route path="/dashboard/grants/:id" component={ProtectedDashboardGrantDetail} />
-        <Route path="/dashboard/grants" component={ProtectedDashboardGrants} />
-        <Route path="/dashboard/funders/:id" component={ProtectedDashboardFunderDetail} />
-        <Route path="/dashboard/funders" component={ProtectedDashboardFunders} />
-        <Route path="/dashboard/peers/:id" component={ProtectedDashboardPeerDetail} />
-        <Route path="/dashboard/peers" component={ProtectedDashboardPeers} />
-        <Route path="/dashboard/projects/:slug" component={ProtectedDashboardProjectDetail} />
-        <Route path="/dashboard/projects" component={ProtectedDashboardProjects} />
-        <Route path="/dashboard/applications/:id" component={ProtectedDashboardApplicationDetail} />
-        <Route path="/dashboard/applications" component={ProtectedDashboardApplications} />
-        <Route path="/dashboard/tasks" component={ProtectedDashboardTasks} />
-        <Route path="/dashboard/proof-items" component={ProtectedDashboardProofItems} />
-        <Route path="/dashboard/imports" component={ProtectedDashboardImports} />
-        <Route path="/dashboard/team" component={ProtectedDashboardTeam} />
-        <Route path="/dashboard/custom-fields" component={ProtectedDashboardCustomFields} />
-        <Route path="/dashboard/calendar" component={ProtectedDashboardCalendar} />
-        <Route path="/dashboard/financials" component={ProtectedDashboardFinancials} />
-        <Route path="/dashboard/documents/:id" component={ProtectedDashboardDocumentDetail} />
-        <Route path="/dashboard/documents" component={ProtectedDashboardDocuments} />
-        <Route path="/dashboard/reports" component={ProtectedDashboardReports} />
-        <Route path="/dashboard/agent-reports" component={ProtectedDashboardAgentReports} />
-        <Route path="/dashboard/agent-activity" component={ProtectedDashboardAgentActivity} />
-        <Route path="/dashboard/agent-import" component={ProtectedDashboardAgentImport} />
-        <Route path="/dashboard/settings" component={ProtectedDashboardSettings} />
-        <Route component={ProtectedNotFound} />
-      </Switch>
+      <RouteErrorBoundary resetKey={location} dashboard>
+        <Switch>
+          <Route path="/dashboard" component={ProtectedDashboardHome} />
+          <Route path="/dashboard/tracker" component={ProtectedDashboardTracker} />
+          <Route path="/dashboard/matches/:projectId" component={ProtectedDashboardMatchesProject} />
+          <Route path="/dashboard/matching" component={ProtectedDashboardMatches} />
+          <Route path="/dashboard/matches" component={ProtectedDashboardMatches} />
+          <Route path="/dashboard/grants/:id" component={ProtectedDashboardGrantDetail} />
+          <Route path="/dashboard/grants" component={ProtectedDashboardGrants} />
+          <Route path="/dashboard/funders/:id" component={ProtectedDashboardFunderDetail} />
+          <Route path="/dashboard/funders" component={ProtectedDashboardFunders} />
+          <Route path="/dashboard/peers/:id" component={ProtectedDashboardPeerDetail} />
+          <Route path="/dashboard/peers" component={ProtectedDashboardPeers} />
+          <Route path="/dashboard/projects/:slug" component={ProtectedDashboardProjectDetail} />
+          <Route path="/dashboard/projects" component={ProtectedDashboardProjects} />
+          <Route path="/dashboard/applications/:id" component={ProtectedDashboardApplicationDetail} />
+          <Route path="/dashboard/applications" component={ProtectedDashboardApplications} />
+          <Route path="/dashboard/tasks" component={ProtectedDashboardTasks} />
+          <Route path="/dashboard/proof-items" component={ProtectedDashboardProofItems} />
+          <Route path="/dashboard/imports" component={ProtectedDashboardImports} />
+          <Route path="/dashboard/team" component={ProtectedDashboardTeam} />
+          <Route path="/dashboard/custom-fields" component={ProtectedDashboardCustomFields} />
+          <Route path="/dashboard/calendar" component={ProtectedDashboardCalendar} />
+          <Route path="/dashboard/financials" component={ProtectedDashboardFinancials} />
+          <Route path="/dashboard/documents/:id" component={ProtectedDashboardDocumentDetail} />
+          <Route path="/dashboard/documents" component={ProtectedDashboardDocuments} />
+          <Route path="/dashboard/reports" component={ProtectedDashboardReports} />
+          <Route path="/dashboard/agent-reports" component={ProtectedDashboardAgentReports} />
+          <Route path="/dashboard/agent-activity" component={ProtectedDashboardAgentActivity} />
+          <Route path="/dashboard/agent-import" component={ProtectedDashboardAgentImport} />
+          <Route path="/dashboard/settings" component={ProtectedDashboardSettings} />
+          <Route component={ProtectedNotFound} />
+        </Switch>
+      </RouteErrorBoundary>
     );
   }
 
   return (
     <PublicLayout>
-      <Switch>
-        <Route path="/" component={HomePage} />
-        <Route path="/projects/connect-app" component={ConnectAppPage} />
-        <Route path="/projects/:slug" component={PublicProjectDetailPage} />
-        <Route path="/projects" component={ProjectsPage} />
-        <Route path="/workshops" component={WorkshopsPage} />
-        <Route path="/proof" component={ProofPage} />
-        <Route path="/team" component={TeamPage} />
-        <Route path="/contact" component={ContactPage} />
-        <Route component={NotFound} />
-      </Switch>
+      <RouteErrorBoundary resetKey={location}>
+        <Switch>
+          <Route path="/" component={HomePage} />
+          <Route path="/projects/connect-app" component={ConnectAppPage} />
+          <Route path="/projects/:slug" component={PublicProjectDetailPage} />
+          <Route path="/projects" component={ProjectsPage} />
+          <Route path="/workshops" component={WorkshopsPage} />
+          <Route path="/proof" component={ProofPage} />
+          <Route path="/team" component={TeamPage} />
+          <Route path="/contact" component={ContactPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </RouteErrorBoundary>
     </PublicLayout>
   );
 }

@@ -162,34 +162,40 @@ export default function DashboardTasksPage() {
         )}
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
-          <option value="all">All statuses</option>
-          {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
-          <option value="all">All priorities</option>
-          {ALL_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={filterApplication} onChange={(e) => setFilterApplication(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
-          <option value="all">All applications</option>
-          {applications.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
-        </select>
-        <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
-          <option value="all">All projects</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
-          <option value="due_date">Sort by due date</option>
-          <option value="priority">Sort by priority</option>
-          <option value="status">Sort by status</option>
-        </select>
-      </div>
+      {allTasks.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+            <option value="all">All statuses</option>
+            {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+            <option value="all">All priorities</option>
+            {ALL_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={filterApplication} onChange={(e) => setFilterApplication(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+            <option value="all">All applications</option>
+            {applications.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+          </select>
+          <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+            <option value="all">All projects</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+            <option value="due_date">Sort by due date</option>
+            <option value="priority">Sort by priority</option>
+            <option value="status">Sort by status</option>
+          </select>
+        </div>
+      )}
 
       {/* Task list */}
       {filtered.length === 0 && (
-        <div className="text-center py-16 text-slate-400 text-sm">No tasks match the current filters.</div>
+        <div className="rounded-xl border border-dashed border-slate-200 bg-white py-16 px-4 text-center text-sm text-slate-500">
+          <CheckSquare size={26} className="mx-auto mb-3 text-slate-300" />
+          <div className="font-medium text-slate-700">{allTasks.length === 0 ? "No active tasks yet" : "No tasks match the current filters"}</div>
+          <p className="mt-1">{allTasks.length === 0 ? "Tasks are created from applications or added manually." : "Adjust the status, priority, application, or project filters."}</p>
+          {allTasks.length === 0 && canCreateTable("tasks") && <Button size="sm" className="mt-4 gap-2 text-xs" onClick={() => setCreateOpen(true)}><Plus size={14} />Add task</Button>}
+        </div>
       )}
 
       <div className="space-y-2">

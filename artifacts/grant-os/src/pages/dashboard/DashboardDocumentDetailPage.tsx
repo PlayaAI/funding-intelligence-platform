@@ -11,6 +11,7 @@ import { useGrants } from "@/hooks/useGrants";
 import { useFunders } from "@/hooks/useFunders";
 import { useApplications } from "@/hooks/useApplications";
 import { downloadDocumentJson } from "@/lib/documentsService";
+import { funderDetailPath } from "@/lib/funderMappers";
 
 const STATUS_COLORS: Record<string, string> = {
   not_started: "bg-slate-100 text-slate-600",
@@ -32,12 +33,16 @@ export default function DashboardDocumentDetailPage() {
 
   const links = useMemo(() => {
     if (!doc) return [];
+    const project = doc.related_project_id ? projects.find((p) => p.id === doc.related_project_id) : null;
+    const grant = doc.related_grant_id ? grants.find((g) => g.id === doc.related_grant_id) : null;
+    const application = doc.related_application_id ? applications.find((a) => a.id === doc.related_application_id) : null;
+    const funder = doc.related_funder_id ? funders.find((f) => f.id === doc.related_funder_id) : null;
     return [
-      doc.related_project_id ? ["Project", projects.find((p) => p.id === doc.related_project_id)?.name ?? doc.related_project_id] : null,
-      doc.related_grant_id ? ["Grant", grants.find((g) => g.id === doc.related_grant_id)?.title ?? doc.related_grant_id] : null,
-      doc.related_application_id ? ["Application", applications.find((a) => a.id === doc.related_application_id)?.title ?? doc.related_application_id] : null,
-      doc.related_funder_id ? ["Funder", funders.find((f) => f.id === doc.related_funder_id)?.name ?? doc.related_funder_id] : null,
-    ].filter(Boolean) as string[][];
+      project ? { label: "Project", value: project.name, href: `/dashboard/projects/${project.slug}` } : null,
+      grant ? { label: "Grant", value: grant.title, href: `/dashboard/grants/${grant.id}` } : null,
+      application ? { label: "Application", value: application.title, href: `/dashboard/applications/${application.id}` } : null,
+      funder ? { label: "Funder", value: funder.name, href: funderDetailPath(funder) } : null,
+    ].filter(Boolean) as Array<{ label: string; value: string; href: string }>;
   }, [applications, doc, funders, grants, projects]);
 
   if (isLoading) return <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" />Loading document...</div>;
@@ -57,8 +62,8 @@ export default function DashboardDocumentDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-sm">Metadata</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><div><span className="text-slate-500 text-xs">File name</span><div>{doc.file_name ?? "-"}</div></div><div><span className="text-slate-500 text-xs">Source URL</span><div className="break-all">{doc.source_url ?? "-"}</div></div><div><span className="text-slate-500 text-xs">MIME type</span><div>{doc.mime_type ?? "-"}</div></div><div><span className="text-slate-500 text-xs">File size</span><div>{doc.file_size_bytes ? `${Math.round(doc.file_size_bytes / 1024)} KB` : "-"}</div></div><div><span className="text-slate-500 text-xs">Created</span><div>{new Date(doc.created_at).toLocaleString()}</div></div></CardContent></Card>
-        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-sm">Linked Records</CardTitle></CardHeader><CardContent className="space-y-2 text-sm">{links.length === 0 && <div className="text-slate-400">No linked records.</div>}{links.map(([label, value]) => <div key={label}><span className="text-slate-500 text-xs">{label}</span><div>{value}</div></div>)}{doc.extraction_error && <div className="rounded bg-red-50 border border-red-200 p-2 text-xs text-red-700">{doc.extraction_error}</div>}</CardContent></Card>
+        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-sm">Metadata</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><div><span className="text-slate-500 text-xs">File name</span><div className="break-all">{doc.file_name ?? "-"}</div></div><div><span className="text-slate-500 text-xs">Source URL</span><div className="break-all">{doc.source_url ? <a href={doc.source_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{doc.source_url}</a> : "-"}</div></div><div><span className="text-slate-500 text-xs">MIME type</span><div>{doc.mime_type ?? "-"}</div></div><div><span className="text-slate-500 text-xs">File size</span><div>{doc.file_size_bytes ? `${Math.round(doc.file_size_bytes / 1024)} KB` : "-"}</div></div><div><span className="text-slate-500 text-xs">Created</span><div>{new Date(doc.created_at).toLocaleString()}</div></div></CardContent></Card>
+        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-sm">Linked Records</CardTitle></CardHeader><CardContent className="space-y-2 text-sm">{links.length === 0 && <div className="text-slate-400">No linked records.</div>}{links.map((link) => <div key={link.label}><span className="text-slate-500 text-xs">{link.label}</span><div><Link href={link.href} className="text-primary hover:underline">{link.value}</Link></div></div>)}{doc.extraction_error && <div className="rounded bg-red-50 border border-red-200 p-2 text-xs text-red-700">{doc.extraction_error}</div>}</CardContent></Card>
       </div>
 
       <Card className="border-slate-200"><CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0"><CardTitle className="text-sm">Extracted Text</CardTitle>{doc.extracted_text && <Button size="sm" variant="outline" className="gap-2 text-xs" onClick={copyText}><Clipboard size={13} />Copy</Button>}</CardHeader><CardContent>{doc.extracted_text ? <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-3 text-sm text-slate-700">{doc.extracted_text}</pre> : <div className="py-10 text-center text-sm text-slate-400">No extracted text yet.</div>}</CardContent></Card>

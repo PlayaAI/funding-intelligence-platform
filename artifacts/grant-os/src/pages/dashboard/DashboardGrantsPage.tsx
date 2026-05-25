@@ -288,10 +288,9 @@ export default function DashboardGrantsPage() {
 
       {grants.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-slate-200 rounded-xl">
-          <p className="text-slate-600 font-medium text-sm">No grants yet</p>
+          <p className="text-slate-600 font-medium text-sm">No active grants yet</p>
           <p className="text-slate-400 text-xs mt-1 mb-4">
-            Add a grant or run{" "}
-            <code className="font-mono bg-slate-100 px-1 rounded">003_create_grants.sql</code> in Supabase.
+            Add a grant manually or import verified Instrumentl opportunities.
           </p>
           {canWriteTable("grants") && (
             <Button size="sm" className="gap-2 text-xs" onClick={() => setDialogOpen(true)}>
@@ -458,4 +457,3 @@ export default function DashboardGrantsPage() {
     </div>
   );
 }
-
