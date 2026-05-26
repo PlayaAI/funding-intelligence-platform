@@ -34,8 +34,6 @@ export type PublicProofItem = Pick<
   | "type"
   | "description"
   | "date"
-  | "media_url"
-  | "document_url"
   | "tags"
   | "public_visibility"
   | "created_at"
@@ -111,7 +109,7 @@ export async function getPublicProjectBySlug(slug: string): Promise<PublicProjec
 export async function listPublicProofItems(projectId?: string): Promise<PublicProofItemWithProject[]> {
   let query = db
     .from("proof_items")
-    .select("id,project_id,title,type,description,date,media_url,document_url,tags,public_visibility,created_at")
+    .select("id,project_id,title,type,description,date,tags,public_visibility,created_at")
     .eq("public_visibility", true)
     .is("archived_at", null)
     .order("created_at", { ascending: false });
@@ -131,5 +129,7 @@ export async function listPublicProofItems(projectId?: string): Promise<PublicPr
     .is("archived_at", null);
   if (projectsResult.error) throw new Error(projectsResult.error.message);
   const projectsById = new Map((projectsResult.data ?? []).map((project) => [project.id, project]));
-  return proof.map((item) => ({ ...item, project: item.project_id ? projectsById.get(item.project_id) ?? null : null }));
+  return proof
+    .filter((item) => !item.project_id || projectsById.has(item.project_id))
+    .map((item) => ({ ...item, project: item.project_id ? projectsById.get(item.project_id) ?? null : null }));
 }

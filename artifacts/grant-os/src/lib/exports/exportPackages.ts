@@ -24,10 +24,16 @@ async function selectManyActive<T>(table: string, column: string, value: string)
   return result.data ?? [];
 }
 
-async function selectOne<T>(table: string, column: string, value: string): Promise<T | null> {
-  const result: SupabaseResult<T | null> = await db.from(table).select("*").eq(column, value).maybeSingle();
+async function selectOne<T>(table: string, column: string, value: string, opts?: { activeOnly?: boolean }): Promise<T | null> {
+  let query = db.from(table).select("*").eq(column, value);
+  if (opts?.activeOnly) query = query.is("archived_at", null);
+  const result: SupabaseResult<T | null> = await query.maybeSingle();
   if (result.error) throw new Error(result.error.message);
   return result.data;
+}
+
+async function selectOneActive<T>(table: string, column: string, value: string): Promise<T | null> {
+  return selectOne<T>(table, column, value, { activeOnly: true });
 }
 
 async function selectIn<T>(table: string, column: string, values: string[]): Promise<T[]> {
@@ -69,7 +75,8 @@ function cleanName(value: string) {
 }
 
 export async function exportProjectPackage(projectId: string, filenameHint: string) {
-  const project = await selectOne("projects", "id", projectId);
+  const project = await selectOneActive("projects", "id", projectId);
+  if (!project) throw new Error("Project not found or archived");
   const [grants, proofItems, applications, tasks, documents, agentNotes, agentReports, grantMatches] = await Promise.all([
     selectManyActive("grants", "related_project_id", projectId),
     selectManyActive("proof_items", "project_id", projectId),
@@ -86,7 +93,8 @@ export async function exportProjectPackage(projectId: string, filenameHint: stri
 }
 
 export async function exportGrantPackage(grantId: string, filenameHint: string) {
-  const grant: any = await selectOne("grants", "id", grantId);
+  const grant: any = await selectOneActive("grants", "id", grantId);
+  if (!grant) throw new Error("Grant not found or archived");
   const [funder, applications, tasks, agentNotes, agentReports, grantMatches] = await Promise.all([
     grant?.funder_id ? selectOne("funders", "id", grant.funder_id) : Promise.resolve(null),
     selectManyActive("applications", "grant_id", grantId),
@@ -124,7 +132,6 @@ export async function exportGrantPackage(grantId: string, filenameHint: string) 
       agent_notes: agentNotes,
       agent_reports: agentReports,
       grant_matches: grantMatches,
-      generated_at: new Date().toISOString(),
     }),
     generated_at: new Date().toISOString(),
   };
@@ -133,7 +140,8 @@ export async function exportGrantPackage(grantId: string, filenameHint: string) 
 }
 
 export async function exportApplicationPackage(applicationId: string, filenameHint: string) {
-  const application: any = await selectOne("applications", "id", applicationId);
+  const application: any = await selectOneActive("applications", "id", applicationId);
+  if (!application) throw new Error("Application not found or archived");
   const [grant, project, questions, requiredDocs, tasks, applicationDocuments, agentNotes, agentReports] = await Promise.all([
     application?.grant_id ? selectOne("grants", "id", application.grant_id) : Promise.resolve(null),
     application?.project_id ? selectOne("projects", "id", application.project_id) : Promise.resolve(null),
@@ -178,7 +186,6 @@ export async function exportApplicationPackage(applicationId: string, filenameHi
       agent_notes: agentNotes,
       agent_reports: agentReports,
       grant_match: grantMatch,
-      generated_at: new Date().toISOString(),
     }),
     generated_at: new Date().toISOString(),
   };
@@ -187,7 +194,8 @@ export async function exportApplicationPackage(applicationId: string, filenameHi
 }
 
 export async function exportFunderPackage(funderId: string, filenameHint: string) {
-  const funder = await selectOne("funders", "id", funderId);
+  const funder = await selectOneActive("funders", "id", funderId);
+  if (!funder) throw new Error("Funder not found or archived");
   const [grants, peerFundingRecords, documents, agentNotes] = await Promise.all([
     selectManyActive("grants", "funder_id", funderId),
     selectManyActive("peer_funding_records", "funder_id", funderId),
@@ -200,7 +208,8 @@ export async function exportFunderPackage(funderId: string, filenameHint: string
 }
 
 export async function exportPeerPackage(peerId: string, filenameHint: string) {
-  const peer: any = await selectOne("peer_organizations", "id", peerId);
+  const peer: any = await selectOneActive("peer_organizations", "id", peerId);
+  if (!peer) throw new Error("Peer organization not found or archived");
   const fundingRecords: any[] = await selectManyActive("peer_funding_records", "peer_organization_id", peerId);
   const funderIds = Array.from(new Set(fundingRecords.map((record) => record.funder_id).filter(Boolean)));
   const linkedFunders = await selectInActive("funders", "id", funderIds);
@@ -210,7 +219,6 @@ export async function exportPeerPackage(peerId: string, filenameHint: string) {
       funding_records: fundingRecords,
       linked_funders: linkedFunders,
       source_metadata: peer?.source_metadata ?? {},
-      generated_at: new Date().toISOString(),
     }),
     generated_at: new Date().toISOString(),
   };

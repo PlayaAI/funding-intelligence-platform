@@ -263,12 +263,19 @@ export default function DashboardProjectDetailPage() {
           <Sparkles size={12} />
           Generate Summary
         </Button>
-        <Link href={`/projects/${project.slug}`}>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+        {project.public_visibility ? (
+          <Link href={`/projects/${project.slug}`}>
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+              <ExternalLink size={12} />
+              Public page
+            </Button>
+          </Link>
+        ) : (
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" disabled title="Only public projects have public pages">
             <ExternalLink size={12} />
-            Public page
+            Not public
           </Button>
-        </Link>
+        )}
         <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportProject}>
           <Download size={12} />
           Export JSON
