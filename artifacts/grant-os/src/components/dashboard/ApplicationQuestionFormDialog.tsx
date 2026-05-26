@@ -16,6 +16,8 @@ const Q_STATUSES: ApplicationQuestionDbStatus[] = ["Draft", "Needs Review", "App
 const schema = z.object({
   question: z.string().min(1, "Question is required"),
   word_limit: z.coerce.number().min(0).optional(),
+  draft_answer: z.string().optional(),
+  final_answer: z.string().optional(),
   owner_name: z.string().optional(),
   status: z.string().default("Draft"),
   sort_order: z.coerce.number().min(0).default(0),
@@ -52,7 +54,7 @@ export default function ApplicationQuestionFormDialog({
 }: Props) {
   const { register, handleSubmit, reset, formState: { errors } } = useForm<ApplicationQuestionFormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { question: "", word_limit: undefined, owner_name: "", status: "Draft", sort_order: 0 },
+    defaultValues: { question: "", word_limit: undefined, draft_answer: "", final_answer: "", owner_name: "", status: "Draft", sort_order: 0 },
   });
 
   useEffect(() => {
@@ -61,24 +63,34 @@ export default function ApplicationQuestionFormDialog({
       reset({
         question: defaultValues.question ?? "",
         word_limit: defaultValues.word_limit ?? undefined,
+        draft_answer: defaultValues.draft_answer ?? "",
+        final_answer: defaultValues.final_answer ?? "",
         owner_name: defaultValues.owner_name ?? "",
         status: defaultValues.status ?? "Draft",
         sort_order: defaultValues.sort_order ?? 0,
       });
     } else {
-      reset({ question: "", word_limit: undefined, owner_name: "", status: "Draft", sort_order: 0 });
+      reset({ question: "", word_limit: undefined, draft_answer: "", final_answer: "", owner_name: "", status: "Draft", sort_order: 0 });
     }
   }, [defaultValues, open, reset]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(async (v) => { await onSubmit(v); })} className="space-y-4 py-2">
           <FormField label="Question" required error={errors.question?.message}>
             <Textarea {...register("question")} rows={3} className="text-sm" />
+          </FormField>
+
+          <FormField label="Draft answer" error={errors.draft_answer?.message}>
+            <Textarea {...register("draft_answer")} rows={6} className="text-sm" placeholder="Manual draft text only — no AI generation is used here." />
+          </FormField>
+
+          <FormField label="Final answer" error={errors.final_answer?.message}>
+            <Textarea {...register("final_answer")} rows={6} className="text-sm" placeholder="Approved/submission-ready answer, if available." />
           </FormField>
 
           <div className="grid grid-cols-2 gap-3">

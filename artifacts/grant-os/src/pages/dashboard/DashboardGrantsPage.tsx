@@ -6,6 +6,7 @@ import {
   useCreateGrant,
 } from "@/hooks/useGrants";
 import { useProjects } from "@/hooks/useProjects";
+import { useGrantShortlistItems, useUpsertGrantShortlistItem } from "@/hooks/useGrantShortlist";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
@@ -46,6 +47,8 @@ const DEADLINE_OPTIONS = [
   { label: "Past deadline", days: -1 },
 ];
 
+const SHORTLIST_STATUSES = ["New", "Watching", "Shortlisted", "Apply", "Skip", "Not relevant"] as const;
+
 type SortField = "deadline" | "amount" | "fit" | "title";
 type SortDir = "asc" | "desc";
 
@@ -79,8 +82,13 @@ export default function DashboardGrantsPage() {
 
   const { grants, projects, isLoading, isError, error } = useMappedGrants();
   const { data: projectRows = [] } = useProjects();
+  const { data: shortlistItems = [] } = useGrantShortlistItems();
   const createGrant = useCreateGrant();
+  const upsertShortlist = useUpsertGrantShortlistItem();
   const { canWriteTable } = usePermissions();
+  const canCurateGrantShortlist = canWriteTable("grant_shortlist_items");
+  const shortlistByGrant = useMemo(() => new Map(shortlistItems.map((item) => [item.grant_id, item])), [shortlistItems]);
+  const focusGrantsCount = shortlistItems.filter((item) => ["Watching", "Shortlisted", "Apply"].includes(item.status)).length;
 
   const amountOpt = AMOUNT_OPTIONS[amountFilter];
   const deadlineOpt = DEADLINE_OPTIONS[deadlineFilter];
@@ -144,6 +152,15 @@ export default function DashboardGrantsPage() {
     }
   };
 
+  const handleShortlistStatus = async (grantId: string, status: typeof SHORTLIST_STATUSES[number]) => {
+    try {
+      await upsertShortlist.mutateAsync({ grant_id: grantId, project_id: null, status, saved_at: new Date().toISOString() });
+      toast({ title: "Grant curation updated", description: `Marked as ${status}.` });
+    } catch (e) {
+      toast({ title: "Could not update shortlist", description: e instanceof Error ? e.message : "Apply migration 016_grant_shortlist_items.sql first.", variant: "destructive" });
+    }
+  };
+
   function SortTh({ field, label }: { field: SortField; label: string }) {
     return (
       <th
@@ -198,7 +215,7 @@ export default function DashboardGrantsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Grants</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{grants.length} opportunities tracked</p>
+          <p className="text-slate-500 text-sm mt-0.5">{grants.length} opportunities tracked · {focusGrantsCount} focus grants</p>
         </div>
         <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="gap-2 text-xs" onClick={handleAI}>
@@ -314,6 +331,9 @@ export default function DashboardGrantsPage() {
                 <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">
                   Status
                 </th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden xl:table-cell">
+                  Curation
+                </th>
                 <SortTh field="amount" label="Amount" />
                 <SortTh field="deadline" label="Deadline" />
                 <SortTh field="fit" label="Fit" />
@@ -322,6 +342,7 @@ export default function DashboardGrantsPage() {
             <tbody className="divide-y divide-slate-50">
               {filtered.map((g) => {
                 const days = daysUntil(g.deadline);
+                const shortlist = shortlistByGrant.get(g.id);
                 return (
                   <tr key={g.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4">
@@ -355,6 +376,19 @@ export default function DashboardGrantsPage() {
                     <td className="py-3 px-4">
                       <GrantStatusBadge status={g.status} />
                     </td>
+                    <td className="py-3 px-4 hidden xl:table-cell">
+                      <select
+                        value={shortlist?.status ?? "New"}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleShortlistStatus(g.id, e.target.value as typeof SHORTLIST_STATUSES[number])}
+                        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+                        disabled={upsertShortlist.isPending || !canCurateGrantShortlist}
+                        title={canCurateGrantShortlist ? undefined : "You do not have permission to update grant curation."}
+                        aria-label={`Curation status for ${g.title}`}
+                      >
+                        {SHORTLIST_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </td>
                     <td className="py-3 px-4 text-slate-600 text-xs hidden lg:table-cell whitespace-nowrap">
                       {formatAmount(g.amountMin, g.amountMax)}
                     </td>
@@ -386,7 +420,7 @@ export default function DashboardGrantsPage() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400 text-sm">
+                  <td colSpan={8} className="py-12 text-center text-slate-400 text-sm">
                     No grants match your filters.
                   </td>
                 </tr>

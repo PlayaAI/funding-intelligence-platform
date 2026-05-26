@@ -100,6 +100,22 @@ function amountRange(min?: number | null, max?: number | null, display?: string 
   return min ? fmt(min) : max ? fmt(max) : "Amount not listed";
 }
 
+function cleanFileSegment(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "application";
+}
+
+function downloadTextFile(filename: string, content: string, type = "text/markdown") {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function checklistDueDate(deadline: string | null | undefined, index: number) {
   if (!deadline) return null;
   const date = new Date(deadline);
@@ -183,6 +199,9 @@ export default function DashboardApplicationDetailPage() {
     return [...byId.values()];
   }, [appDocs, grantDocs, projectDocs]);
   const openTasks = linkedTasks.filter((task) => task.status !== "Complete").length;
+  const answeredQuestions = questions.filter((q) => Boolean((q.final_answer || q.draft_answer || "").trim())).length;
+  const approvedQuestions = questions.filter((q) => q.status === "Approved" || q.status === "Final").length;
+  const needsReviewQuestions = questions.filter((q) => q.status === "Needs Review").length;
   const deadline = grant?.deadline ?? null;
   const days = daysUntil(deadline);
 
@@ -227,6 +246,69 @@ export default function DashboardApplicationDetailPage() {
     } catch (e) {
       toast({ title: "Export failed", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
     }
+  };
+
+  const handleExportProposalMarkdown = async () => {
+    if (!app) return;
+    const lines = [
+      `# ${app.title}`,
+      "",
+      `- Status: ${app.status}`,
+      `- Project: ${project?.name ?? "Not linked"}`,
+      `- Grant: ${grant?.title ?? "Not linked"}`,
+      `- Funder: ${grant?.funder_name ?? funder?.name ?? "Not linked"}`,
+      `- Deadline: ${formatDate(deadline)}`,
+      `- Owner: ${app.owner_name ?? "Unassigned"}`,
+      "",
+      "## Internal strategy notes",
+      "",
+      app.notes || "No internal strategy notes yet.",
+      "",
+      "## Application questions and answers",
+      "",
+      ...(questions.length
+        ? questions.flatMap((q, index) => {
+            const answer = q.final_answer || q.draft_answer || "[Unanswered]";
+            const label = q.final_answer ? "Final answer" : q.draft_answer ? "Draft answer" : "Answer";
+            return [
+              `### Q${index + 1}. ${q.question}`,
+              "",
+              `- Status: ${q.status}`,
+              `- Owner: ${q.owner_name ?? "Unassigned"}`,
+              `- Word limit: ${q.word_limit ?? "None"}`,
+              "",
+              `**${label}:**`,
+              "",
+              answer,
+              "",
+            ];
+          })
+        : ["No application questions yet.", ""]),
+      "## Required documents",
+      "",
+      ...(requiredDocs.length
+        ? requiredDocs.map((doc) => `- [${doc.status === "Complete" ? "x" : " "}] ${doc.title}${doc.url ? ` — ${doc.url}` : ""}`)
+        : ["No required document checklist items yet."]),
+      "",
+      "## Checklist / tasks",
+      "",
+      ...(linkedTasks.length
+        ? linkedTasks.map((task) => `- [${task.status === "Complete" ? "x" : " "}] ${task.title} — ${task.status}, ${task.priority}${task.due_date ? `, due ${formatDate(task.due_date)}` : ""}`)
+        : ["No checklist tasks yet."]),
+      "",
+    ];
+
+    downloadTextFile(`grant-os-proposal-${cleanFileSegment(app.title)}.md`, lines.join("\n"));
+    await createActivity.mutateAsync({
+      actor_source: "human",
+      action_type: "export_created",
+      title: `Exported proposal markdown: ${app.title}`,
+      related_application_id: app.id,
+      related_project_id: app.project_id ?? null,
+      related_grant_id: app.grant_id ?? null,
+      created_by: user?.id ?? null,
+    });
+    toast({ title: "Proposal draft exported", description: "Markdown download created." });
   };
 
   if (isLoading) return <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" />Loading application...</div>;
@@ -290,7 +372,7 @@ export default function DashboardApplicationDetailPage() {
   };
 
   const handleCreateQuestion = async (values: ApplicationQuestionFormValues) => {
-    await createQ.mutateAsync({ application_id: app.id, question: values.question, word_limit: values.word_limit ?? null, owner_name: values.owner_name || null, status: values.status as ApplicationQuestionDbStatus, sort_order: values.sort_order });
+    await createQ.mutateAsync({ application_id: app.id, question: values.question, word_limit: values.word_limit ?? null, draft_answer: values.draft_answer || null, final_answer: values.final_answer || null, owner_name: values.owner_name || null, status: values.status as ApplicationQuestionDbStatus, sort_order: values.sort_order });
     toast({ title: "Question added" });
     setAddQOpen(false);
   };
@@ -317,6 +399,7 @@ export default function DashboardApplicationDetailPage() {
           {grant && <Link href={`/dashboard/grants/${grant.id}`}><Button size="sm" variant="outline" className="gap-1.5 text-xs">Open Grant</Button></Link>}
           {funder && <Link href={`/dashboard/funders/${funder.id}`}><Button size="sm" variant="outline" className="gap-1.5 text-xs">Open Funder</Button></Link>}
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportApplication}><Download size={12} />Export Application Packet</Button>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportProposalMarkdown}><Download size={12} />Export Proposal Markdown</Button>
           {canUpdateTable("applications") && <Button size="sm" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}><Edit size={12} />Edit Application</Button>}
         </div>
       </div>
@@ -354,6 +437,7 @@ export default function DashboardApplicationDetailPage() {
         <OverviewCard label="Funder" value={grant?.funder_name ?? funder?.name ?? "Not linked"} />
         <OverviewCard label="Open Tasks" value={openTasks} />
         <OverviewCard label="Documents" value={documents.length} />
+        <OverviewCard label="Answered" value={`${answeredQuestions}/${questions.length}`} hint={`${approvedQuestions} approved · ${needsReviewQuestions} review`} />
         <OverviewCard label="Notes/Reports" value={agentNotes.length + agentReports.length} />
       </section>
 
@@ -452,7 +536,19 @@ export default function DashboardApplicationDetailPage() {
           <CardContent className="space-y-2">
             <div className="flex justify-end">{canCreateTable("application_questions") && <Button size="sm" className="gap-1.5 text-xs" onClick={() => setAddQOpen(true)}><Plus size={12} />Add Question</Button>}</div>
             {questions.length === 0 && <div className="py-8 text-center text-sm text-slate-500">No application questions yet.</div>}
-            {questions.map((q, index) => <div key={q.id} className="rounded-lg border border-slate-200 p-3"><div className="flex items-start justify-between gap-3"><div className="text-sm font-medium text-slate-800">Q{index + 1}. {q.question}</div><Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setEditQ(q.id)}>Edit</Button></div><div className="mt-1 text-xs text-slate-500">{q.status} · {q.word_limit ? `${q.word_limit} words` : "No word limit"}</div></div>)}
+            {questions.map((q, index) => {
+              const activeAnswer = q.final_answer || q.draft_answer;
+              return (
+                <div key={q.id} className="rounded-lg border border-slate-200 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-sm font-medium text-slate-800">Q{index + 1}. {q.question}</div>
+                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setEditQ(q.id)}>Edit</Button>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">{q.status} · {q.word_limit ? `${q.word_limit} words` : "No word limit"} · {activeAnswer ? "answer drafted" : "unanswered"}</div>
+                  {activeAnswer && <div className="mt-3 rounded-md bg-slate-50 p-3 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">{activeAnswer}</div>}
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       </div>
@@ -479,7 +575,7 @@ export default function DashboardApplicationDetailPage() {
       <ApplicationQuestionFormDialog open={addQOpen} onOpenChange={setAddQOpen} onSubmit={handleCreateQuestion} title="Add question" submitLabel="Add" loading={createQ.isPending} />
       {editQ && (() => {
         const q = questions.find((item) => item.id === editQ);
-        return q ? <ApplicationQuestionFormDialog open onOpenChange={(open) => { if (!open) setEditQ(null); }} onSubmit={async (values) => { await updateQ.mutateAsync({ id: q.id, applicationId: app.id, updates: { question: values.question, word_limit: values.word_limit ?? null, owner_name: values.owner_name || null, status: values.status as ApplicationQuestionDbStatus, sort_order: values.sort_order } }); setEditQ(null); }} defaultValues={q} title="Edit question" submitLabel="Save" loading={updateQ.isPending} /> : null;
+        return q ? <ApplicationQuestionFormDialog open onOpenChange={(open) => { if (!open) setEditQ(null); }} onSubmit={async (values) => { await updateQ.mutateAsync({ id: q.id, applicationId: app.id, updates: { question: values.question, word_limit: values.word_limit ?? null, draft_answer: values.draft_answer || null, final_answer: values.final_answer || null, owner_name: values.owner_name || null, status: values.status as ApplicationQuestionDbStatus, sort_order: values.sort_order } }); setEditQ(null); }} defaultValues={q} title="Edit question" submitLabel="Save" loading={updateQ.isPending} /> : null;
       })()}
       <ApplicationRequiredDocumentFormDialog open={addReqDocOpen} onOpenChange={setAddReqDocOpen} onSubmit={handleCreateReqDoc} title="Add required document" submitLabel="Add" loading={createReqDoc.isPending} />
       {editReqDoc && (() => {

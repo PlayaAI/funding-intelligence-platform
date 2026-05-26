@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
 import { Loader2 } from "lucide-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -23,34 +24,34 @@ import AuthProfileErrorScreen from "@/components/auth/AuthProfileErrorScreen";
 import { authDebug } from "@/lib/authDebug";
 import RouteErrorBoundary from "@/components/RouteErrorBoundary";
 
-import DashboardHomePage from "@/pages/dashboard/DashboardHomePage";
-import DashboardTrackerPage from "@/pages/dashboard/DashboardTrackerPage";
-import DashboardMatchesPage from "@/pages/dashboard/DashboardMatchesPage";
-import DashboardMatchesProjectPage from "@/pages/dashboard/DashboardMatchesProjectPage";
-import DashboardGrantsPage from "@/pages/dashboard/DashboardGrantsPage";
-import DashboardGrantDetailPage from "@/pages/dashboard/DashboardGrantDetailPage";
-import DashboardFundersPage from "@/pages/dashboard/DashboardFundersPage";
-import DashboardFunderDetailPage from "@/pages/dashboard/DashboardFunderDetailPage";
-import DashboardPeersPage from "@/pages/dashboard/DashboardPeersPage";
-import DashboardPeerDetailPage from "@/pages/dashboard/DashboardPeerDetailPage";
-import DashboardProjectsPage from "@/pages/dashboard/DashboardProjectsPage";
-import DashboardProjectDetailPage from "@/pages/dashboard/DashboardProjectDetailPage";
-import DashboardApplicationsPage from "@/pages/dashboard/DashboardApplicationsPage";
-import DashboardApplicationDetailPage from "@/pages/dashboard/DashboardApplicationDetailPage";
-import DashboardTasksPage from "@/pages/dashboard/DashboardTasksPage";
-import DashboardProofItemsPage from "@/pages/dashboard/DashboardProofItemsPage";
-import DashboardImportsPage from "@/pages/dashboard/DashboardImportsPage";
-import DashboardTeamPage from "@/pages/dashboard/DashboardTeamPage";
-import DashboardCustomFieldsPage from "@/pages/dashboard/DashboardCustomFieldsPage";
-import DashboardCalendarPage from "@/pages/dashboard/DashboardCalendarPage";
-import DashboardFinancialsPage from "@/pages/dashboard/DashboardFinancialsPage";
-import DashboardDocumentsPage from "@/pages/dashboard/DashboardDocumentsPage";
-import DashboardDocumentDetailPage from "@/pages/dashboard/DashboardDocumentDetailPage";
-import DashboardReportsPage from "@/pages/dashboard/DashboardReportsPage";
-import DashboardSettingsPage from "@/pages/dashboard/DashboardSettingsPage";
-import DashboardAgentReportsPage from "@/pages/dashboard/DashboardAgentReportsPage";
-import DashboardAgentActivityPage from "@/pages/dashboard/DashboardAgentActivityPage";
-import DashboardAgentImportPage from "@/pages/dashboard/DashboardAgentImportPage";
+const DashboardHomePage = lazy(() => import("@/pages/dashboard/DashboardHomePage"));
+const DashboardTrackerPage = lazy(() => import("@/pages/dashboard/DashboardTrackerPage"));
+const DashboardMatchesPage = lazy(() => import("@/pages/dashboard/DashboardMatchesPage"));
+const DashboardMatchesProjectPage = lazy(() => import("@/pages/dashboard/DashboardMatchesProjectPage"));
+const DashboardGrantsPage = lazy(() => import("@/pages/dashboard/DashboardGrantsPage"));
+const DashboardGrantDetailPage = lazy(() => import("@/pages/dashboard/DashboardGrantDetailPage"));
+const DashboardFundersPage = lazy(() => import("@/pages/dashboard/DashboardFundersPage"));
+const DashboardFunderDetailPage = lazy(() => import("@/pages/dashboard/DashboardFunderDetailPage"));
+const DashboardPeersPage = lazy(() => import("@/pages/dashboard/DashboardPeersPage"));
+const DashboardPeerDetailPage = lazy(() => import("@/pages/dashboard/DashboardPeerDetailPage"));
+const DashboardProjectsPage = lazy(() => import("@/pages/dashboard/DashboardProjectsPage"));
+const DashboardProjectDetailPage = lazy(() => import("@/pages/dashboard/DashboardProjectDetailPage"));
+const DashboardApplicationsPage = lazy(() => import("@/pages/dashboard/DashboardApplicationsPage"));
+const DashboardApplicationDetailPage = lazy(() => import("@/pages/dashboard/DashboardApplicationDetailPage"));
+const DashboardTasksPage = lazy(() => import("@/pages/dashboard/DashboardTasksPage"));
+const DashboardProofItemsPage = lazy(() => import("@/pages/dashboard/DashboardProofItemsPage"));
+const DashboardImportsPage = lazy(() => import("@/pages/dashboard/DashboardImportsPage"));
+const DashboardTeamPage = lazy(() => import("@/pages/dashboard/DashboardTeamPage"));
+const DashboardCustomFieldsPage = lazy(() => import("@/pages/dashboard/DashboardCustomFieldsPage"));
+const DashboardCalendarPage = lazy(() => import("@/pages/dashboard/DashboardCalendarPage"));
+const DashboardFinancialsPage = lazy(() => import("@/pages/dashboard/DashboardFinancialsPage"));
+const DashboardDocumentsPage = lazy(() => import("@/pages/dashboard/DashboardDocumentsPage"));
+const DashboardDocumentDetailPage = lazy(() => import("@/pages/dashboard/DashboardDocumentDetailPage"));
+const DashboardReportsPage = lazy(() => import("@/pages/dashboard/DashboardReportsPage"));
+const DashboardSettingsPage = lazy(() => import("@/pages/dashboard/DashboardSettingsPage"));
+const DashboardAgentReportsPage = lazy(() => import("@/pages/dashboard/DashboardAgentReportsPage"));
+const DashboardAgentActivityPage = lazy(() => import("@/pages/dashboard/DashboardAgentActivityPage"));
+const DashboardAgentImportPage = lazy(() => import("@/pages/dashboard/DashboardAgentImportPage"));
 
 // Fix #4: React Query safe defaults
 const queryClient = new QueryClient({
@@ -82,7 +83,9 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   if (!isAuthenticated) return <Redirect to="/login" />;
   return (
     <DashboardShell>
-      <Component />
+      <Suspense fallback={<AuthLoadingScreen />}>
+        <Component />
+      </Suspense>
     </DashboardShell>
   );
 }

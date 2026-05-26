@@ -21,6 +21,16 @@ const STATUS_COLORS: Record<string, string> = {
   unsupported: "bg-slate-100 text-slate-500",
 };
 
+function displayUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.length > 34 ? `${parsed.pathname.slice(0, 34)}…` : parsed.pathname;
+    return `${parsed.hostname}${path}`;
+  } catch {
+    return url.length > 72 ? `${url.slice(0, 72)}…` : url;
+  }
+}
+
 export default function DashboardDocumentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: doc, isLoading, isError, error } = useDocument(id);
@@ -62,7 +72,7 @@ export default function DashboardDocumentDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-sm">Metadata</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><div><span className="text-slate-500 text-xs">File name</span><div className="break-all">{doc.file_name ?? "-"}</div></div><div><span className="text-slate-500 text-xs">Source URL</span><div className="break-all">{doc.source_url ? <a href={doc.source_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{doc.source_url}</a> : "-"}</div></div><div><span className="text-slate-500 text-xs">MIME type</span><div>{doc.mime_type ?? "-"}</div></div><div><span className="text-slate-500 text-xs">File size</span><div>{doc.file_size_bytes ? `${Math.round(doc.file_size_bytes / 1024)} KB` : "-"}</div></div><div><span className="text-slate-500 text-xs">Created</span><div>{new Date(doc.created_at).toLocaleString()}</div></div></CardContent></Card>
+        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-sm">Metadata</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><div><span className="text-slate-500 text-xs">File name</span><div className="break-all">{doc.file_name ?? "-"}</div></div><div><span className="text-slate-500 text-xs">Source URL</span><div className="min-w-0">{doc.source_url ? <a href={doc.source_url} target="_blank" rel="noopener noreferrer" title={doc.source_url} className="inline-block max-w-full truncate text-primary hover:underline">{displayUrl(doc.source_url)}</a> : "-"}</div></div><div><span className="text-slate-500 text-xs">MIME type</span><div>{doc.mime_type ?? "-"}</div></div><div><span className="text-slate-500 text-xs">File size</span><div>{doc.file_size_bytes ? `${Math.round(doc.file_size_bytes / 1024)} KB` : "-"}</div></div><div><span className="text-slate-500 text-xs">Created</span><div>{new Date(doc.created_at).toLocaleString()}</div></div></CardContent></Card>
         <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-sm">Linked Records</CardTitle></CardHeader><CardContent className="space-y-2 text-sm">{links.length === 0 && <div className="text-slate-400">No linked records.</div>}{links.map((link) => <div key={link.label}><span className="text-slate-500 text-xs">{link.label}</span><div><Link href={link.href} className="text-primary hover:underline">{link.value}</Link></div></div>)}{doc.extraction_error && <div className="rounded bg-red-50 border border-red-200 p-2 text-xs text-red-700">{doc.extraction_error}</div>}</CardContent></Card>
       </div>
 

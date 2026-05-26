@@ -18,7 +18,8 @@ export type WritableTable =
   | "agent_notes"
   | "agent_reports"
   | "agent_activity_logs"
-  | "grant_matches";
+  | "grant_matches"
+  | "grant_shortlist_items";
 
 const CONTRIBUTOR_CREATABLE: WritableTable[] = [
   "proof_items",
@@ -29,6 +30,7 @@ const CONTRIBUTOR_CREATABLE: WritableTable[] = [
   "agent_reports",
   "agent_activity_logs",
   "documents",
+  "grant_shortlist_items",
 ];
 
 const CONTRIBUTOR_UPDATABLE: WritableTable[] = [
