@@ -1,5 +1,7 @@
 import { supabase } from "./supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GrantRow, GrantInsert, GrantUpdate } from "@/types/database";
+import type { Database } from "@/types/database";
 
 export type { GrantRow, GrantInsert, GrantUpdate };
 
@@ -8,13 +10,23 @@ type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { messa
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
 
+type GrantOsSupabaseClient = SupabaseClient<Database>;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getDb(client?: GrantOsSupabaseClient): any {
+  return client ?? db;
+}
+
 export type ListGrantsOptions = {
   /** Include rows with archived_at set (soft-archived). Default false. */
   includeSoftArchived?: boolean;
 };
 
-export async function listGrants(opts?: ListGrantsOptions): Promise<GrantRow[]> {
-  let query = db.from("grants").select("*").order("deadline", { ascending: true, nullsFirst: false });
+export async function listGrants(
+  opts?: ListGrantsOptions,
+  client?: GrantOsSupabaseClient
+): Promise<GrantRow[]> {
+  let query = getDb(client).from("grants").select("*").order("deadline", { ascending: true, nullsFirst: false });
 
   if (!opts?.includeSoftArchived) {
     query = query.is("archived_at", null);
@@ -25,8 +37,11 @@ export async function listGrants(opts?: ListGrantsOptions): Promise<GrantRow[]> 
   return result.data ?? [];
 }
 
-export async function getGrantById(id: string): Promise<GrantRow | null> {
-  const result: SupabaseResult<GrantRow | null> = await db
+export async function getGrantById(
+  id: string,
+  client?: GrantOsSupabaseClient
+): Promise<GrantRow | null> {
+  const result: SupabaseResult<GrantRow | null> = await getDb(client)
     .from("grants")
     .select("*")
     .eq("id", id)

@@ -10,8 +10,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:simulations": "tsx test-simulations/run-simulations.ts",
     "test:agent-tools": "tsx test-simulations/agent-tools-simulations.ts",
+    "test:agent-auth": "tsx test-simulations/agent-auth-simulations.ts",
     "agent:tool": "tsx scripts/run-agent-tool.ts",
-    "validate": "pnpm run typecheck && pnpm run build && pnpm run test:simulations && pnpm run test:agent-tools",
+    "agent:doctor": "tsx scripts/agent-doctor.ts",
+    "validate": "pnpm run typecheck && pnpm run build && pnpm run test:simulations && pnpm run test:agent-tools && pnpm run test:agent-auth",
     "import:instrumentl-zips": "tsx ../../scripts/import-instrumentl-zips.ts"
   },
   "devDependencies": {

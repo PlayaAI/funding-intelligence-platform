@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
+import type { AgentAuthContext } from "@/lib/agent-tools/authContext";
 
 const browserEnv = typeof import.meta !== "undefined" ? (import.meta.env as Record<string, string | undefined> | undefined) : undefined;
 const nodeEnv = typeof process !== "undefined" ? process.env : undefined;
@@ -16,6 +17,8 @@ const isValidSupabaseUrl =
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 export const isSupabaseUrlValid = isValidSupabaseUrl;
+export const supabasePublicUrl = supabaseUrl ?? null;
+export const hasSupabaseAnonKey = Boolean(supabaseAnonKey);
 
 export type SupabaseConfigError =
   | "missing_vars"
@@ -26,6 +29,15 @@ export function getSupabaseConfigError(): SupabaseConfigError {
   if (!supabaseUrl || !supabaseAnonKey) return "missing_vars";
   if (!isValidSupabaseUrl) return "wrong_url_format";
   return null;
+}
+
+export function getSupabaseProjectRef(): string | null {
+  if (!supabaseUrl) return null;
+  try {
+    return new URL(supabaseUrl).hostname.split(".")[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 if (!isSupabaseConfigured) {
@@ -55,3 +67,26 @@ export const supabase = createClient<Database>(
     },
   }
 );
+
+export function createSupabaseClientForAgent(authContext?: AgentAuthContext) {
+  const userAccessToken = authContext?.userAccessToken?.trim();
+
+  return createClient<Database>(
+    supabaseUrl ?? "https://placeholder.supabase.co",
+    supabaseAnonKey ?? "placeholder-anon-key",
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+      global: userAccessToken
+        ? {
+            headers: {
+              Authorization: `Bearer ${userAccessToken}`,
+            },
+          }
+        : undefined,
+    }
+  );
+}

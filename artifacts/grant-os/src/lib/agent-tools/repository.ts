@@ -41,6 +41,8 @@ import {
   listTasksByApplication,
   updateTask,
 } from "../tasksService";
+import { createSupabaseClientForAgent } from "../supabase";
+import type { AgentAuthContext } from "./authContext";
 import type {
   AgentActivityLogRow,
   AgentNoteRow,
@@ -130,10 +132,20 @@ export type GrantOsRepository = {
   recordAudit(payload: ToolAuditPayload): Promise<AgentActivityLogRow | null>;
 };
 
-export function createLiveGrantOsRepository(): GrantOsRepository {
+export type CreateLiveGrantOsRepositoryOptions = {
+  authContext?: AgentAuthContext;
+};
+
+export function createLiveGrantOsRepository(
+  options: CreateLiveGrantOsRepositoryOptions = {}
+): GrantOsRepository {
+  const agentSupabase = options.authContext
+    ? createSupabaseClientForAgent(options.authContext)
+    : undefined;
+
   return {
-    listGrants: () => listGrants(),
-    getGrant: (id) => getGrantById(id),
+    listGrants: () => listGrants(undefined, agentSupabase),
+    getGrant: (id) => getGrantById(id, agentSupabase),
     updateGrantStatus: (id, status) => updateGrant(id, { status }),
     listFunders: () => listFunders(),
     getFunder: (id) => getFunderByIdOrLegacy(id),
