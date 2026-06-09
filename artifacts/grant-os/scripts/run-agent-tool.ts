@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createToolRegistry } from "../src/lib/agent-tools/registry";
 
 function loadLocalEnv() {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +32,10 @@ async function main() {
 
   loadLocalEnv();
 
-  const { createLiveGrantOsRepository } = await import("../src/lib/agent-tools/repository");
+  const [{ createToolRegistry }, { createLiveGrantOsRepository }] = await Promise.all([
+    import("../src/lib/agent-tools/registry"),
+    import("../src/lib/agent-tools/repository"),
+  ]);
   const input = rawInput ? JSON.parse(rawInput) : {};
   const registry = createToolRegistry({
     repository: createLiveGrantOsRepository(),
