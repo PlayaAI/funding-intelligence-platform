@@ -9,7 +9,9 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:simulations": "tsx test-simulations/run-simulations.ts",
-    "validate": "pnpm run typecheck && pnpm run build && pnpm run test:simulations",
+    "test:agent-tools": "tsx test-simulations/agent-tools-simulations.ts",
+    "agent:tool": "tsx scripts/run-agent-tool.ts",
+    "validate": "pnpm run typecheck && pnpm run build && pnpm run test:simulations && pnpm run test:agent-tools",
     "import:instrumentl-zips": "tsx ../../scripts/import-instrumentl-zips.ts"
   },
   "devDependencies": {

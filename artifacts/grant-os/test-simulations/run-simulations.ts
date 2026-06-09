@@ -24,7 +24,7 @@ function packageBase(packageType: string, records: AnyRecord) {
   return { exported_at: "2026-01-01T00:00:00.000Z", generated_at: "2026-01-01T00:00:00.000Z", package_type: packageType, app: "Grant OS", records };
 }
 
-const db = {
+const db: Record<string, AnyRecord[]> = {
   projects: [
     { id: "project-public", slug: "connect-app", name: "Connect App", public_visibility: true, featured: true, archived_at: null },
     { id: "project-private", slug: "private-lab", name: "Private Lab", public_visibility: false, featured: false, archived_at: null },
@@ -293,7 +293,10 @@ test("Bad imported values handled gracefully", () => assert(safeNumber(getFunder
 test("List documents excludes archived", () => assert(!listDocuments().some((d) => d.id === "doc-archived"), "archived document visible"));
 test("Document detail", () => assert(getDocument("doc-1")?.title === "Grant Guidelines", "document detail failed"));
 test("Document linked to grant", () => assert(getDocument("doc-1")?.related_grant_id === "grant-1", "grant link missing"));
-test("Long URL handled", () => assert(displayUrl(getDocument("doc-1")?.source_url).className === "break-all", "long URL not break-all"));
+test("Long URL handled", () => {
+  const rendered = displayUrl(getDocument("doc-1")?.source_url);
+  assert(typeof rendered !== "string" && rendered.className === "break-all", "long URL not break-all");
+});
 test("Missing source URL handled", () => assert(displayUrl(getDocument("doc-no-url")?.source_url) === "No source URL", "missing URL fallback failed"));
 
 // 5. Applications
@@ -314,9 +317,12 @@ test("Task filters by application/project/status/priority", () => assert(filterT
 test("Add peer", () => assert(addPeer("QA Peer").name === "QA Peer", "peer add failed"));
 test("Archive peer", () => { const peer = addPeer("Archive Me"); archivePeer(peer.id); assert(!listPeers().some((p) => p.id === peer.id), "archived peer visible"); });
 test("Archived peer hidden", () => assert(!listPeers().some((p) => p.id === "peer-archived"), "seed archived peer visible"));
-test("Add funding record", () => assert(addFundingRecord({ peer_organization_id: "peer-1", manual_funder_name: "New Manual Funder" }).manual_funder_name === "New Manual Funder", "funding record add failed"));
-test("Manual funder name works", () => assert(active(db.peerFundingRecords).some((r) => r.manual_funder_name === "Manual Foundation"), "manual funder missing"));
-test("Linked funder works", () => assert(active(db.peerFundingRecords).some((r) => r.funder_id === "funder-1"), "linked funder missing"));
+test("Add funding record", () => {
+  const record = addFundingRecord({ peer_organization_id: "peer-1", funder_id: null, manual_funder_name: "New Manual Funder", amount_awarded: 10000 }) as AnyRecord;
+  assert(record.manual_funder_name === "New Manual Funder", "funding record add failed");
+});
+test("Manual funder name works", () => assert(active(db.peerFundingRecords as AnyRecord[]).some((r) => r.manual_funder_name === "Manual Foundation"), "manual funder missing"));
+test("Linked funder works", () => assert(active(db.peerFundingRecords as AnyRecord[]).some((r) => r.funder_id === "funder-1"), "linked funder missing"));
 test("Funder detail can find linked peer records", () => assert(fundingRecordsForFunder("funder-1").length >= 1, "funder peer records missing"));
 test("Peer export JSON", () => { const p = exportPeerPackage("peer-1"); assert(p.package_type === "peer" && Array.isArray(p.records.funding_records), "bad peer export"); });
 
