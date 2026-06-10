@@ -1,8 +1,11 @@
 modules = ["nodejs-24", "python-3.11"]
+run = "pnpm --filter @workspace/grant-os run dev"
 
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+build = ["pnpm", "--filter", "@workspace/grant-os", "run", "build"]
+run = ["pnpm", "--filter", "@workspace/grant-os", "run", "start"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
