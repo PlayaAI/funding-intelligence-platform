@@ -1,0 +1,118 @@
+import type { McpToolManifestEntry } from "./types";
+
+export const MCP_READ_TOOL_MANIFEST: readonly McpToolManifestEntry[] = [
+  {
+    name: "list_grants",
+    description: "List visible grants for the authenticated user.",
+    permissionLevel: "read",
+    schemaSummary: "{ limit?: number, status?: string, funderId?: string }",
+    exampleInput: { limit: 5 },
+  },
+  {
+    name: "search_grants",
+    description: "Search visible grants by keyword.",
+    permissionLevel: "read",
+    schemaSummary: "{ query: string, limit?: number }",
+    exampleInput: { query: "Humanity AI" },
+  },
+  {
+    name: "get_grant",
+    description: "Fetch one visible grant by id.",
+    permissionLevel: "read",
+    schemaSummary: "{ grantId: string }",
+    exampleInput: { grantId: "28d81882-64c1-4677-84d5-7c9303ef2a58" },
+  },
+  {
+    name: "export_grant_packet",
+    description: "Export a structured packet for one visible grant.",
+    permissionLevel: "read",
+    schemaSummary: "{ grantId: string }",
+    exampleInput: { grantId: "28d81882-64c1-4677-84d5-7c9303ef2a58" },
+  },
+  {
+    name: "list_funders",
+    description: "List visible funders.",
+    permissionLevel: "read",
+    schemaSummary: "{ limit?: number }",
+    exampleInput: { limit: 5 },
+  },
+  {
+    name: "get_funder",
+    description: "Fetch one visible funder by id.",
+    permissionLevel: "read",
+    schemaSummary: "{ funderId: string }",
+    exampleInput: { funderId: "funder-1" },
+  },
+  {
+    name: "list_projects",
+    description: "List visible projects.",
+    permissionLevel: "read",
+    schemaSummary: "{ limit?: number }",
+    exampleInput: { limit: 5 },
+  },
+  {
+    name: "get_project",
+    description: "Fetch one visible project by id.",
+    permissionLevel: "read",
+    schemaSummary: "{ projectId: string }",
+    exampleInput: { projectId: "project-1" },
+  },
+  {
+    name: "list_applications",
+    description: "List visible applications.",
+    permissionLevel: "read",
+    schemaSummary: "{ limit?: number, grantId?: string, status?: string }",
+    exampleInput: { limit: 5 },
+  },
+  {
+    name: "get_application",
+    description: "Fetch one visible application by id.",
+    permissionLevel: "read",
+    schemaSummary: "{ applicationId: string }",
+    exampleInput: { applicationId: "application-1" },
+  },
+  {
+    name: "list_tasks",
+    description: "List visible application tasks.",
+    permissionLevel: "read",
+    schemaSummary: "{ limit?: number, applicationId?: string, status?: string }",
+    exampleInput: { limit: 5 },
+  },
+  {
+    name: "get_task",
+    description: "Fetch one visible task by id.",
+    permissionLevel: "read",
+    schemaSummary: "{ taskId: string }",
+    exampleInput: { taskId: "task-1" },
+  },
+  {
+    name: "get_dashboard_summary",
+    description: "Return the authenticated dashboard summary report.",
+    permissionLevel: "read",
+    schemaSummary: "{}",
+    exampleInput: {},
+  },
+  {
+    name: "get_deadline_report",
+    description: "Return the authenticated deadline report.",
+    permissionLevel: "read",
+    schemaSummary: "{ daysAhead?: number }",
+    exampleInput: { daysAhead: 30 },
+  },
+  {
+    name: "get_application_workload_report",
+    description: "Return application workload metrics.",
+    permissionLevel: "read",
+    schemaSummary: "{}",
+    exampleInput: {},
+  },
+  {
+    name: "get_data_quality_report",
+    description: "Return data quality report metrics.",
+    permissionLevel: "read",
+    schemaSummary: "{}",
+    exampleInput: {},
+  },
+] as const;
+
+export const MCP_READ_TOOL_NAMES = new Set<string>(MCP_READ_TOOL_MANIFEST.map((tool) => tool.name));

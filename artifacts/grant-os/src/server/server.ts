@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAgentApi } from "../lib/agent-api/agentApi";
+import { createMcpAdapter } from "../lib/agent-mcp/adapter";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
@@ -11,6 +12,7 @@ const rawPort = process.env.PORT ?? "5173";
 const port = Number(rawPort);
 const isProduction = process.env.NODE_ENV === "production";
 const agentApi = createAgentApi();
+const mcpAdapter = createMcpAdapter();
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
@@ -77,7 +79,7 @@ async function serveStatic(request: IncomingMessage, response: ServerResponse) {
 
 async function handleApi(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-  if (!url.pathname.startsWith("/api/agent/")) return false;
+  if (!url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/mcp/")) return false;
 
   try {
     if (url.pathname === "/api/agent/doctor" && request.method === "GET") {
@@ -89,6 +91,25 @@ async function handleApi(request: IncomingMessage, response: ServerResponse): Pr
     if (url.pathname === "/api/agent/tool" && request.method === "POST") {
       const body = await readJsonBody(request);
       const result = await agentApi.handleTool(request.headers, body);
+      sendJson(response, result.status, result.body);
+      return true;
+    }
+
+    if (url.pathname === "/api/mcp/tools" && request.method === "GET") {
+      const result = await mcpAdapter.handleTools(request.headers);
+      sendJson(response, result.status, result.body);
+      return true;
+    }
+
+    if (url.pathname === "/api/mcp/call" && request.method === "POST") {
+      const body = await readJsonBody(request);
+      const result = await mcpAdapter.handleCall(request.headers, body);
+      sendJson(response, result.status, result.body);
+      return true;
+    }
+
+    if (url.pathname === "/api/mcp/doctor" && request.method === "GET") {
+      const result = await mcpAdapter.handleDoctor(request.headers);
       sendJson(response, result.status, result.body);
       return true;
     }
