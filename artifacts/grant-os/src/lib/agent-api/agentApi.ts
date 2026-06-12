@@ -14,6 +14,7 @@ import {
   isSupabaseConfigured,
   isSupabaseUrlValid,
 } from "../supabase";
+import { getGrantOsDeploymentMetadata, type DeploymentMetadata } from "../deployment";
 
 export const HOSTED_AGENT_READ_TOOLS = [
   "list_grants",
@@ -71,6 +72,7 @@ export type CreateAgentApiDependencies = {
   createRepository?: (authContext: AgentAuthContext) => GrantOsRepository;
   createRegistry?: typeof createToolRegistry;
   getProjectRef?: () => string | null;
+  getDeploymentMetadata?: () => DeploymentMetadata;
 };
 
 function maskProjectRef(projectRef: string | null): string | null {
@@ -147,6 +149,7 @@ export function createAgentApi(dependencies: CreateAgentApiDependencies = {}) {
     ((authContext: AgentAuthContext) => createLiveGrantOsRepository({ authContext }));
   const registryFactory = dependencies.createRegistry ?? createToolRegistry;
   const getProjectRef = dependencies.getProjectRef ?? getSupabaseProjectRef;
+  const getDeploymentMetadata = dependencies.getDeploymentMetadata ?? getGrantOsDeploymentMetadata;
 
   function authenticate(headers: AgentApiHeaders): AgentAuthContext | AgentApiResponse {
     return parseBearerAuth(headers);
@@ -199,6 +202,7 @@ export function createAgentApi(dependencies: CreateAgentApiDependencies = {}) {
         status: 200,
         body: {
           ok: true,
+          deployment: getDeploymentMetadata(),
           supabase: {
             configured: isSupabaseConfigured,
             urlValid: isSupabaseUrlValid,

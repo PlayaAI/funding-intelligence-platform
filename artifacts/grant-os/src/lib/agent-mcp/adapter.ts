@@ -88,7 +88,17 @@ function authenticate(headers: McpAdapterHeaders): AgentAuthContext | McpAdapter
 }
 
 function blockedToolResponse(): McpAdapterResponse {
-  return jsonError(403, "approval_required_or_not_enabled", "This tool is not enabled for direct MCP execution.");
+  return {
+    status: 403,
+    body: {
+      ok: false,
+      blocked: true,
+      error: {
+        code: "approval_required_or_not_enabled",
+        message: "This tool is not enabled for direct MCP execution.",
+      },
+    },
+  };
 }
 
 function normalizeArguments(toolName: string, rawArguments: JsonRecord, metadata?: ToolMetadata): JsonRecord {
@@ -132,8 +142,17 @@ function inferDryRun(tool: ToolMetadata | undefined, input: JsonRecord, data?: u
   return tool.dryRunSupported ? true : null;
 }
 
+function inferMutationPerformed(tool: ToolMetadata | undefined, input: JsonRecord, data?: unknown): boolean | null {
+  if (!tool || tool.permissionLevel === "read") return null;
+  if (data && typeof data === "object" && "mutationPerformed" in (data as JsonRecord) && typeof (data as JsonRecord).mutationPerformed === "boolean") {
+    return Boolean((data as JsonRecord).mutationPerformed);
+  }
+  return inferDryRun(tool, input, data) ? false : null;
+}
+
 function normalizeCallSuccess(tool: ToolMetadata, input: JsonRecord, data: unknown, audit: JsonRecord | null): JsonRecord {
   const dryRun = inferDryRun(tool, input, data);
+  const mutationPerformed = inferMutationPerformed(tool, input, data);
   const writeDisposition = tool.permissionLevel === "read"
     ? "read"
     : dryRun
@@ -145,6 +164,7 @@ function normalizeCallSuccess(tool: ToolMetadata, input: JsonRecord, data: unkno
     tool: tool.name,
     permissionLevel: tool.permissionLevel,
     dryRun,
+    mutationPerformed,
     writeDisposition,
     content: [
       {
@@ -152,6 +172,7 @@ function normalizeCallSuccess(tool: ToolMetadata, input: JsonRecord, data: unkno
         json: {
           data,
           dryRun,
+          mutationPerformed,
           writeDisposition,
         },
       },

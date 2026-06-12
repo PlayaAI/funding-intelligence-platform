@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { calculateGrantMatch } from "../matching/matchingEngine";
-import type { GrantMatchWithRelations } from "../matching/matchesService";
+import type { GrantMatchDecisionLabelDb, GrantMatchInsert, MatchTierDb } from "../../types/database";
 import type { GrantOsRepository } from "./repository";
+import { buildDryRunPlan } from "./dryRun";
 import { makeToolError } from "./safety";
 import type { ToolDefinition } from "./types";
-import type { GrantMatchInsert, MatchTierDb, GrantMatchDecisionLabelDb } from "../../types/database";
 
 function toTenPointScore(value: number): number {
   return Math.max(0, Math.min(10, Math.round(value / 10)));
@@ -210,21 +210,20 @@ export function createMatchTools(repository: GrantOsRepository): Array<ToolDefin
         });
         const structured = toStructuredMatch(output, grantId, projectId, context.project.name, context.grant.title, context.existingMatch?.id ?? null);
         if (dryRun) {
-          return {
-            dryRun: true,
-            touchesRealDb: true,
-            relatedTables: ["grant_matches"],
-            plannedMutation: {
+          return buildDryRunPlan(
+            {
               action: "preview_match_generation",
               table: "grant_matches",
               grantId,
               projectId,
             },
-            ...structured,
-          };
+            ["grant_matches"],
+            structured,
+          );
         }
         return {
           dryRun: false,
+          mutationPerformed: false,
           persistence: "not_implemented_persistence",
           message: "generate_grant_match does not persist records directly. Use save_grant_match for explicit persistence.",
           ...structured,
@@ -268,21 +267,20 @@ export function createMatchTools(repository: GrantOsRepository): Array<ToolDefin
           recommendedNextStep,
         });
         if (dryRun) {
-          return {
-            dryRun: true,
-            touchesRealDb: true,
-            relatedTables: ["grant_matches"],
-            plannedMutation: {
+          return buildDryRunPlan(
+            {
               action: context.existingMatch ? "update" : "upsert",
               table: "grant_matches",
               values: persisted,
             },
-            existingMatchId: context.existingMatch?.id ?? null,
-          };
+            ["grant_matches"],
+            { existingMatchId: context.existingMatch?.id ?? null }
+          );
         }
         const match = await repository.upsertGrantMatch(persisted);
         return {
           dryRun: false,
+          mutationPerformed: true,
           created: !context.existingMatch,
           updated: Boolean(context.existingMatch),
           match,

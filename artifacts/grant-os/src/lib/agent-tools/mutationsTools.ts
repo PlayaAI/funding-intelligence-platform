@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { GrantOsRepository } from "./repository";
 import type { ApprovalRequiredResult, ToolDefinition } from "./types";
 import { buildChecklistTemplate } from "./builders";
+import { buildDryRunPlan } from "./dryRun";
 import { makeToolError } from "./safety";
 import { applicationStatusSchema, grantStatusSchema, taskPrioritySchema, taskStatusSchema } from "./types";
 
@@ -64,7 +65,7 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
             archived_at: null,
           },
         };
-        if (dryRun) return { dryRun: true, touchesRealDb: true, relatedTables: ["applications"], plannedMutation, created: false };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["applications"], { created: false });
         if (duplicate) return { dryRun: false, created: false, application: duplicate, duplicateOf: duplicate.id };
         const application = await repository.createApplication(plannedMutation.values);
         return { dryRun: false, created: true, application };
@@ -92,13 +93,11 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
         const template = buildChecklistTemplate(grant, project);
         const missing = template.filter((item) => !existingTasks.some((task) => task.title === item.title));
         if (dryRun) {
-          return {
-            dryRun: true,
-            touchesRealDb: true,
-            relatedTables: ["tasks"],
-            plannedMutation: { action: "create_many", table: "tasks", count: missing.length, items: missing },
-            createdTasks: missing,
-          };
+          return buildDryRunPlan(
+            { action: "create_many", table: "tasks", count: missing.length, items: missing },
+            ["tasks"],
+            { createdTasks: missing }
+          );
         }
         const createdTasks = [];
         for (const item of missing) {
@@ -161,7 +160,7 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
             archived_at: null,
           },
         };
-        if (input.dryRun) return { dryRun: true, touchesRealDb: true, relatedTables: ["tasks"], plannedMutation };
+        if (input.dryRun) return buildDryRunPlan(plannedMutation, ["tasks"]);
         const task = await repository.createTask(plannedMutation.values);
         return { dryRun: false, task };
       },
@@ -180,7 +179,7 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
         const task = await repository.getTask(taskId);
         if (!task) throw makeToolError("task_not_found", `Task ${taskId} was not found.`);
         const plannedMutation = { table: "tasks", action: "update", id: taskId, values: { status } };
-        if (dryRun) return { dryRun: true, touchesRealDb: true, relatedTables: ["tasks"], plannedMutation, previousStatus: task.status };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["tasks"], { previousStatus: task.status });
         return { dryRun: false, task: await repository.updateTaskStatus(taskId, status) };
       },
     },
@@ -198,7 +197,7 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
         const application = await repository.getApplication(applicationId);
         if (!application) throw makeToolError("application_not_found", `Application ${applicationId} was not found.`);
         const plannedMutation = { table: "agent_notes", action: "create", values: { applicationId, title, content } };
-        if (dryRun) return { dryRun: true, touchesRealDb: true, relatedTables: ["agent_notes"], plannedMutation };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["agent_notes"]);
         return { dryRun: false, note: await repository.createApplicationNote({ applicationId, title, content }) };
       },
     },
@@ -243,7 +242,7 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
             archived_at: null,
           },
         };
-        if (dryRun) return { dryRun: true, touchesRealDb: true, relatedTables: ["peer_organizations"], plannedMutation };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["peer_organizations"]);
         return { dryRun: false, peer: await repository.createPeerOrganization(plannedMutation.values) };
       },
     },
@@ -291,7 +290,7 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
             archived_at: null,
           },
         };
-        if (input.dryRun) return { dryRun: true, touchesRealDb: true, relatedTables: ["peer_funding_records"], plannedMutation };
+        if (input.dryRun) return buildDryRunPlan(plannedMutation, ["peer_funding_records"]);
         return { dryRun: false, record: await repository.createPeerFundingRecord(plannedMutation.values) };
       },
     },
@@ -309,7 +308,7 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
         const grant = await repository.getGrant(grantId);
         if (!grant) throw makeToolError("grant_not_found", `Grant ${grantId} was not found.`);
         const plannedMutation = { table: "grants", action: "update", id: grantId, values: { status } };
-        if (dryRun) return { dryRun: true, touchesRealDb: true, relatedTables: ["grants"], plannedMutation, previousStatus: grant.status };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { previousStatus: grant.status });
         return { dryRun: false, grant: await repository.updateGrantStatus(grantId, status) };
       },
     },
@@ -354,7 +353,7 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
             due_date: input.dueDate ?? null,
           },
         };
-        if (input.dryRun) return { dryRun: true, touchesRealDb: true, relatedTables: ["grant_shortlist_items"], plannedMutation };
+        if (input.dryRun) return buildDryRunPlan(plannedMutation, ["grant_shortlist_items"]);
         return { dryRun: false, shortlistItem: await repository.saveGrantToShortlist(plannedMutation.values) };
       },
     },

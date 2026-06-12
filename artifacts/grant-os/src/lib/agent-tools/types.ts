@@ -177,7 +177,9 @@ export type DataQualityReport = {
 
 export type DryRunPlan<T extends Record<string, unknown> = Record<string, unknown>> = {
   dryRun: true;
-  touchesRealDb: boolean;
+  mutationPerformed: false;
+  wouldTouchRealDb: boolean;
+  targetPersistenceTables: string[];
   relatedTables: string[];
   plannedMutation: T;
 };

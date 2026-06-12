@@ -114,16 +114,34 @@ async function run() {
     {
       name: "doctor response shape is safe",
       fn: async () => {
+        process.env.GRANT_OS_TEST_SECRET = "super-secret-should-not-leak";
         const result = await api.handleDoctor(authHeaders());
+        delete process.env.GRANT_OS_TEST_SECRET;
         assert(result.status === 200, "expected success status");
         assert(result.body.ok === true, "expected ok doctor response");
         assert(!JSON.stringify(result.body).includes(userToken), "doctor leaked token value");
+        assert(!JSON.stringify(result.body).includes("super-secret-should-not-leak"), "doctor leaked secret-looking env value");
         const supabase = result.body.supabase as { projectRef?: string };
         const grants = result.body.grants as { visibleCount?: number; firstThreeTitles?: unknown[]; humanityAiVisible?: boolean };
+        const deployment = result.body.deployment as {
+          app?: string;
+          commit?: string;
+          commitFull?: string | null;
+          versionSource?: string;
+          environment?: string;
+          apiSurface?: string;
+          capabilities?: unknown[];
+        };
         assert(supabase.projectRef === "abcd...qrst", "expected masked project ref");
         assert(typeof grants.visibleCount === "number", "expected visible count");
         assert(Array.isArray(grants.firstThreeTitles), "expected first titles array");
         assert(typeof grants.humanityAiVisible === "boolean", "expected humanity visibility flag");
+        assert(deployment.app === "grant-os", "expected deployment app");
+        assert(typeof deployment.commit === "string" && deployment.commit.length > 0, "expected deployment commit");
+        assert(typeof deployment.versionSource === "string" && deployment.versionSource.length > 0, "expected deployment version source");
+        assert(typeof deployment.environment === "string" && deployment.environment.length > 0, "expected deployment environment");
+        assert(deployment.apiSurface === "v2.3A", "expected api surface version");
+        assert(Array.isArray(deployment.capabilities) && deployment.capabilities.includes("mcp_http_adapter"), "expected deployment capabilities");
       },
     },
     {

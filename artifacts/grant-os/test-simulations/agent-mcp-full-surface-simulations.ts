@@ -81,9 +81,17 @@ async function run() {
           arguments: { applicationId: "app-1", title: "Draft narrative outline" },
         });
         assert(result.status === 200, "expected success status");
-        const body = result.body as { dryRun?: boolean; content?: Array<{ json?: { data?: { dryRun?: boolean } } }> };
+        const body = result.body as {
+          dryRun?: boolean;
+          mutationPerformed?: boolean | null;
+          content?: Array<{ json?: { data?: { dryRun?: boolean; mutationPerformed?: boolean; wouldTouchRealDb?: boolean; targetPersistenceTables?: string[] } } }>;
+        };
         assert(body.dryRun === true, "expected top-level dryRun true");
+        assert(body.mutationPerformed === false, "expected top-level mutationPerformed false");
         assert(body.content?.[0]?.json?.data?.dryRun === true, "expected tool result dryRun true");
+        assert(body.content?.[0]?.json?.data?.mutationPerformed === false, "expected tool result mutationPerformed false");
+        assert(body.content?.[0]?.json?.data?.wouldTouchRealDb === true, "expected wouldTouchRealDb true for dry-run write");
+        assert(body.content?.[0]?.json?.data?.targetPersistenceTables?.includes("tasks"), "expected targetPersistenceTables to include tasks");
         assert(repository.snapshot().tasks.length === before, "dry-run should not mutate tasks");
       },
     },
@@ -122,7 +130,9 @@ async function run() {
           arguments: { target: "https://example.org" },
         });
         assert(result.status === 403, "expected forbidden status");
+        const blocked = result.body.blocked as boolean | undefined;
         const error = (result.body.error ?? {}) as { code?: string; message?: string };
+        assert(blocked === true, "expected blocked true");
         assert(error.code === "approval_required_or_not_enabled", "expected approval_required_or_not_enabled code");
         assert(typeof error.message === "string" && error.message.length > 0, "expected error message");
       },

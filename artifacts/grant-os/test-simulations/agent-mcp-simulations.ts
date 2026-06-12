@@ -44,6 +44,15 @@ async function run() {
           ok: true,
           grants: { visibleCount: 270, humanityAiVisible: true },
           auth: { mode: "authenticated", userAccessTokenPresent: true },
+          deployment: {
+            app: "grant-os",
+            commit: "c2869a6",
+            commitFull: "c2869a6ca769fd8f4aedcb1c8ecece3e56d02a73",
+            versionSource: "git",
+            environment: "preview",
+            apiSurface: "v2.3A",
+            capabilities: ["agent_api", "mcp_http_adapter", "safe_write_dry_run", "grant_match_generation"],
+          },
         },
       };
     },
@@ -126,6 +135,10 @@ async function run() {
         assert(result.body.ok === true, "expected ok doctor response");
         assert(forwardedCalls.at(-1)?.kind === "doctor", "expected doctor call to forward upstream");
         assert(!JSON.stringify(result.body).includes(userToken), "doctor response leaked token");
+        const deployment = result.body.deployment as { app?: string; apiSurface?: string; capabilities?: unknown[] };
+        assert(deployment.app === "grant-os", "expected deployment app");
+        assert(deployment.apiSurface === "v2.3A", "expected deployment api surface");
+        assert(Array.isArray(deployment.capabilities) && deployment.capabilities.includes("safe_write_dry_run"), "expected deployment capabilities");
       },
     },
     {
