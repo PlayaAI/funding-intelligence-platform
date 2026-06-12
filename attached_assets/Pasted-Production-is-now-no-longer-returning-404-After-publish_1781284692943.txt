@@ -1,0 +1,94 @@
+Production is now no longer returning 404. After publishing the Grant OS artifact config fix, the production domain returns:
+
+```txt
+curl -i https://grant-os.replit.app/api/mcp/doctor
+→ 500 Internal Server Error
+Content-Type: text/plain
+Internal Server Error
+```
+
+This is progress: production seems to be reaching the Grant OS server now, but `/api/mcp/doctor` is crashing in production.
+
+Please diagnose the 500 only.
+
+Do not change MCP behavior unless required to fix the production crash.
+Do not change RLS.
+Do not use service-role keys.
+Do not mutate data.
+Do not touch `artifacts/mockup-sandbox`.
+Do not add new features.
+Do not change secrets unless you identify a missing required production secret.
+Do not commit/push without approval.
+
+Please check production logs for the exact stack trace around:
+
+```txt
+GET /api/mcp/doctor
+```
+
+Then in Replit shell run:
+
+```bash
+cd ~/workspace
+
+git log --oneline -5
+cat artifacts/grant-os/.replit-artifact/artifact.toml
+cat artifacts/api-server/.replit-artifact/artifact.toml
+cat artifacts/grant-os/package.json | sed -n '1,160p'
+```
+
+Confirm production is now running Grant OS, not api-server.
+
+Then test locally with production-like env:
+
+```bash
+pnpm --filter @workspace/grant-os run build
+PORT=8080 NODE_ENV=production pnpm --filter @workspace/grant-os run start
+```
+
+In another shell:
+
+```bash
+curl -i http://localhost:8080/api/mcp/doctor
+curl -i http://localhost:8080/api/mcp/tools
+curl -i http://localhost:8080/
+```
+
+Expected:
+
+* `/api/mcp/doctor` returns 401 JSON missing_authorization
+* `/api/mcp/tools` returns 401 JSON missing_authorization
+* `/` returns Grant OS HTML
+
+If local production-like start works, compare local env vs deployment env.
+
+Check whether production deployment secrets include:
+
+```txt
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+SESSION_SECRET
+```
+
+Do not print secret values. Only report whether present/missing.
+
+Also inspect whether the server code expects browser-only `VITE_*` variables at runtime or if it correctly reads them server-side.
+
+Search for the crash source:
+
+```bash
+grep -R "mcp/doctor\|agent/doctor\|getDeployment\|deployment" -n artifacts/grant-os/src | head -100
+```
+
+Please report:
+
+1. exact production log stack trace for the 500
+2. whether production is now running Grant OS artifact
+3. whether local production-like start returns 401 JSON
+4. whether required production secrets are present/missing, without printing values
+5. exact root cause of the 500
+6. smallest safe fix needed
+7. files changed, if any
+8. validation results
+9. confirmation no RLS/service-role/data mutation changes
+10. whether safe to stage/commit/push
