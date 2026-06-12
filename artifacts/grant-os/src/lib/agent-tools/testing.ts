@@ -188,6 +188,47 @@ export function createInMemoryGrantOsRepository() {
     async listAgentNotes(filters) { return state.agentNotes.filter((note) => !filters?.relatedGrantId || note.related_grant_id === filters.relatedGrantId).filter((note) => !filters?.relatedFunderId || note.related_funder_id === filters.relatedFunderId).filter((note) => !filters?.relatedApplicationId || note.related_application_id === filters.relatedApplicationId).filter((note) => !filters?.relatedProjectId || note.related_project_id === filters.relatedProjectId); },
     async listAgentReports(filters) { return state.agentReports.filter((report) => !filters?.relatedGrantId || report.related_grant_id === filters.relatedGrantId).filter((report) => !filters?.relatedApplicationId || report.related_application_id === filters.relatedApplicationId).filter((report) => !filters?.relatedProjectId || report.related_project_id === filters.relatedProjectId); },
     async listGrantMatches(filters) { return state.grantMatches.filter((match) => !filters?.grantId || match.grant_id === filters.grantId).filter((match) => !filters?.projectId || match.project_id === filters.projectId); },
+    async getGrantMatch(id) { return state.grantMatches.find((match) => match.id === id) ?? null; },
+    async upsertGrantMatch(input) {
+      const existingIndex = state.grantMatches.findIndex((match) => match.project_id === input.project_id && match.grant_id === input.grant_id);
+      const timestamp = now();
+      const base = existingIndex >= 0 ? state.grantMatches[existingIndex] : undefined;
+      const row: GrantMatchWithRelations = {
+        id: base?.id ?? makeId("match", ++idCounter),
+        project_id: input.project_id,
+        grant_id: input.grant_id,
+        funder_id: input.funder_id ?? null,
+        match_score: input.match_score ?? 0,
+        match_tier: input.match_tier ?? "needs_review",
+        decision_label: input.decision_label ?? "needs_review",
+        readiness_score: input.readiness_score ?? 0,
+        urgency_score: input.urgency_score ?? 0,
+        evidence_score: input.evidence_score ?? 0,
+        deadline_status: input.deadline_status ?? "unknown",
+        score_breakdown: input.score_breakdown ?? {},
+        data_quality_flags: input.data_quality_flags ?? [],
+        fit_reasons: input.fit_reasons ?? [],
+        risks: input.risks ?? [],
+        missing_items: input.missing_items ?? [],
+        recommended_actions: input.recommended_actions ?? [],
+        status: input.status ?? "saved",
+        hidden_at: input.hidden_at ?? null,
+        saved_at: input.saved_at ?? timestamp,
+        dismissed_reason: input.dismissed_reason ?? null,
+        generated_by: input.generated_by ?? "agent_generated",
+        generated_at: input.generated_at ?? timestamp,
+        reviewed_by: input.reviewed_by ?? null,
+        reviewed_at: input.reviewed_at ?? null,
+        created_at: base?.created_at ?? timestamp,
+        updated_at: input.updated_at ?? timestamp,
+        project: state.projects.find((project) => project.id === input.project_id) ?? null,
+        grant: state.grants.find((grant) => grant.id === input.grant_id) ?? null,
+        funder: input.funder_id ? state.funders.find((funder) => funder.id === input.funder_id) ?? null : null,
+      };
+      if (existingIndex >= 0) state.grantMatches[existingIndex] = row;
+      else state.grantMatches.push(row);
+      return row;
+    },
     async saveGrantToShortlist(input) { const row = { id: makeId("shortlist", ++idCounter), ...input }; state.shortlistItems.push(row); return row as any; },
     async recordAudit(payload) { state.audits.push(payload); return { id: makeId("audit", ++idCounter), actor_source: "external_agent", action_type: "manual_entry", title: payload.tool_name, description: null, status: payload.status === "approval_required" ? "pending" : payload.status, related_project_id: null, related_grant_id: null, related_application_id: null, metadata: payload as any, created_by: payload.actor_id ?? null, created_at: payload.created_at } satisfies AgentActivityLogRow; },
     snapshot() { return JSON.parse(JSON.stringify(state)) as SeedState; },

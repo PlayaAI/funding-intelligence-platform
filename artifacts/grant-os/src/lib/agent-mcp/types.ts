@@ -1,3 +1,5 @@
+import type { PermissionLevel } from "../agent-tools/types";
+
 export type JsonRecord = Record<string, unknown>;
 
 export type McpAdapterHeaders = Record<string, string | string[] | undefined>;
@@ -10,7 +12,9 @@ export type McpAdapterResponse = {
 export type McpToolManifestEntry = {
   name: string;
   description: string;
-  permissionLevel: "read";
+  permissionLevel: PermissionLevel;
+  enabled: boolean;
+  defaultDryRun?: boolean;
   schemaSummary: string;
   exampleInput: JsonRecord;
 };

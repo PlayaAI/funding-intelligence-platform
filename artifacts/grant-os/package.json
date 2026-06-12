@@ -15,9 +15,10 @@
     "test:agent-auth": "tsx test-simulations/agent-auth-simulations.ts",
     "test:agent-api": "tsx test-simulations/agent-api-simulations.ts",
     "test:agent-mcp": "tsx test-simulations/agent-mcp-simulations.ts",
+    "test:agent-mcp-full": "tsx test-simulations/agent-mcp-full-surface-simulations.ts",
     "agent:tool": "tsx scripts/run-agent-tool.ts",
     "agent:doctor": "tsx scripts/agent-doctor.ts",
-    "validate": "pnpm run typecheck && pnpm run build && pnpm run test:simulations && pnpm run test:agent-tools && pnpm run test:agent-auth && pnpm run test:agent-api && pnpm run test:agent-mcp",
+    "validate": "pnpm run typecheck && pnpm run build && pnpm run test:simulations && pnpm run test:agent-tools && pnpm run test:agent-auth && pnpm run test:agent-api && pnpm run test:agent-mcp && pnpm run test:agent-mcp-full",
     "import:instrumentl-zips": "tsx ../../scripts/import-instrumentl-zips.ts"
   },
   "devDependencies": {

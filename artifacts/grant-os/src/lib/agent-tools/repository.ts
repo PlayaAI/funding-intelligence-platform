@@ -19,7 +19,7 @@ import {
 import { listAgentReports } from "../agentReportsService";
 import { getFunderByIdOrLegacy, listFunders } from "../fundersService";
 import { getGrantById, listGrants, updateGrant } from "../grantsService";
-import { listMatches } from "../matching/matchesService";
+import { getMatch, listMatches } from "../matching/matchesService";
 import {
   listAllPeerFundingRecords,
   listPeerFundingRecords,
@@ -54,6 +54,8 @@ import type {
   DocumentRow,
   FunderRow,
   GrantDbStatus,
+  GrantMatchInsert,
+  GrantMatchRow,
   GrantRow,
   Json,
   PeerFundingRecordRow,
@@ -119,6 +121,8 @@ export type GrantOsRepository = {
     relatedProjectId?: string;
   }): Promise<AgentReportRow[]>;
   listGrantMatches(filters?: { grantId?: string; projectId?: string }): Promise<GrantMatchWithRelations[]>;
+  getGrantMatch(id: string): Promise<GrantMatchWithRelations | null>;
+  upsertGrantMatch(input: GrantMatchInsert): Promise<GrantMatchWithRelations>;
   saveGrantToShortlist(input: {
     grant_id: string;
     project_id?: string | null;
@@ -142,6 +146,27 @@ export function createLiveGrantOsRepository(
   const agentSupabase = options.authContext
     ? createSupabaseClientForAgent(options.authContext)
     : undefined;
+
+  async function hydrateGrantMatch(match: GrantMatchRow): Promise<GrantMatchWithRelations> {
+    const [project, grant, funder] = await Promise.all([
+      listProjects().then((items) => items.find((item) => item.id === match.project_id) ?? null),
+      getGrantById(match.grant_id, agentSupabase),
+      match.funder_id ? getFunderByIdOrLegacy(match.funder_id) : Promise.resolve(null),
+    ]);
+    return {
+      ...match,
+      project,
+      grant,
+      funder,
+    };
+  }
+
+  async function requireAgentSupabase() {
+    if (!agentSupabase) {
+      throw new Error("Authenticated agent Supabase context is required for grant match persistence.");
+    }
+    return agentSupabase as any;
+  }
 
   return {
     listGrants: () => listGrants(undefined, agentSupabase),
@@ -207,6 +232,24 @@ export function createLiveGrantOsRepository(
         if (filters?.projectId && match.project_id !== filters.projectId) return false;
         return true;
       });
+    },
+    async getGrantMatch(id) {
+      if (agentSupabase) {
+        const db = await requireAgentSupabase();
+        const result = await db.from("grant_matches").select("*").eq("id", id).maybeSingle();
+        if (result.error) throw new Error(result.error.message);
+        if (!result.data) return null;
+        return hydrateGrantMatch(result.data as GrantMatchRow);
+      }
+      const match = await getMatch(id);
+      return match ? hydrateGrantMatch(match) : null;
+    },
+    async upsertGrantMatch(input) {
+      const db = await requireAgentSupabase();
+      const result = await db.from("grant_matches").upsert(input, { onConflict: "project_id,grant_id" }).select("*").single();
+      if (result.error) throw new Error(result.error.message);
+      if (!result.data) throw new Error("No grant match row returned from upsert.");
+      return hydrateGrantMatch(result.data as GrantMatchRow);
     },
     saveGrantToShortlist: (input) => upsertGrantShortlistItem(input),
     async recordAudit(payload) {

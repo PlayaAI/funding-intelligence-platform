@@ -3,6 +3,7 @@ import { createApplicationTools } from "./applicationsTools";
 import { createDocumentTools } from "./documentsTools";
 import { createFunderTools } from "./fundersTools";
 import { createGrantTools } from "./grantsTools";
+import { createMatchTools } from "./matchesTools";
 import { createMutationTools } from "./mutationsTools";
 import { createPeerTools } from "./peersTools";
 import { createProjectTools } from "./projectsTools";
@@ -26,6 +27,7 @@ export function buildToolDefinitions(repository: GrantOsRepository): Array<ToolD
     ...createApplicationTools(repository),
     ...createTaskTools(repository),
     ...createPeerTools(repository),
+    ...createMatchTools(repository),
     ...createReportTools(repository),
     ...createMutationTools(repository),
   ];
