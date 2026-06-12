@@ -18,13 +18,16 @@ localPort = 24429
 run = "pnpm --filter @workspace/grant-os run dev"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/grant-os", "run", "build" ]
-publicDir = "artifacts/grant-os/dist/public"
-serve = "static"
 
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/grant-os", "run", "build"]
+
+[services.production.run]
+args = ["pnpm", "--filter", "@workspace/grant-os", "run", "start"]
+
+[services.production.run.env]
+PORT = "8080"
+NODE_ENV = "production"
 
 [services.env]
 PORT = "24429"

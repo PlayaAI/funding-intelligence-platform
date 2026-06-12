@@ -1,0 +1,159 @@
+Production domain is still not serving the Grant OS MCP API.
+
+Current issue:
+
+```txt
+https://grant-os.replit.app/api/mcp/doctor
+→ 404 HTML
+Cannot GET /api/mcp/doctor
+```
+
+But the preview domain works correctly.
+
+The latest production logs showed:
+
+```txt
+artifact process started artifact=artifacts/api-server
+```
+
+That seems wrong. Production should be running Grant OS, not `artifacts/api-server`.
+
+Please diagnose and fix the Replit production deployment target.
+
+Important constraints:
+
+* Do not change MCP behavior unless required for deployment.
+* Do not change RLS.
+* Do not use service-role keys.
+* Do not mutate live data.
+* Do not touch `artifacts/mockup-sandbox`.
+* Do not add new features.
+* Do not change secrets.
+* Do not commit/push without approval.
+
+Current expected production behavior:
+
+```bash
+curl -i https://grant-os.replit.app/api/mcp/doctor
+```
+
+Should return:
+
+```txt
+401 JSON missing_authorization
+```
+
+Not:
+
+```txt
+404 HTML Cannot GET /api/mcp/doctor
+```
+
+Please check all of the following:
+
+```bash
+cd ~/workspace
+
+pwd
+git log --oneline -5
+cat .replit
+cat package.json | sed -n '1,140p'
+cat artifacts/grant-os/package.json | sed -n '1,160p'
+ls -la artifacts
+ls -la artifacts/grant-os
+ls -la artifacts/api-server
+```
+
+Then confirm which package actually owns these endpoints:
+
+```bash
+grep -R "api/mcp/doctor\|api/mcp/tools\|api/agent/doctor\|api/agent/tool" -n artifacts/grant-os artifacts/api-server . | head -80
+```
+
+Then test Grant OS production start locally:
+
+```bash
+pnpm --filter @workspace/grant-os run build
+PORT=8080 pnpm --filter @workspace/grant-os run start
+```
+
+In another shell:
+
+```bash
+curl -i http://localhost:8080/api/mcp/doctor
+curl -i http://localhost:8080/api/mcp/tools
+```
+
+Expected:
+
+* both return JSON 401 missing_authorization
+* no HTML
+* no 404
+
+Then test whether the root deployment start is wrong:
+
+```bash
+pnpm run build
+PORT=8080 pnpm run start
+```
+
+In another shell:
+
+```bash
+curl -i http://localhost:8080/api/mcp/doctor
+```
+
+If this returns 404, then root `pnpm run start` is the wrong deployment target.
+
+Please inspect why Replit production is choosing:
+
+```txt
+artifact=artifacts/api-server
+```
+
+even though `.replit` currently says:
+
+```toml
+[deployment]
+build = ["pnpm", "--filter", "@workspace/grant-os", "run", "build"]
+run = ["pnpm", "--filter", "@workspace/grant-os", "run", "start"]
+```
+
+Check whether any Replit config or package script is still pointing to `artifacts/api-server`, including:
+
+```bash
+grep -R "artifacts/api-server\|@workspace/api-server\|api-server\|dist/index.mjs" -n .replit package.json pnpm-workspace.yaml artifacts scripts . 2>/dev/null | head -120
+```
+
+Please determine if the fix is one of these:
+
+1. update `.replit` deployment config
+2. update root `package.json` build/start scripts to proxy to Grant OS
+3. remove/disable old api-server deployment target
+4. change Replit deployment type/settings
+5. recreate the deployment so it stops using cached `artifacts/api-server`
+
+If code change is required, prefer the smallest safe deployment-only fix. For example, if Replit insists on running root scripts, root scripts should route to Grant OS:
+
+```json
+{
+  "scripts": {
+    "build": "pnpm --filter @workspace/grant-os run build",
+    "start": "pnpm --filter @workspace/grant-os run start"
+  }
+}
+```
+
+But do not change that unless your diagnosis proves Replit production is using root scripts.
+
+Final report required:
+
+1. why production is starting `artifacts/api-server`
+2. what command Replit production is actually using
+3. whether `pnpm --filter @workspace/grant-os run start` works locally
+4. whether root `pnpm run start` is wrong
+5. exact minimal fix needed
+6. files changed, if any
+7. validation results
+8. confirmation no secrets/RLS/service-role/data mutation changes
+9. whether it is safe to stage/commit/push
