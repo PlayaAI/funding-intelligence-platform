@@ -73,6 +73,7 @@ function AuthLoadingScreen() {
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, loading, profileError, hasSession } = useAuth();
+  const [location] = useLocation();
 
   if (import.meta.env.DEV) {
     authDebug("ProtectedRoute", { loading, isAuthenticated, hasSession, profileError: !!profileError });
@@ -80,7 +81,10 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (loading) return <AuthLoadingScreen />;
   if (profileError) return <AuthProfileErrorScreen />;
-  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (!isAuthenticated) {
+    const next = encodeURIComponent(location || "/dashboard");
+    return <Redirect to={`/login?next=${next}`} />;
+  }
   return (
     <DashboardShell>
       <Suspense fallback={<AuthLoadingScreen />}>
@@ -134,12 +138,13 @@ const ProtectedNotFound = makeProtected(NotFound);
 function Router() {
   const [location] = useLocation();
   const isDashboard = location.startsWith("/dashboard");
-  const isLogin = location === "/login";
+  const isAuthRoute = location === "/login" || location === "/signup";
 
-  if (isLogin) {
+  if (isAuthRoute) {
     return (
       <Switch>
-        <Route path="/login" component={LoginPage} />
+        <Route path="/login" component={() => <LoginPage />} />
+        <Route path="/signup" component={() => <LoginPage mode="signup" />} />
       </Switch>
     );
   }

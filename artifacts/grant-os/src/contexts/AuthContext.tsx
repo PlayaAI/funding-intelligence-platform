@@ -20,6 +20,7 @@ interface AuthContextType {
   profileError: string | null;
   hasSession: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (redirectPath?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -66,6 +67,20 @@ function configErrorMessage(): string | null {
     return "VITE_SUPABASE_URL must be your project API URL (https://xxxx.supabase.co), not the dashboard URL.";
   }
   return null;
+}
+
+function getSafeRedirectPath(rawPath?: string | null): string {
+  if (!rawPath) return "/dashboard";
+  if (!rawPath.startsWith("/") || rawPath.startsWith("//")) return "/dashboard";
+  if (rawPath.startsWith("/api/")) return "/dashboard";
+  return rawPath;
+}
+
+function getGoogleOAuthRedirectUrl(redirectPath?: string): string {
+  if (typeof window === "undefined") return "http://localhost:5173/login";
+  const url = new URL("/login", window.location.origin);
+  url.searchParams.set("next", getSafeRedirectPath(redirectPath));
+  return url.toString();
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -271,6 +286,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async (redirectPath?: string) => {
+    authDebug("google oauth start", { redirectPath: redirectPath ?? "/dashboard" });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: getGoogleOAuthRedirectUrl(redirectPath),
+      },
+    });
+
+    if (!error) return;
+
+    const message = error.message.toLowerCase();
+    if (message.includes("provider is not enabled") || message.includes("unsupported provider")) {
+      throw new Error("Google sign-in is not configured yet. Enable the Google provider in Supabase Auth first.");
+    }
+    if (message.includes("redirect url") || message.includes("redirect_to")) {
+      throw new Error("Google sign-in redirect is not allowed yet. Add this domain to Supabase Auth redirect URLs.");
+    }
+    throw new Error(error.message || "Google sign-in could not be started.");
+  };
+
   const logout = async () => {
     authDebug("logout start");
     setLoading(true);
@@ -293,9 +329,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profileError,
       hasSession: !!session,
       login,
+      loginWithGoogle,
       logout,
     }),
-    [user, loading, profileError, session, login, logout]
+    [user, loading, profileError, session, login, loginWithGoogle, logout]
   );
 
   return (
