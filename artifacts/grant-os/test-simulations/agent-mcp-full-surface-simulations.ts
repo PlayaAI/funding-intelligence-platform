@@ -32,6 +32,28 @@ function authHeaders(token = userToken) {
   return { authorization: `Bearer ${token}` };
 }
 
+function validAgentMatchArguments(overrides: Record<string, unknown> = {}) {
+  return {
+    grantId: "grant-1",
+    projectId: "project-1",
+    fitScore: 9,
+    urgencyScore: 7,
+    effortScore: 4,
+    strategicValueScore: 9,
+    recommendation: "apply_now",
+    summary: "Strong agent-generated fit.",
+    whyItFits: "The grant aligns with AI and democracy work.",
+    whyItMightNotFit: "Eligibility still needs human confirmation.",
+    bestProjectAngle: "Position Playa AI as applied community AI infrastructure.",
+    strongestApplicationStory: "Field-tested AI tools for human connection.",
+    risks: ["Eligibility unclear"],
+    missingInfo: ["Confirmed eligibility"],
+    evidenceNeeded: ["Budget narrative"],
+    recommendedNextStep: "Review eligibility and approve save.",
+    ...overrides,
+  };
+}
+
 async function run() {
   const repository = createInMemoryGrantOsRepository();
   const adapter = createMcpAdapter({
@@ -148,6 +170,18 @@ async function run() {
       },
     },
     {
+      name: "V2.4 agent planning tools appear in manifest",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        const tools = (result.body.tools ?? []) as Array<{ name?: string; permissionLevel?: string; defaultDryRun?: boolean }>;
+        const saveAgentMatch = tools.find((entry) => entry.name === "save_agent_match");
+        const readiness = tools.find((entry) => entry.name === "generate_application_readiness_report");
+        assert(saveAgentMatch?.permissionLevel === "write_safe", "expected save_agent_match write_safe");
+        assert(saveAgentMatch?.defaultDryRun === true, "expected save_agent_match defaultDryRun true");
+        assert(readiness?.permissionLevel === "read", "expected readiness report read");
+      },
+    },
+    {
       name: "generate_grant_match returns structured output or clear not-implemented persistence response",
       fn: async () => {
         const result = await adapter.handleCall(authHeaders(), {
@@ -163,6 +197,58 @@ async function run() {
         assert(Array.isArray(data.strengths), "expected strengths array");
         assert(Array.isArray(data.risks), "expected risks array");
         assert(Array.isArray(data.missingInfo), "expected missingInfo array");
+      },
+    },
+    {
+      name: "save_agent_match dry-run returns planned grant_matches mutation",
+      fn: async () => {
+        const before = repository.snapshot().grantMatches.length;
+        const result = await adapter.handleCall(authHeaders(), {
+          name: "save_agent_match",
+          arguments: validAgentMatchArguments(),
+        });
+        assert(result.status === 200, "expected success status");
+        const body = result.body as {
+          dryRun?: boolean;
+          mutationPerformed?: boolean | null;
+          writeDisposition?: string;
+          content?: Array<{ json?: { data?: { plannedMutation?: { target?: { table?: string }; payloadSummary?: { source?: string } } } } }>;
+        };
+        assert(body.dryRun === true, "expected top-level dryRun true");
+        assert(body.mutationPerformed === false, "expected top-level mutationPerformed false");
+        assert(body.writeDisposition === "dry_run", "expected dry_run disposition");
+        assert(body.content?.[0]?.json?.data?.plannedMutation?.target?.table === "grant_matches", "expected grant_matches target");
+        assert(body.content?.[0]?.json?.data?.plannedMutation?.payloadSummary?.source === "agent_generated", "expected agent_generated summary");
+        assert(repository.snapshot().grantMatches.length === before, "dry-run should not mutate grant matches");
+      },
+    },
+    {
+      name: "save_agent_match rejects invalid score through MCP",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), {
+          name: "save_agent_match",
+          arguments: validAgentMatchArguments({ fitScore: 99 }),
+        });
+        assert(result.status === 400, "expected invalid input status");
+        assert(JSON.stringify(result.body).includes("invalid_input"), "expected invalid_input error");
+      },
+    },
+    {
+      name: "generate_application_readiness_report returns gaps and drive preview",
+      fn: async () => {
+        const before = repository.snapshot();
+        const result = await adapter.handleCall(authHeaders(), {
+          name: "generate_application_readiness_report",
+          arguments: { grantId: "grant-2", projectId: "project-2" },
+        });
+        const after = repository.snapshot();
+        assert(result.status === 200, "expected success status");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        assert(typeof data.readinessScore === "number", "expected readinessScore");
+        assert(Array.isArray(data.missingEvidence), "expected missingEvidence array");
+        assert(Array.isArray(data.suggestedTasks), "expected suggestedTasks array");
+        assert(JSON.stringify(data).includes("Playa AI Application Package"), "expected drive package preview");
+        assert(JSON.stringify({ ...before, audits: [] }) === JSON.stringify({ ...after, audits: [] }), "readiness report mutated records");
       },
     },
     {

@@ -50,6 +50,7 @@ export const HOSTED_AGENT_READ_TOOLS = [
   "get_deadline_report",
   "get_application_workload_report",
   "get_data_quality_report",
+  "generate_application_readiness_report",
 ] as const;
 
 export type HostedAgentReadTool = (typeof HOSTED_AGENT_READ_TOOLS)[number];

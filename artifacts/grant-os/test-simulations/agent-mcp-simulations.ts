@@ -32,6 +32,28 @@ function authHeaders(token = userToken) {
   return { authorization: `Bearer ${token}` };
 }
 
+function validAgentMatchArguments(overrides: Record<string, unknown> = {}) {
+  return {
+    grantId: "grant-1",
+    projectId: "project-1",
+    fitScore: 9,
+    urgencyScore: 7,
+    effortScore: 4,
+    strategicValueScore: 9,
+    recommendation: "apply_now",
+    summary: "Strong match.",
+    whyItFits: "Aligned with AI work.",
+    whyItMightNotFit: "Eligibility still needs review.",
+    bestProjectAngle: "Applied community AI.",
+    strongestApplicationStory: "Field-tested evidence.",
+    risks: [],
+    missingInfo: [],
+    evidenceNeeded: [],
+    recommendedNextStep: "Approve save.",
+    ...overrides,
+  };
+}
+
 async function run() {
   const repository = createInMemoryGrantOsRepository();
   const forwardedCalls: Array<{ kind: "doctor" }> = [];
@@ -103,6 +125,16 @@ async function run() {
       },
     },
     {
+      name: "tools list includes V2.4 agent planning tools",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        assert(result.status === 200, "expected success status");
+        const tools = (result.body.tools ?? []) as Array<{ name?: string; permissionLevel?: string; defaultDryRun?: boolean }>;
+        assert(tools.some((tool) => tool.name === "save_agent_match" && tool.permissionLevel === "write_safe" && tool.defaultDryRun === true), "expected save_agent_match write_safe tool");
+        assert(tools.some((tool) => tool.name === "generate_application_readiness_report" && tool.permissionLevel === "read"), "expected readiness report read tool");
+      },
+    },
+    {
       name: "archive_record returns approval_required_or_not_enabled",
       fn: async () => {
         const result = await adapter.handleCall(authHeaders(), {
@@ -125,6 +157,38 @@ async function run() {
         const content = (result.body.content ?? []) as Array<{ type?: string; json?: { data?: { items?: Array<{ title?: string }> } } }>;
         assert(content[0]?.type === "json", "expected json content item");
         assert(Array.isArray(content[0]?.json?.data?.items), "expected search results array");
+      },
+    },
+    {
+      name: "save_agent_match defaults to dry-run through MCP",
+      fn: async () => {
+        const before = repository.snapshot().grantMatches.length;
+        const result = await adapter.handleCall(authHeaders(), {
+          name: "save_agent_match",
+          arguments: validAgentMatchArguments(),
+        });
+        assert(result.status === 200, "expected success status");
+        const body = result.body as { dryRun?: boolean; mutationPerformed?: boolean | null; writeDisposition?: string };
+        assert(body.dryRun === true, "expected dryRun true");
+        assert(body.mutationPerformed === false, "expected mutationPerformed false");
+        assert(body.writeDisposition === "dry_run", "expected dry_run disposition");
+        assert(repository.snapshot().grantMatches.length === before, "dry-run should not mutate grant matches");
+      },
+    },
+    {
+      name: "readiness report succeeds through MCP without mutation",
+      fn: async () => {
+        const before = repository.snapshot();
+        const result = await adapter.handleCall(authHeaders(), {
+          name: "generate_application_readiness_report",
+          arguments: { grantId: "grant-1", projectId: "project-1" },
+        });
+        const after = repository.snapshot();
+        assert(result.status === 200, "expected success status");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: { drivePackagePreview?: { root?: string }; mutationPerformed?: boolean } } }>)[0]?.json?.data;
+        assert(data?.drivePackagePreview?.root?.includes("Playa AI Application Package"), "expected drive preview");
+        assert(data?.mutationPerformed === false, "expected no mutation");
+        assert(JSON.stringify({ ...before, audits: [] }) === JSON.stringify({ ...after, audits: [] }), "readiness report mutated repository records");
       },
     },
     {

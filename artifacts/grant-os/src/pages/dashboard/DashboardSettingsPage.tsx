@@ -1,4 +1,5 @@
 import { useAuth } from "@/contexts/AuthContext";
+import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,6 +125,12 @@ export default function DashboardSettingsPage() {
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
                 OpenClaw, Codex, or another operator can analyze exported Grant OS JSON outside the app, including documents with extracted text, then paste notes, reports, selected task suggestions, or document notes into Agent Import. No API keys are stored here.
               </div>
+              <Link href="/dashboard/settings/agents">
+                <Button size="sm" variant="outline" className="gap-2 text-xs">
+                  <Bot size={12} />
+                  Open Agent/MCP setup
+                </Button>
+              </Link>
               <pre className="rounded-md bg-slate-950 p-3 text-xs text-slate-100 overflow-auto">{`{
   "type": "document_note",
   "source": "openclaw",

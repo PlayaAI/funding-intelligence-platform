@@ -7,6 +7,28 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+function validAgentMatchInput(overrides: Record<string, unknown> = {}) {
+  return {
+    grantId: "grant-1",
+    projectId: "project-1",
+    fitScore: 9,
+    urgencyScore: 7,
+    effortScore: 4,
+    strategicValueScore: 9,
+    recommendation: "apply_now",
+    summary: "Strong agent-generated fit.",
+    whyItFits: "The grant aligns with AI and democracy work.",
+    whyItMightNotFit: "Eligibility still needs human confirmation.",
+    bestProjectAngle: "Position Playa AI as applied community AI infrastructure.",
+    strongestApplicationStory: "Field-tested AI tools for human connection.",
+    risks: ["Eligibility unclear"],
+    missingInfo: ["Confirmed eligibility"],
+    evidenceNeeded: ["Budget narrative"],
+    recommendedNextStep: "Review eligibility and approve save.",
+    ...overrides,
+  };
+}
+
 async function run() {
   const repo = createInMemoryGrantOsRepository();
   const registry = createToolRegistry({ repository: repo, actor: { type: "agent", id: "simulation-agent", source: "external_agent" } });
@@ -82,6 +104,100 @@ async function run() {
         assert(result.ok, "archive_record should return structured approval response");
         assert(result.data.requires_approval === true, "archive_record should require approval");
         assert(Array.isArray(result.data.proposed_action.risks) && result.data.proposed_action.risks.length > 0, "archive_record approval payload should include risks");
+      },
+    },
+    {
+      name: "save_agent_match appears in manifest as write_safe",
+      fn: async () => {
+        const tool = registry.listTools().find((item) => item.name === "save_agent_match");
+        assert(tool, "save_agent_match missing from manifest");
+        assert(tool.permissionLevel === "write_safe", "save_agent_match should be write_safe");
+        assert(tool.dryRunSupported === true, "save_agent_match should support dry-run");
+      },
+    },
+    {
+      name: "save_agent_match dry-run defaults true and does not mutate",
+      fn: async () => {
+        const before = repo.snapshot();
+        const result = await registry.execute("save_agent_match", validAgentMatchInput());
+        const after = repo.snapshot();
+        assert(result.ok, "save_agent_match dry-run should succeed");
+        assert(result.data.dryRun === true, "dryRun should default true");
+        assert(result.data.mutationPerformed === false, "dry-run should not mutate");
+        assert(result.data.writeDisposition === "dry_run", "expected dry_run disposition");
+        assert(result.data.plannedMutation.target.table === "grant_matches", "wrong planned target");
+        assert(JSON.stringify(before.grantMatches) === JSON.stringify(after.grantMatches), "dry-run mutated grant matches");
+      },
+    },
+    {
+      name: "save_agent_match rejects invalid scores",
+      fn: async () => {
+        const result = await registry.execute("save_agent_match", validAgentMatchInput({ fitScore: 11 }));
+        assert(result.ok === false, "invalid score should fail");
+        assert(result.error.code === "invalid_input", "expected invalid_input");
+      },
+    },
+    {
+      name: "save_agent_match rejects invalid recommendation",
+      fn: async () => {
+        const result = await registry.execute("save_agent_match", validAgentMatchInput({ recommendation: "apply_immediately" }));
+        assert(result.ok === false, "invalid recommendation should fail");
+        assert(result.error.code === "invalid_input", "expected invalid_input");
+      },
+    },
+    {
+      name: "save_agent_match output does not leak tokens",
+      fn: async () => {
+        const token = "ey.fake.user.token";
+        const result = await registry.execute("save_agent_match", validAgentMatchInput({ sourceNotes: "placeholder only" }));
+        assert(result.ok, "save_agent_match should succeed");
+        assert(!JSON.stringify(result).includes(token), "output leaked token");
+      },
+    },
+    {
+      name: "generate_application_readiness_report appears in manifest as read",
+      fn: async () => {
+        const tool = registry.listTools().find((item) => item.name === "generate_application_readiness_report");
+        assert(tool, "generate_application_readiness_report missing from manifest");
+        assert(tool.permissionLevel === "read", "readiness report should be read-only");
+      },
+    },
+    {
+      name: "generate_application_readiness_report returns required fields and drive preview",
+      fn: async () => {
+        const before = repo.snapshot();
+        const result = await registry.execute("generate_application_readiness_report", { grantId: "grant-1", projectId: "project-1" });
+        const after = repo.snapshot();
+        assert(result.ok, "readiness report should succeed");
+        assert(typeof result.data.readinessScore === "number", "missing readinessScore");
+        assert(["apply_now", "prepare", "watch", "skip", "needs_confirmation"].includes(result.data.recommendation), "invalid recommendation");
+        assert(Array.isArray(result.data.missingEvidence), "missing missingEvidence");
+        assert(Array.isArray(result.data.missingDocuments), "missing missingDocuments");
+        assert(Array.isArray(result.data.suggestedTasks), "missing suggestedTasks");
+        assert(result.data.drivePackagePreview.root.includes("Playa AI Application Package"), "missing drive package preview");
+        assert(result.data.mutationPerformed === false, "readiness report should not mutate");
+        assert(JSON.stringify({ ...before, audits: [] }) === JSON.stringify({ ...after, audits: [] }), "readiness report mutated repository records");
+      },
+    },
+    {
+      name: "generate_application_readiness_report handles no proof documents applications",
+      fn: async () => {
+        const result = await registry.execute("generate_application_readiness_report", { grantId: "grant-2", projectId: "project-2" });
+        assert(result.ok, "sparse readiness report should succeed");
+        assert(result.data.existingApplicationStatus === null, "expected no application status");
+        assert(result.data.missingEvidence.length > 0, "expected missing evidence gap");
+        assert(result.data.applicationRisks.length > 0, "expected application risk");
+      },
+    },
+    {
+      name: "agent V2.4 tools use in-memory simulations without service-role path",
+      fn: async () => {
+        const before = repo.snapshot();
+        await registry.execute("save_agent_match", validAgentMatchInput({ recommendation: "prepare" }));
+        await registry.execute("generate_application_readiness_report", { grantId: "grant-1", projectId: "project-1" });
+        const after = repo.snapshot();
+        assert(JSON.stringify(before.grantMatches) === JSON.stringify(after.grantMatches), "simulation touched grant_matches");
+        assert(!JSON.stringify(repo.auditTrail()).includes("service_role"), "service-role path appeared in audit");
       },
     },
     {

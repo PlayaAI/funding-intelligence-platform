@@ -60,6 +60,8 @@ export const MCP_ENABLED_TOOL_NAMES = new Set<string>([
   "get_grant_match",
   "generate_grant_match",
   "save_grant_match",
+  "save_agent_match",
+  "generate_application_readiness_report",
 ]);
 
 const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput: JsonRecord }> = {
@@ -109,6 +111,8 @@ const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput: JsonRe
   get_grant_match: { schemaSummary: "{ matchId: string }", exampleInput: { matchId: "match-1" } },
   generate_grant_match: { schemaSummary: "{ grantId: string, projectId: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", dryRun: true } },
   save_grant_match: { schemaSummary: "{ grantId: string, projectId: string, fitScore: number, priorityScore: number, matchSummary: string, strengths: string[], risks: string[], missingInfo: string[], recommendedNextStep: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", fitScore: 8, priorityScore: 7, matchSummary: "Strong alignment with some eligibility questions.", strengths: ["AI focus overlap"], risks: ["Need budget details"], missingInfo: ["Eligibility confirmation"], recommendedNextStep: "Review and save for follow-up", dryRun: true } },
+  save_agent_match: { schemaSummary: "{ grantId: string, projectId: string, fitScore: 1-10, urgencyScore: 1-10, effortScore: 1-10, strategicValueScore: 1-10, recommendation: string, summary: string, whyItFits: string, whyItMightNotFit: string, bestProjectAngle: string, strongestApplicationStory: string, risks: string[], missingInfo: string[], evidenceNeeded: string[], recommendedNextStep: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", fitScore: 9, urgencyScore: 7, effortScore: 4, strategicValueScore: 9, recommendation: "apply_now", summary: "Strong agent-generated fit.", whyItFits: "The grant aligns with AI and community impact.", whyItMightNotFit: "Eligibility still needs confirmation.", bestProjectAngle: "Applied community AI infrastructure.", strongestApplicationStory: "Field-tested AI tools for human connection.", risks: ["Eligibility unclear"], missingInfo: ["Confirmed eligibility"], evidenceNeeded: ["Budget narrative"], recommendedNextStep: "Review eligibility and approve save.", dryRun: true } },
+  generate_application_readiness_report: { schemaSummary: "{ grantId: string, projectId: string, applicationId?: string, includeSuggestedTasks?: boolean, includeDrivePackagePreview?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", includeSuggestedTasks: true, includeDrivePackagePreview: true } },
 };
 
 export function buildMcpToolManifest(tools: ToolMetadata[]): McpToolManifestEntry[] {

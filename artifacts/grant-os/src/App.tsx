@@ -49,6 +49,7 @@ const DashboardDocumentsPage = lazy(() => import("@/pages/dashboard/DashboardDoc
 const DashboardDocumentDetailPage = lazy(() => import("@/pages/dashboard/DashboardDocumentDetailPage"));
 const DashboardReportsPage = lazy(() => import("@/pages/dashboard/DashboardReportsPage"));
 const DashboardSettingsPage = lazy(() => import("@/pages/dashboard/DashboardSettingsPage"));
+const DashboardAgentSettingsPage = lazy(() => import("@/pages/dashboard/DashboardAgentSettingsPage"));
 const DashboardAgentReportsPage = lazy(() => import("@/pages/dashboard/DashboardAgentReportsPage"));
 const DashboardAgentActivityPage = lazy(() => import("@/pages/dashboard/DashboardAgentActivityPage"));
 const DashboardAgentImportPage = lazy(() => import("@/pages/dashboard/DashboardAgentImportPage"));
@@ -130,6 +131,7 @@ const ProtectedDashboardDocuments = makeProtected(DashboardDocumentsPage);
 const ProtectedDashboardDocumentDetail = makeProtected(DashboardDocumentDetailPage);
 const ProtectedDashboardReports = makeProtected(DashboardReportsPage);
 const ProtectedDashboardSettings = makeProtected(DashboardSettingsPage);
+const ProtectedDashboardAgentSettings = makeProtected(DashboardAgentSettingsPage);
 const ProtectedDashboardAgentReports = makeProtected(DashboardAgentReportsPage);
 const ProtectedDashboardAgentActivity = makeProtected(DashboardAgentActivityPage);
 const ProtectedDashboardAgentImport = makeProtected(DashboardAgentImportPage);
@@ -181,6 +183,7 @@ function Router() {
           <Route path="/dashboard/agent-reports" component={ProtectedDashboardAgentReports} />
           <Route path="/dashboard/agent-activity" component={ProtectedDashboardAgentActivity} />
           <Route path="/dashboard/agent-import" component={ProtectedDashboardAgentImport} />
+          <Route path="/dashboard/settings/agents" component={ProtectedDashboardAgentSettings} />
           <Route path="/dashboard/settings" component={ProtectedDashboardSettings} />
           <Route component={ProtectedNotFound} />
         </Switch>
