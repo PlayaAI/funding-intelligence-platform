@@ -50,6 +50,7 @@ const DashboardDocumentDetailPage = lazy(() => import("@/pages/dashboard/Dashboa
 const DashboardReportsPage = lazy(() => import("@/pages/dashboard/DashboardReportsPage"));
 const DashboardSettingsPage = lazy(() => import("@/pages/dashboard/DashboardSettingsPage"));
 const DashboardAgentSettingsPage = lazy(() => import("@/pages/dashboard/DashboardAgentSettingsPage"));
+const DashboardAgentKnowledgePage = lazy(() => import("@/pages/dashboard/DashboardAgentKnowledgePage"));
 const DashboardAgentReportsPage = lazy(() => import("@/pages/dashboard/DashboardAgentReportsPage"));
 const DashboardAgentActivityPage = lazy(() => import("@/pages/dashboard/DashboardAgentActivityPage"));
 const DashboardAgentImportPage = lazy(() => import("@/pages/dashboard/DashboardAgentImportPage"));
@@ -132,6 +133,7 @@ const ProtectedDashboardDocumentDetail = makeProtected(DashboardDocumentDetailPa
 const ProtectedDashboardReports = makeProtected(DashboardReportsPage);
 const ProtectedDashboardSettings = makeProtected(DashboardSettingsPage);
 const ProtectedDashboardAgentSettings = makeProtected(DashboardAgentSettingsPage);
+const ProtectedDashboardAgentKnowledge = makeProtected(DashboardAgentKnowledgePage);
 const ProtectedDashboardAgentReports = makeProtected(DashboardAgentReportsPage);
 const ProtectedDashboardAgentActivity = makeProtected(DashboardAgentActivityPage);
 const ProtectedDashboardAgentImport = makeProtected(DashboardAgentImportPage);
@@ -180,6 +182,7 @@ function Router() {
           <Route path="/dashboard/documents/:id" component={ProtectedDashboardDocumentDetail} />
           <Route path="/dashboard/documents" component={ProtectedDashboardDocuments} />
           <Route path="/dashboard/reports" component={ProtectedDashboardReports} />
+          <Route path="/dashboard/agent-knowledge" component={ProtectedDashboardAgentKnowledge} />
           <Route path="/dashboard/agent-reports" component={ProtectedDashboardAgentReports} />
           <Route path="/dashboard/agent-activity" component={ProtectedDashboardAgentActivity} />
           <Route path="/dashboard/agent-import" component={ProtectedDashboardAgentImport} />
