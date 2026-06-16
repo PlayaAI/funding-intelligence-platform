@@ -11,6 +11,8 @@ export interface AuthUser {
   email: string;
   role: AppRole;
   initials: string;
+  access_status: "pending" | "approved" | "rejected" | "disabled";
+  auth_provider: string;
 }
 
 interface AuthContextType {
@@ -43,12 +45,14 @@ function initialsFrom(name: string | null, email: string): string {
 }
 
 function mapProfileToUser(
-  profile: { id: string; email: string; full_name: string | null; role: string },
+  profile: { id: string; email: string; full_name: string | null; role: string; access_status?: string; auth_provider?: string },
   fallbackEmail: string
 ): AuthUser {
   const role = isAppRole(profile.role) ? profile.role : "Viewer";
   const email = profile.email || fallbackEmail;
   const name = profile.full_name?.trim() || email;
+  const access_status = (profile.access_status as AuthUser["access_status"]) || "approved"; // default for backwards compat
+  const auth_provider = profile.auth_provider || "email";
 
   return {
     id: profile.id,
@@ -56,6 +60,8 @@ function mapProfileToUser(
     email,
     role,
     initials: initialsFrom(profile.full_name, email),
+    access_status,
+    auth_provider,
   };
 }
 

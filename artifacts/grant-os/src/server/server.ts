@@ -112,6 +112,133 @@ async function getAuthenticatedProfile(request: IncomingMessage, useServiceRole:
   return { status: 200, body: { ok: true, user: userData.user, profile } };
 }
 
+async function handleAdminUsers(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  if (!url.pathname.startsWith("/api/admin/users")) return false;
+
+  const hasServiceRole = Boolean(supabaseServiceRoleKey);
+  const authResult = await getAuthenticatedProfile(request, hasServiceRole);
+  if (!authResult.body.ok || !("profile" in authResult.body)) {
+    sendJson(response, authResult.status, authResult.body);
+    return true;
+  }
+
+  const profile = authResult.body.profile as { role?: string; access_status?: string };
+  if (profile.role !== "Admin") {
+    sendJson(response, 403, {
+      ok: false,
+      error: { code: "admin_required", message: "Only admins can perform this action." },
+    });
+    return true;
+  }
+
+  const adminClient = createClient(supabaseUrl, hasServiceRole ? supabaseServiceRoleKey : supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    ...(hasServiceRole ? {} : { global: { headers: { Authorization: `Bearer ${bearerTokenFrom(request)}` } } }),
+  });
+
+  if (request.method === "GET" && url.pathname === "/api/admin/users") {
+    // GET all profiles
+    const { data, error } = await adminClient.from("profiles").select("*").order("created_at", { ascending: false });
+    if (error) {
+      sendJson(response, 500, { ok: false, error: { code: "fetch_error", message: error.message } });
+      return true;
+    }
+    sendJson(response, 200, { ok: true, users: data });
+    return true;
+  }
+
+  if (request.method === "POST") {
+    const action = url.pathname.split("/").pop();
+    const body = await readJsonBody(request);
+    if (!isRecord(body) || typeof body.userId !== "string") {
+      sendJson(response, 400, { ok: false, error: { code: "invalid_body", message: "Request body must include userId." } });
+      return true;
+    }
+
+    const userId = body.userId;
+
+    if (action === "delete") {
+      if (!hasServiceRole) {
+        sendJson(response, 501, { ok: false, error: { code: "service_role_required", message: "Deleting users requires the SUPABASE_SERVICE_ROLE_KEY." } });
+        return true;
+      }
+      
+      // Prevent deleting the only admin
+      const { data: admins } = await adminClient.from("profiles").select("id").eq("role", "Admin").eq("access_status", "approved");
+      if (admins && admins.length === 1 && admins[0].id === userId) {
+        sendJson(response, 403, { ok: false, error: { code: "cannot_delete_last_admin", message: "Cannot delete the last approved admin." } });
+        return true;
+      }
+
+      const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
+      if (deleteError) {
+        sendJson(response, 500, { ok: false, error: { code: "delete_failed", message: deleteError.message } });
+        return true;
+      }
+      sendJson(response, 200, { ok: true, message: "User deleted successfully." });
+      return true;
+    }
+
+    const updates: Record<string, unknown> = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (action === "approve") {
+      updates.access_status = "approved";
+      updates.approved_at = new Date().toISOString();
+      updates.approved_by = authResult.body.user?.id;
+    } else if (action === "reject") {
+      updates.access_status = "rejected";
+      updates.rejected_at = new Date().toISOString();
+      updates.rejected_by = authResult.body.user?.id;
+    } else if (action === "disable") {
+      // Prevent disabling the only admin
+      const { data: admins } = await adminClient.from("profiles").select("id").eq("role", "Admin").eq("access_status", "approved");
+      if (admins && admins.length === 1 && admins[0].id === userId) {
+        sendJson(response, 403, { ok: false, error: { code: "cannot_disable_last_admin", message: "Cannot disable the last approved admin." } });
+        return true;
+      }
+      updates.access_status = "disabled";
+      updates.disabled_at = new Date().toISOString();
+      updates.disabled_by = authResult.body.user?.id;
+    } else if (action === "enable") {
+      updates.access_status = "approved";
+      updates.approved_at = new Date().toISOString();
+      updates.approved_by = authResult.body.user?.id;
+    } else if (action === "update-role") {
+      if (typeof body.role !== "string" || !["Admin", "Viewer", "Grant Lead", "Contributor"].includes(body.role)) {
+        sendJson(response, 400, { ok: false, error: { code: "invalid_role", message: "Invalid role specified." } });
+        return true;
+      }
+      // Prevent demoting the only admin
+      if (body.role !== "Admin") {
+        const { data: admins } = await adminClient.from("profiles").select("id").eq("role", "Admin").eq("access_status", "approved");
+        if (admins && admins.length === 1 && admins[0].id === userId) {
+          sendJson(response, 403, { ok: false, error: { code: "cannot_demote_last_admin", message: "Cannot demote the last approved admin." } });
+          return true;
+        }
+      }
+      updates.role = body.role;
+    } else {
+      sendJson(response, 404, { ok: false, error: { code: "invalid_action", message: "Action not found." } });
+      return true;
+    }
+
+    const { error: updateError } = await adminClient.from("profiles").update(updates).eq("id", userId);
+    if (updateError) {
+      sendJson(response, 500, { ok: false, error: { code: "update_failed", message: updateError.message } });
+      return true;
+    }
+
+    sendJson(response, 200, { ok: true, message: `Action ${action} completed successfully.` });
+    return true;
+  }
+
+  sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Method not allowed." } });
+  return true;
+}
+
 async function handleTeamInvite(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   if (url.pathname !== "/api/team/invite") return false;
@@ -202,6 +329,9 @@ async function handleTeamInvite(request: IncomingMessage, response: ServerRespon
         email,
         full_name: name,
         role,
+        access_status: "approved",
+        approved_at: new Date().toISOString(),
+        approved_by: authResult.body.user?.id || null,
         updated_at: new Date().toISOString(),
       }, { onConflict: "id" });
 
@@ -275,6 +405,7 @@ async function serveStatic(request: IncomingMessage, response: ServerResponse) {
 
 async function handleApi(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  if (url.pathname.startsWith("/api/admin/users")) return handleAdminUsers(request, response);
   if (url.pathname.startsWith("/api/team/")) return handleTeamInvite(request, response);
   if (!url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/mcp/")) return false;
 

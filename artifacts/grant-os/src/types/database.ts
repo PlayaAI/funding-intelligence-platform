@@ -12,11 +12,22 @@ export type Json =
 
 export type AppRoleDb = "Admin" | "Grant Lead" | "Contributor" | "Viewer";
 
+export type AccessStatusDb = "pending" | "approved" | "rejected" | "disabled";
+
 export interface ProfileRow {
   id: string;
   email: string;
   full_name: string | null;
   role: AppRoleDb;
+  access_status: AccessStatusDb;
+  auth_provider: string;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  rejected_at?: string | null;
+  rejected_by?: string | null;
+  disabled_at?: string | null;
+  disabled_by?: string | null;
+  last_seen_at?: string | null;
   created_at: string;
   updated_at: string;
 }

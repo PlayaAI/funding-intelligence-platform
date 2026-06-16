@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Chrome } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -6,45 +6,62 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import AuthProfileErrorScreen from "@/components/auth/AuthProfileErrorScreen";
+import { supabase } from "@/lib/supabase";
 
-function getSafeNextPath(): string {
-  if (typeof window === "undefined") return "/dashboard";
-  const raw = new URLSearchParams(window.location.search).get("next");
-  if (!raw) return "/dashboard";
-  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/api/")) return "/dashboard";
-  return raw;
-}
-
-export default function LoginPage() {
-  const { login, loginWithGoogle, isAuthenticated, loading, profileError, hasSession } = useAuth();
+export default function SignupPage() {
+  const { loginWithGoogle, isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const nextPath = useMemo(() => getSafeNextPath(), []);
+  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      navigate(nextPath);
+      navigate("/dashboard");
     }
-  }, [loading, isAuthenticated, navigate, nextPath]);
+  }, [loading, isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      setError("Please enter email and password.");
+    if (!fullName || !email || !password || !confirmPassword) {
+      setError("Please fill in all fields.");
       return;
     }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
+
     try {
-      await login(email, password);
-      navigate(nextPath);
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
+        },
+      });
+
+      if (signUpError) throw signUpError;
+      
+      if (data.user) {
+        setSuccess(true);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
+      setError(err instanceof Error ? err.message : "Signup failed. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -54,7 +71,7 @@ export default function LoginPage() {
     setGoogleSubmitting(true);
     setError("");
     try {
-      await loginWithGoogle(nextPath);
+      await loginWithGoogle("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google sign-in could not be started.");
       setGoogleSubmitting(false);
@@ -69,8 +86,26 @@ export default function LoginPage() {
     );
   }
 
-  if (hasSession && profileError) {
-    return <AuthProfileErrorScreen />;
+  if (success) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-sm space-y-6 text-center">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle>Request Submitted</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-slate-600 mb-6">
+                Your access request has been submitted. An admin must approve your account before you can use the dashboard.
+              </p>
+              <Button asChild className="w-full">
+                <Link href="/login">Return to login</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -78,21 +113,21 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Grant OS</h1>
-          <p className="text-sm text-slate-500">Sign in to your dashboard</p>
+          <p className="text-sm text-slate-500">Request access</p>
         </div>
 
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="pb-4">
-            <CardTitle className="text-base">Sign in</CardTitle>
+            <CardTitle className="text-base">Sign up</CardTitle>
             <CardDescription className="text-xs">
-              Use the email and password from your Supabase account, or continue with Google if your workspace has it enabled.
+              Create an account to request access to this workspace.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <Button type="button" variant="outline" className="w-full gap-2" onClick={() => void handleGoogleSignIn()} disabled={googleSubmitting || submitting}>
                 <Chrome size={16} />
-                {googleSubmitting ? "Redirecting to Google…" : "Continue with Google"}
+                {googleSubmitting ? "Redirecting…" : "Sign up with Google"}
               </Button>
 
               <div className="relative">
@@ -106,6 +141,18 @@ export default function LoginPage() {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-1.5">
+                  <Label htmlFor="fullName" className="text-xs font-medium">Full Name</Label>
+                  <Input
+                    id="fullName"
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Jane Doe"
+                    className="text-sm"
+                    autoComplete="name"
+                  />
+                </div>
+                <div className="space-y-1.5">
                   <Label htmlFor="email" className="text-xs font-medium">Email</Label>
                   <Input
                     id="email"
@@ -118,25 +165,34 @@ export default function LoginPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password" className="text-xs font-medium">Password</Label>
-                    <Link href="/forgot-password" className="text-xs text-blue-600 hover:underline">Forgot password?</Link>
-                  </div>
+                  <Label htmlFor="password" className="text-xs font-medium">Password</Label>
                   <Input
                     id="password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Password"
+                    placeholder="Minimum 8 characters"
                     className="text-sm"
-                    autoComplete="current-password"
+                    autoComplete="new-password"
                   />
                 </div>
-                {(error || (!hasSession && profileError)) && (
-                  <p className="text-xs text-red-600">{error || profileError}</p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="confirmPassword" className="text-xs font-medium">Confirm Password</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm password"
+                    className="text-sm"
+                    autoComplete="new-password"
+                  />
+                </div>
+                {error && (
+                  <p className="text-xs text-red-600">{error}</p>
                 )}
                 <Button type="submit" className="w-full" disabled={submitting || googleSubmitting}>
-                  {submitting ? "Signing in…" : "Sign in"}
+                  {submitting ? "Submitting request…" : "Request access"}
                 </Button>
               </form>
             </div>
@@ -144,7 +200,7 @@ export default function LoginPage() {
         </Card>
 
         <p className="text-xs text-slate-500 text-center">
-          Don't have an account? <Link href="/signup" className="text-blue-600 hover:underline">Request access</Link>
+          Already have an account? <Link href="/login" className="text-blue-600 hover:underline">Sign in</Link>
         </p>
       </div>
     </div>

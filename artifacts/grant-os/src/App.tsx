@@ -20,6 +20,11 @@ import ContactPage from "@/pages/ContactPage";
 import NotFound from "@/pages/not-found";
 
 import LoginPage from "@/pages/LoginPage";
+import SignupPage from "@/pages/SignupPage";
+import PendingApprovalPage from "@/pages/PendingApprovalPage";
+import AccessDeniedPage from "@/pages/AccessDeniedPage";
+import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
+import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import AuthProfileErrorScreen from "@/components/auth/AuthProfileErrorScreen";
 import { authDebug } from "@/lib/authDebug";
 import RouteErrorBoundary from "@/components/RouteErrorBoundary";
@@ -74,7 +79,7 @@ function AuthLoadingScreen() {
 }
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const { isAuthenticated, loading, profileError, hasSession } = useAuth();
+  const { user, isAuthenticated, loading, profileError, hasSession } = useAuth();
   const [location] = useLocation();
 
   if (import.meta.env.DEV) {
@@ -83,10 +88,19 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (loading) return <AuthLoadingScreen />;
   if (profileError) return <AuthProfileErrorScreen />;
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
     const next = encodeURIComponent(location || "/dashboard");
     return <Redirect to={`/login?next=${next}`} />;
   }
+
+  if (user.access_status === "pending") {
+    return <Redirect to="/pending-approval" />;
+  }
+
+  if (user.access_status === "rejected" || user.access_status === "disabled") {
+    return <Redirect to="/access-denied" />;
+  }
+
   return (
     <DashboardShell>
       <Suspense fallback={<AuthLoadingScreen />}>
@@ -142,13 +156,23 @@ const ProtectedNotFound = makeProtected(NotFound);
 function Router() {
   const [location] = useLocation();
   const isDashboard = location.startsWith("/dashboard");
-  const isAuthRoute = location === "/login" || location === "/signup";
+  const isAuthRoute = 
+    location === "/login" || 
+    location === "/signup" ||
+    location === "/forgot-password" ||
+    location === "/reset-password" ||
+    location === "/pending-approval" ||
+    location === "/access-denied";
 
   if (isAuthRoute) {
     return (
       <Switch>
         <Route path="/login" component={() => <LoginPage />} />
-        <Route path="/signup" component={() => <LoginPage mode="signup" />} />
+        <Route path="/signup" component={() => <SignupPage />} />
+        <Route path="/forgot-password" component={() => <ForgotPasswordPage />} />
+        <Route path="/reset-password" component={() => <ResetPasswordPage />} />
+        <Route path="/pending-approval" component={() => <PendingApprovalPage />} />
+        <Route path="/access-denied" component={() => <AccessDeniedPage />} />
       </Switch>
     );
   }
