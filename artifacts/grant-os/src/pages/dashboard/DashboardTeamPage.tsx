@@ -1,24 +1,107 @@
 import { MoreHorizontal, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
-import { useProfiles } from "@/hooks/useProfiles";
+import { PROFILES_QUERY_KEY, useProfiles } from "@/hooks/useProfiles";
+import { supabase } from "@/lib/supabase";
+
+type InviteRole = "Admin" | "Viewer";
 
 export default function DashboardTeamPage() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const profilesQuery = useProfiles();
   const profiles = profilesQuery.data ?? [];
   const collaboratorsCount = 0;
+  const isAdmin = user?.role === "Admin";
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteName, setInviteName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<InviteRole>("Viewer");
+  const [sendingInvite, setSendingInvite] = useState(false);
 
   const placeholder = (title: string) =>
     toast({ title, description: "Team invite workflow will be connected in a later phase." });
+
+  async function handleInviteSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = inviteName.trim();
+    const trimmedEmail = inviteEmail.trim().toLowerCase();
+
+    if (!isAdmin) {
+      toast({ title: "Only admins can invite teammates.", variant: "destructive" });
+      return;
+    }
+    if (!trimmedName) {
+      toast({ title: "Name is required.", variant: "destructive" });
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      toast({ title: "Enter a valid email address.", variant: "destructive" });
+      return;
+    }
+
+    setSendingInvite(true);
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session?.access_token) throw new Error("Sign in again before inviting a teammate.");
+
+      const response = await fetch("/api/team/invite", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          name: trimmedName,
+          email: trimmedEmail,
+          role: inviteRole,
+          projectAccess: "all",
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const message =
+          typeof result?.error?.message === "string"
+            ? result.error.message
+            : "Failed to invite teammate.";
+        throw new Error(message);
+      }
+
+      await queryClient.invalidateQueries({ queryKey: PROFILES_QUERY_KEY });
+      setInviteName("");
+      setInviteEmail("");
+      setInviteRole("Viewer");
+      setInviteOpen(false);
+      toast({ title: "Invite sent", description: `${trimmedEmail} has been added to the team list.` });
+    } catch (err) {
+      toast({
+        title: "Invite failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingInvite(false);
+    }
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">
@@ -27,18 +110,12 @@ export default function DashboardTeamPage() {
           <h1 className="text-xl font-bold text-slate-900">Team</h1>
           <p className="text-sm text-slate-500 mt-0.5">Manage workspace access and collaborator visibility.</p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" className="gap-2 text-xs">
-              <UserPlus size={14} />
-              Add Teammate
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => placeholder("Invite Core User")}>Invite Core User</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => placeholder("Add Collaborator")}>Add Collaborator</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {isAdmin ? (
+          <Button size="sm" className="gap-2 text-xs" onClick={() => setInviteOpen(true)}>
+            <UserPlus size={14} />
+            Add Teammate
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -108,6 +185,64 @@ export default function DashboardTeamPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add teammate</DialogTitle>
+            <DialogDescription>Invite a core user with access to all projects.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleInviteSubmit} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="teammate-name" className="text-xs">Name</Label>
+                <Input
+                  id="teammate-name"
+                  value={inviteName}
+                  onChange={(event) => setInviteName(event.target.value)}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="teammate-email" className="text-xs">Email</Label>
+                <Input
+                  id="teammate-email"
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(event) => setInviteEmail(event.target.value)}
+                  className="h-9"
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Role</Label>
+                <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as InviteRole)}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="Viewer">Viewer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Project access</Label>
+                <Input value="All projects" readOnly className="h-9 bg-slate-50" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setInviteOpen(false)} disabled={sendingInvite}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={sendingInvite}>
+                {sendingInvite ? "Sending..." : "Send invite"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

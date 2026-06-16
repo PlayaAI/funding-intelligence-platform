@@ -65,3 +65,18 @@ export async function listProfiles(): Promise<ProfileRow[]> {
   if (error) throw new Error(profileFetchErrorMessage(error));
   return (data ?? []) as ProfileRow[];
 }
+
+export async function updateOwnProfile(values: { userId: string; fullName: string | null }): Promise<ProfileRow> {
+  const { data, error } = await db
+    .from("profiles")
+    .update({
+      full_name: values.fullName,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", values.userId)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(profileFetchErrorMessage(error));
+  return data as ProfileRow;
+}

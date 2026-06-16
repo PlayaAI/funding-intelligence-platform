@@ -22,6 +22,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (redirectPath?: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -321,6 +322,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshUser = async () => {
+    const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+    if (error) throw new Error(error.message);
+    await loadUserFromSession(currentSession);
+  };
+
   const ctxValue = useMemo<AuthContextType>(
     () => ({
       user,
@@ -331,8 +338,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       loginWithGoogle,
       logout,
+      refreshUser,
     }),
-    [user, loading, profileError, session, login, loginWithGoogle, logout]
+    [user, loading, profileError, session, login, loginWithGoogle, logout, refreshUser]
   );
 
   return (

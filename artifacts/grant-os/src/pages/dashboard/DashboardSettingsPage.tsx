@@ -1,19 +1,120 @@
+import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
+import { updateOwnProfile } from "@/lib/profilesService";
 import { Bot, Building2, Link2, Lock, Save, UserCircle } from "lucide-react";
 
 export default function DashboardSettingsPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const [name, setName] = useState(user?.name ?? "");
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  useEffect(() => {
+    setName(user?.name ?? "");
+  }, [user?.name]);
 
   const placeholder = (title: string) =>
     toast({ title, description: "This setting is a placeholder for a later phase." });
+
+  async function handleAccountSave() {
+    if (!user) return;
+    setSavingAccount(true);
+    try {
+      await updateOwnProfile({
+        userId: user.id,
+        fullName: name.trim() || null,
+      });
+      await refreshUser();
+      toast({
+        title: "Account saved",
+        description: "Name saved. Timezone remains workspace default because profiles has no timezone field.",
+      });
+    } catch (err) {
+      toast({
+        title: "Failed to save account",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingAccount(false);
+    }
+  }
+
+  async function handleOpenPasswordDialog() {
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) throw error;
+
+      const providers = data.user?.identities?.map((identity) => identity.provider).filter(Boolean) ?? [];
+      const googleOnly = providers.length > 0 && providers.every((provider) => provider === "google");
+      if (googleOnly) {
+        toast({
+          title: "Password changes are only available for email/password accounts.",
+          description: "Google accounts should manage password through Google.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setPasswordDialogOpen(true);
+    } catch (err) {
+      toast({
+        title: "Unable to check account provider",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function handlePasswordSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newPassword.length < 8) {
+      toast({ title: "Password must be at least 8 characters.", variant: "destructive" });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({ title: "Passwords do not match.", variant: "destructive" });
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordDialogOpen(false);
+      toast({ title: "Password updated." });
+    } catch (err) {
+      toast({
+        title: "Failed to update password",
+        description: err instanceof Error ? err.message : "Supabase rejected the password update.",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingPassword(false);
+    }
+  }
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-5">
@@ -40,7 +141,7 @@ export default function DashboardSettingsPage() {
             <CardContent className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-500">Name</Label>
-                <Input value={user?.name ?? ""} readOnly className="h-9 bg-slate-50" />
+                <Input value={name} onChange={(event) => setName(event.target.value)} className="h-9" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-500">Email</Label>
@@ -53,6 +154,13 @@ export default function DashboardSettingsPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-500">Timezone</Label>
                 <Input value="Workspace default" readOnly className="h-9 bg-slate-50" />
+                <p className="text-xs text-slate-500">Timezone persistence needs a profiles timezone column.</p>
+              </div>
+              <div className="md:col-span-2">
+                <Button size="sm" className="gap-2 text-xs" onClick={handleAccountSave} disabled={!user || savingAccount}>
+                  <Save size={12} />
+                  {savingAccount ? "Saving..." : "Save changes"}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -93,8 +201,8 @@ export default function DashboardSettingsPage() {
               <CardDescription className="text-xs">Password and MFA controls stay with Supabase Auth for now.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Change password and MFA management are placeholders in V0.7.2.</div>
-              <Button size="sm" variant="outline" className="text-xs" onClick={() => placeholder("Change password")}>Change password</Button>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Password changes are available for email/password accounts. MFA is not implemented yet.</div>
+              <Button size="sm" variant="outline" className="text-xs" onClick={handleOpenPasswordDialog}>Change password</Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -145,6 +253,47 @@ export default function DashboardSettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change password</DialogTitle>
+            <DialogDescription>Set a new password for this email/password account.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-password" className="text-xs">New password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                autoComplete="new-password"
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="confirm-password" className="text-xs">Confirm new password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                autoComplete="new-password"
+                className="h-9"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPasswordDialogOpen(false)} disabled={updatingPassword}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updatingPassword}>
+                {updatingPassword ? "Updating..." : "Update password"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

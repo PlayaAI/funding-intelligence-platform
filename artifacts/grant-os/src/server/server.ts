@@ -2,6 +2,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createClient } from "@supabase/supabase-js";
 import { createAgentApi } from "../lib/agent-api/agentApi";
 import { createMcpAdapter } from "../lib/agent-mcp/adapter";
 
@@ -13,6 +14,17 @@ const port = Number(rawPort);
 const isProduction = process.env.NODE_ENV === "production";
 const agentApi = createAgentApi();
 const mcpAdapter = createMcpAdapter();
+const supabaseUrl = (
+  process.env.VITE_SUPABASE_URL ??
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  ""
+).trim();
+const supabaseAnonKey = (
+  process.env.VITE_SUPABASE_ANON_KEY ??
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+  ""
+).trim();
+const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
@@ -26,6 +38,16 @@ function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 
+function jsonError(status: number, code: string, message: string) {
+  return {
+    status,
+    body: {
+      ok: false,
+      error: { code, message },
+    },
+  };
+}
+
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
@@ -34,6 +56,180 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const raw = Buffer.concat(chunks).toString("utf8").trim();
   if (!raw) return {};
   return JSON.parse(raw) as unknown;
+}
+
+function bearerTokenFrom(request: IncomingMessage): string | null {
+  const header = request.headers.authorization;
+  if (!header) return null;
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  return match?.[1]?.trim() || null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+async function getAuthenticatedProfile(request: IncomingMessage, useServiceRole: boolean) {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return jsonError(500, "supabase_not_configured", "Supabase URL or anon key is not configured on the server.");
+  }
+
+  const accessToken = bearerTokenFrom(request);
+  if (!accessToken) {
+    return jsonError(401, "missing_token", "Sign in before inviting teammates.");
+  }
+
+  const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  const { data: userData, error: userError } = await authClient.auth.getUser(accessToken);
+  if (userError || !userData.user) {
+    return jsonError(401, "invalid_token", "Sign in again before inviting teammates.");
+  }
+
+  const profileClient = useServiceRole
+    ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      })
+    : createClient(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      });
+
+  const { data: profile, error: profileError } = await profileClient
+    .from("profiles")
+    .select("id,email,full_name,role")
+    .eq("id", userData.user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    return jsonError(403, "profile_unavailable", "Unable to verify your team role.");
+  }
+  if (!profile) {
+    return jsonError(403, "profile_missing", "No profile row exists for this user.");
+  }
+
+  return { status: 200, body: { ok: true, user: userData.user, profile } };
+}
+
+async function handleTeamInvite(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  if (url.pathname !== "/api/team/invite") return false;
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Use POST for teammate invites." } });
+    return true;
+  }
+
+  try {
+    const hasServiceRole = Boolean(supabaseServiceRoleKey);
+    const authResult = await getAuthenticatedProfile(request, hasServiceRole);
+    if (!authResult.body.ok || !("profile" in authResult.body)) {
+      sendJson(response, authResult.status, authResult.body);
+      return true;
+    }
+
+    const profile = authResult.body.profile as { role?: string };
+    if (profile.role !== "Admin") {
+      sendJson(response, 403, {
+        ok: false,
+        error: { code: "admin_required", message: "Only admins can invite teammates." },
+      });
+      return true;
+    }
+
+    if (!hasServiceRole) {
+      sendJson(response, 501, {
+        ok: false,
+        error: {
+          code: "admin_credentials_missing",
+          message: "Invite sending is not configured because server-side Supabase admin credentials are missing. Set SUPABASE_SERVICE_ROLE_KEY on the server.",
+        },
+      });
+      return true;
+    }
+
+    const body = await readJsonBody(request);
+    if (!isRecord(body)) {
+      sendJson(response, 400, { ok: false, error: { code: "invalid_body", message: "Invite request body must be a JSON object." } });
+      return true;
+    }
+
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const role = body.role === "Admin" || body.role === "Viewer" ? body.role : null;
+    const projectAccess = body.projectAccess === "all" ? "all" : null;
+
+    if (!name) {
+      sendJson(response, 400, { ok: false, error: { code: "name_required", message: "Name is required." } });
+      return true;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      sendJson(response, 400, { ok: false, error: { code: "invalid_email", message: "Enter a valid email address." } });
+      return true;
+    }
+    if (!role) {
+      sendJson(response, 400, { ok: false, error: { code: "invalid_role", message: "Role must be Admin or Viewer." } });
+      return true;
+    }
+    if (projectAccess !== "all") {
+      sendJson(response, 400, { ok: false, error: { code: "invalid_project_access", message: "Project access must be All projects." } });
+      return true;
+    }
+
+    const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+
+    const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
+      data: { full_name: name },
+    });
+    if (inviteError || !inviteData.user) {
+      sendJson(response, 400, {
+        ok: false,
+        error: {
+          code: "invite_failed",
+          message: inviteError?.message ?? "Supabase did not return an invited user.",
+        },
+      });
+      return true;
+    }
+
+    const { error: profileError } = await adminClient
+      .from("profiles")
+      .upsert({
+        id: inviteData.user.id,
+        email,
+        full_name: name,
+        role,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "id" });
+
+    if (profileError) {
+      sendJson(response, 500, {
+        ok: false,
+        error: { code: "profile_upsert_failed", message: profileError.message },
+      });
+      return true;
+    }
+
+    sendJson(response, 200, {
+      ok: true,
+      user: {
+        id: inviteData.user.id,
+        email,
+        role,
+        projectAccess: "all",
+      },
+    });
+    return true;
+  } catch {
+    sendJson(response, 500, {
+      ok: false,
+      error: { code: "internal_error", message: "Team invite request failed." },
+    });
+    return true;
+  }
 }
 
 function contentTypeFor(filePath: string): string {
@@ -79,6 +275,7 @@ async function serveStatic(request: IncomingMessage, response: ServerResponse) {
 
 async function handleApi(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  if (url.pathname.startsWith("/api/team/")) return handleTeamInvite(request, response);
   if (!url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/mcp/")) return false;
 
   try {
