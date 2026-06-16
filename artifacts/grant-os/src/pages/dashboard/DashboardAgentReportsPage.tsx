@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { FileText, Loader2, Plus } from "lucide-react";
+import { FileText, Loader2, Plus, Activity } from "lucide-react";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -49,9 +50,23 @@ export default function DashboardAgentReportsPage() {
         </div>
         {canCreateTable("agent_reports") && <Button size="sm" className="gap-2 text-xs" onClick={() => setOpen(true)}><Plus size={13} />Add report</Button>}
       </div>
+
+      {/* Scheduled reports info banner */}
+      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <Activity size={13} className="flex-shrink-0 text-slate-400" />
+        <span>
+          Scheduled cron reports: <span className="font-medium text-slate-700">Coming soon.</span>{" "}
+          Daily automated reports will appear here after scheduled agent runs are enabled.{" "}
+          <Link href="/dashboard/agent-activity"><span className="text-primary hover:underline cursor-pointer">View Agent Activity →</span></Link>
+        </span>
+      </div>
       {isLoading && <div className="flex justify-center gap-2 py-10 text-sm text-slate-400"><Loader2 size={16} className="animate-spin" />Loading reports...</div>}
       {isError && <div className="text-sm text-red-600">Could not load reports: {error instanceof Error ? error.message : String(error)}</div>}
-      {!isLoading && reports.length === 0 && <Card><CardContent className="py-10 text-center text-sm text-slate-400">No reports yet.</CardContent></Card>}
+      {!isLoading && reports.length === 0 && <Card><CardContent className="py-12 text-center">
+        <FileText size={24} className="mx-auto text-slate-300 mb-3" />
+        <div className="text-sm font-medium text-slate-700">No agent reports yet</div>
+        <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">Daily automated reports will appear here after scheduled agent runs are enabled. You can also save reports manually using the Add report button above.</p>
+      </CardContent></Card>}
       <div className="space-y-3">
         {reports.map((report) => (
           <Collapsible key={report.id} open={expanded === report.id} onOpenChange={(isOpen) => setExpanded(isOpen ? report.id : null)}>

@@ -17,3 +17,21 @@ export function AgentSourceBadge({ source }: { source: AgentSource }) {
 export function AgentTypeBadge({ type }: { type: AgentNoteType | AgentReportType }) {
   return <Badge variant="secondary" className="text-[11px]">{type.replace(/_/g, " ")}</Badge>;
 }
+
+/**
+ * Distinguishes how a grant match was generated.
+ * - "rules_engine" → System match (slate)
+ * - anything else  → Agent match · {source} (blue)
+ */
+export function MatchGeneratedByBadge({ generatedBy }: { generatedBy: string }) {
+  const isAgent = generatedBy !== "rules_engine";
+  const tone = isAgent
+    ? "bg-blue-50 text-blue-700 border-blue-200"
+    : "bg-slate-100 text-slate-600 border-slate-200";
+  const label = isAgent ? `Agent match · ${generatedBy}` : "System match";
+  return (
+    <Badge variant="outline" className={`text-[11px] ${tone}`}>
+      {label}
+    </Badge>
+  );
+}

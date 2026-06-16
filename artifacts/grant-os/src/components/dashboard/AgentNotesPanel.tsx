@@ -57,11 +57,11 @@ export default function AgentNotesPanel({ title = "Agent Notes", ...related }: R
     <Card className="border-slate-200">
       <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-sm">{title}</CardTitle>
-        {canCreate && <Button size="sm" className="gap-1.5 text-xs h-8" onClick={() => setOpen(true)}><Plus size={12} />Add Agent Note</Button>}
+        {canCreate && <Button size="sm" className="gap-1.5 text-xs h-8" onClick={() => setOpen(true)}><Plus size={12} />Add Note</Button>}
       </CardHeader>
       <CardContent className="space-y-3">
         {isLoading && <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" />Loading notes...</div>}
-        {!isLoading && notes.length === 0 && <div className="py-6 text-center text-sm text-slate-400">No agent notes yet.</div>}
+        {!isLoading && notes.length === 0 && <div className="py-6 text-center text-sm text-slate-400">No agent notes yet. Add a note or let Hermes generate one during a grant review.</div>}
         {notes.map((note) => (
           <div key={note.id} className="rounded-lg border border-slate-200 bg-white p-3">
             <div className="flex items-start justify-between gap-3">

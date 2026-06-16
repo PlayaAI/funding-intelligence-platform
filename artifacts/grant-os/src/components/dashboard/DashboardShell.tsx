@@ -36,7 +36,6 @@ import {
   Settings,
   UserCog,
   SlidersHorizontal,
-  CircleDollarSign,
   Plug,
   Bot,
   ChevronLeft,
@@ -135,11 +134,9 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     { label: "Calendar", href: "/dashboard/calendar", icon: <CalendarDays size={16} /> },
     { label: "Documents", href: "/dashboard/documents", icon: <Files size={16} /> },
     { label: "Reports", href: "/dashboard/reports", icon: <BarChart2 size={16} /> },
-    { label: "Financials", href: "/dashboard/financials", icon: <CircleDollarSign size={16} /> },
     { label: "Team", href: "/dashboard/team", icon: <UserCog size={16} /> },
     { label: "Agent Knowledge Base", href: "/dashboard/agent-knowledge", icon: <BookOpenCheck size={16} /> },
     { label: "Agent Reports", href: "/dashboard/agent-reports", icon: <Bot size={16} /> },
-    { label: "Agent Import", href: "/dashboard/agent-import", icon: <Plug size={16} /> },
     { label: "Agent Activity", href: "/dashboard/agent-activity", icon: <ListChecks size={16} /> },
     { label: "Settings", href: "/dashboard/settings", icon: <Settings size={16} /> },
   ];
@@ -279,7 +276,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
               <Link href="/dashboard/settings"><DropdownMenuItem><Building2 size={14} />Organization Profile</DropdownMenuItem></Link>
               <Link href="/dashboard/settings"><DropdownMenuItem><Settings size={14} />Settings</DropdownMenuItem></Link>
               <Link href="/dashboard/custom-fields"><DropdownMenuItem><SlidersHorizontal size={14} />Custom Fields</DropdownMenuItem></Link>
-              <Link href="/dashboard/financials"><DropdownMenuItem><CircleDollarSign size={14} />Financials</DropdownMenuItem></Link>
               <Link href="/dashboard/settings"><DropdownMenuItem><Plug size={14} />Integrations</DropdownMenuItem></Link>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => void logout()} className="text-red-600 focus:text-red-600">
