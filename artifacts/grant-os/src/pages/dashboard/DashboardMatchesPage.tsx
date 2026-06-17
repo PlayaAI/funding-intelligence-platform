@@ -247,10 +247,13 @@ export default function DashboardMatchesPage() {
           <p className="text-slate-500 text-sm mt-0.5">Deterministic project-opportunity fit, readiness, urgency, and next actions.</p>
         </div>
         {canWrite && (
-          <Button size="sm" className="gap-2 text-xs" disabled={generateAll.isPending} onClick={async () => { const rows = await generateAll.mutateAsync(); toast({ title: "Matches generated", description: `${rows.length} project-grant matches updated.` }); }}>
-            {generateAll.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-            Generate Matches
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <Button size="sm" variant="secondary" className="gap-2 text-xs" disabled={generateAll.isPending} onClick={async () => { const rows = await generateAll.mutateAsync(); toast({ title: "Matches generated", description: `${rows.length} project-grant matches updated.` }); }}>
+              {generateAll.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              Generate Matches
+            </Button>
+            <span className="text-[10px] text-slate-400">System matches are experimental. Prefer agent-generated matches.</span>
+          </div>
         )}
       </div>
 

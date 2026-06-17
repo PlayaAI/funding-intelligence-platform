@@ -254,14 +254,27 @@ export default function DashboardGrantDetailPage() {
     needs_review: 4,
     skip: 5,
   };
-  const sortedMatches = useMemo(() => {
-    const matches = grantMatchesQuery.data ?? [];
-    return [...matches].sort((a, b) => {
+
+  const { agentMatches, systemMatches } = useMemo(() => {
+    const all = grantMatchesQuery.data ?? [];
+    const agents = all.filter((m) => m.generated_by !== "rules_engine");
+    const systems = all.filter((m) => m.generated_by === "rules_engine");
+
+    agents.sort((a, b) => {
+      const timeA = new Date(a.generated_at).getTime();
+      const timeB = new Date(b.generated_at).getTime();
+      if (timeA !== timeB) return timeB - timeA;
+      return b.match_score - a.match_score;
+    });
+
+    systems.sort((a, b) => {
       const orderA = DECISION_ORDER[a.decision_label] ?? 99;
       const orderB = DECISION_ORDER[b.decision_label] ?? 99;
       if (orderA !== orderB) return orderA - orderB;
       return b.match_score - a.match_score;
     });
+
+    return { agentMatches: agents, systemMatches: systems };
   }, [grantMatchesQuery.data]);
 
   if (!isSupabaseConfigured) {
@@ -594,25 +607,29 @@ export default function DashboardGrantDetailPage() {
           {!docsLoading && relatedDocs.length === 0 && <Card className="border-slate-200"><CardContent className="py-10 text-center text-sm text-slate-500">No documents are linked to this grant yet. Add guidelines, application instructions, or source files.</CardContent></Card>}
         </TabsContent>
 
-        <TabsContent value="matches" className="mt-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
+        <TabsContent value="matches" className="mt-4 space-y-5">
+          <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-center">
             <div>
               <div className="text-sm font-semibold text-slate-800">Project Matches</div>
               <p className="text-xs text-slate-500">Projects ranked by fit, readiness, and urgency. Agent-generated matches show in blue.</p>
             </div>
             {canWriteTable("grant_matches") && (
-              <Button
-                size="sm"
-                className="gap-2 text-xs"
-                disabled={generateGrantMatches.isPending}
-                onClick={async () => {
-                  const rows = await generateGrantMatches.mutateAsync(grantRow.id);
-                  toast({ title: "Project matches generated", description: `${rows.length} matches updated.` });
-                }}
-              >
-                {generateGrantMatches.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                Generate
-              </Button>
+              <div className="flex flex-col items-start gap-1 md:items-end">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="gap-2 text-xs"
+                  disabled={generateGrantMatches.isPending}
+                  onClick={async () => {
+                    const rows = await generateGrantMatches.mutateAsync(grantRow.id);
+                    toast({ title: "Project matches generated", description: `${rows.length} matches updated.` });
+                  }}
+                >
+                  {generateGrantMatches.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  Generate
+                </Button>
+                <span className="text-[10px] text-slate-400">System matches are experimental. Prefer agent-generated matches.</span>
+              </div>
             )}
           </div>
 
@@ -620,134 +637,270 @@ export default function DashboardGrantDetailPage() {
             <div className="py-8 text-center text-sm text-slate-400">Loading project matches...</div>
           )}
 
-          {sortedMatches.slice(0, 10).map((match) => {
-            const fitReasons = matchJsonArray(match.fit_reasons).slice(0, 3);
-            const risks = matchJsonArray(match.risks).slice(0, 2);
-            const missing = matchJsonArray(match.missing_items).slice(0, 3);
-            const actions = matchJsonArray(match.recommended_actions);
-            const deadline = deadlineLanguage(match.grant?.deadline);
-            const rawDetails = {
-              id: match.id,
-              match_score: match.match_score,
-              match_tier: match.match_tier,
-              readiness_score: match.readiness_score,
-              urgency_score: match.urgency_score,
-              evidence_score: match.evidence_score,
-              deadline_status: match.deadline_status,
-              generated_by: match.generated_by,
-              generated_at: match.generated_at,
-              status: match.status,
-              score_breakdown: match.score_breakdown,
-              data_quality_flags: match.data_quality_flags,
-            };
-            return (
-              <Card key={match.id} className="border-slate-200">
-                <CardContent className="p-4 space-y-3">
-                  {/* Header: project name + badges */}
-                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                    <div className="min-w-0">
-                      {match.project?.slug ? (
-                        <Link href={`/dashboard/projects/${match.project.slug}`}>
-                          <div className="font-semibold text-primary hover:underline">{match.project.name}</div>
-                        </Link>
-                      ) : (
-                        <div className="font-semibold text-slate-800">Unknown project</div>
-                      )}
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        Readiness {match.readiness_score} · Urgency {match.urgency_score} · {deadline.label}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 flex-shrink-0 md:justify-end">
-                      <Badge
-                        variant="outline"
-                        className={`text-xs ${DECISION_CLASSES[match.decision_label] ?? DECISION_CLASSES.needs_review}`}
-                      >
-                        {DECISION_LABELS[match.decision_label] ?? "Needs Review"}
-                      </Badge>
-                      <Badge variant="outline" className="text-xs">
-                        Score {match.match_score}
-                      </Badge>
-                      <MatchGeneratedByBadge generatedBy={match.generated_by} />
-                    </div>
-                  </div>
+          {!grantMatchesQuery.isLoading && (
+            <div className="space-y-6">
+              {/* Agent Matches Section */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-slate-800 border-b border-slate-100 pb-2">Agent-generated matches</h3>
+                {agentMatches.length > 0 ? (
+                  agentMatches.slice(0, 10).map((match) => {
+                    const fitReasons = matchJsonArray(match.fit_reasons).slice(0, 3);
+                    const risks = matchJsonArray(match.risks).slice(0, 2);
+                    const missing = matchJsonArray(match.missing_items).slice(0, 3);
+                    const actions = matchJsonArray(match.recommended_actions);
+                    const deadline = deadlineLanguage(match.grant?.deadline);
+                    const rawDetails = {
+                      id: match.id,
+                      match_score: match.match_score,
+                      match_tier: match.match_tier,
+                      readiness_score: match.readiness_score,
+                      urgency_score: match.urgency_score,
+                      evidence_score: match.evidence_score,
+                      deadline_status: match.deadline_status,
+                      generated_by: match.generated_by,
+                      generated_at: match.generated_at,
+                      status: match.status,
+                      score_breakdown: match.score_breakdown,
+                      data_quality_flags: match.data_quality_flags,
+                    };
+                    return (
+                      <Card key={match.id} className="border-slate-200 shadow-sm border-blue-100">
+                        <CardContent className="p-4 space-y-3">
+                          {/* Header: project name + badges */}
+                          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                            <div className="min-w-0">
+                              {match.project?.slug ? (
+                                <Link href={`/dashboard/projects/${match.project.slug}`}>
+                                  <div className="font-semibold text-primary hover:underline">{match.project.name}</div>
+                                </Link>
+                              ) : (
+                                <div className="font-semibold text-slate-800">Unknown project</div>
+                              )}
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                Readiness {match.readiness_score} · Urgency {match.urgency_score} · {deadline.label}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 flex-shrink-0 md:justify-end">
+                              <Badge
+                                variant="outline"
+                                className={`text-xs ${DECISION_CLASSES[match.decision_label] ?? DECISION_CLASSES.needs_review}`}
+                              >
+                                {DECISION_LABELS[match.decision_label] ?? "Needs Review"}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                Score {match.match_score}
+                              </Badge>
+                              <MatchGeneratedByBadge generatedBy={match.generated_by} />
+                            </div>
+                          </div>
 
-                  {/* Fit reasons / risks / missing items */}
-                  {(fitReasons.length > 0 || risks.length > 0 || missing.length > 0) && (
-                    <div className="grid gap-3 text-xs md:grid-cols-3">
-                      {fitReasons.length > 0 && (
-                        <div>
-                          <div className="font-medium text-slate-600 mb-1">Why it fits</div>
-                          <ul className="space-y-0.5 text-slate-600">
-                            {fitReasons.map((r) => <li key={r}>• {r}</li>)}
-                          </ul>
-                        </div>
-                      )}
-                      {risks.length > 0 && (
-                        <div>
-                          <div className="font-medium text-red-600 mb-1">Risks</div>
-                          <ul className="space-y-0.5 text-red-700">
-                            {risks.map((r) => <li key={r}>• {r}</li>)}
-                          </ul>
-                        </div>
-                      )}
-                      {missing.length > 0 && (
-                        <div>
-                          <div className="font-medium text-amber-700 mb-1">Missing info</div>
-                          <ul className="space-y-0.5 text-amber-700">
-                            {missing.map((m) => <li key={m}>• {m}</li>)}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                          {/* Fit reasons / risks / missing items */}
+                          {(fitReasons.length > 0 || risks.length > 0 || missing.length > 0) && (
+                            <div className="grid gap-3 text-xs md:grid-cols-3">
+                              {fitReasons.length > 0 && (
+                                <div>
+                                  <div className="font-medium text-slate-600 mb-1">Why it fits</div>
+                                  <ul className="space-y-0.5 text-slate-600">
+                                    {fitReasons.map((r) => <li key={r}>• {r}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                              {risks.length > 0 && (
+                                <div>
+                                  <div className="font-medium text-red-600 mb-1">Risks</div>
+                                  <ul className="space-y-0.5 text-red-700">
+                                    {risks.map((r) => <li key={r}>• {r}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                              {missing.length > 0 && (
+                                <div>
+                                  <div className="font-medium text-amber-700 mb-1">Missing info</div>
+                                  <ul className="space-y-0.5 text-amber-700">
+                                    {missing.map((m) => <li key={m}>• {m}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
 
-                  {/* Recommended next step */}
-                  {actions.length > 0 && (
-                    <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
-                      <span className="font-medium">Next step:</span> {actions[0]}
-                    </div>
-                  )}
+                          {/* Recommended next step */}
+                          {actions.length > 0 && (
+                            <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+                              <span className="font-medium">Next step:</span> {actions[0]}
+                            </div>
+                          )}
 
-                  {/* Footer: timestamp + actions */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-[11px] text-slate-400">
-                      Generated {new Date(match.generated_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                      {match.reviewed_at && ` · Reviewed ${new Date(match.reviewed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {match.project?.slug && (
-                        <Link href={`/dashboard/projects/${match.project.slug}`}>
-                          <Button size="sm" variant="outline" className="h-7 text-xs">Open Project</Button>
-                        </Link>
-                      )}
-                      {canCreateTable("applications") && (
-                        <Button size="sm" className="h-7 text-xs" onClick={() => openOrStartApplication(match.project_id)}>
-                          Create Application
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+                          {/* Footer: timestamp + actions */}
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-[11px] text-slate-400">
+                              Generated {new Date(match.generated_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              {match.reviewed_at && ` · Reviewed ${new Date(match.reviewed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {match.project?.slug && (
+                                <Link href={`/dashboard/projects/${match.project.slug}`}>
+                                  <Button size="sm" variant="outline" className="h-7 text-xs">Open Project</Button>
+                                </Link>
+                              )}
+                              {canCreateTable("applications") && (
+                                <Button size="sm" className="h-7 text-xs" onClick={() => openOrStartApplication(match.project_id)}>
+                                  Create Application
+                                </Button>
+                              )}
+                            </div>
+                          </div>
 
-                  {/* Collapsible raw details */}
-                  <details className="rounded border border-slate-200 bg-slate-50">
-                    <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-500">
-                      Raw match details
-                    </summary>
-                    <pre className="px-3 pb-3 pt-1 text-[11px] text-slate-600 overflow-auto max-h-40 whitespace-pre-wrap">
-                      {JSON.stringify(rawDetails, null, 2)}
-                    </pre>
-                  </details>
-                </CardContent>
-              </Card>
-            );
-          })}
+                          {/* Collapsible raw details */}
+                          <details className="rounded border border-slate-200 bg-slate-50">
+                            <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-500">
+                              View full match details
+                            </summary>
+                            <pre className="px-3 pb-3 pt-1 text-[11px] text-slate-600 overflow-auto max-h-40 whitespace-pre-wrap">
+                              {JSON.stringify(rawDetails, null, 2)}
+                            </pre>
+                          </details>
+                        </CardContent>
+                      </Card>
+                    );
+                  })
+                ) : (
+                  <Card className="border-slate-200 bg-slate-50">
+                    <CardContent className="py-8 text-center text-sm text-slate-600">
+                      No agent-generated match has been saved for this grant yet. Ask Hermes to review this grant and save a match.
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
 
-          {!grantMatchesQuery.isLoading && sortedMatches.length === 0 && (
-            <Card className="border-slate-200">
-              <CardContent className="py-10 text-center text-sm text-slate-500">
-                No project matches yet. Use the Generate button above to run the matching engine, or let Hermes save a match via the agent API.
-              </CardContent>
-            </Card>
+              {/* System Matches Section */}
+              {systemMatches.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-slate-800 border-b border-slate-100 pb-2">System-generated matches</h3>
+                  {systemMatches.slice(0, 10).map((match) => {
+                    const fitReasons = matchJsonArray(match.fit_reasons).slice(0, 3);
+                    const risks = matchJsonArray(match.risks).slice(0, 2);
+                    const missing = matchJsonArray(match.missing_items).slice(0, 3);
+                    const actions = matchJsonArray(match.recommended_actions);
+                    const deadline = deadlineLanguage(match.grant?.deadline);
+                    const rawDetails = {
+                      id: match.id,
+                      match_score: match.match_score,
+                      match_tier: match.match_tier,
+                      readiness_score: match.readiness_score,
+                      urgency_score: match.urgency_score,
+                      evidence_score: match.evidence_score,
+                      deadline_status: match.deadline_status,
+                      generated_by: match.generated_by,
+                      generated_at: match.generated_at,
+                      status: match.status,
+                      score_breakdown: match.score_breakdown,
+                      data_quality_flags: match.data_quality_flags,
+                    };
+                    return (
+                      <Card key={match.id} className="border-slate-200">
+                        <CardContent className="p-4 space-y-3">
+                          {/* Header: project name + badges */}
+                          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                            <div className="min-w-0">
+                              {match.project?.slug ? (
+                                <Link href={`/dashboard/projects/${match.project.slug}`}>
+                                  <div className="font-semibold text-primary hover:underline">{match.project.name}</div>
+                                </Link>
+                              ) : (
+                                <div className="font-semibold text-slate-800">Unknown project</div>
+                              )}
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                Readiness {match.readiness_score} · Urgency {match.urgency_score} · {deadline.label}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 flex-shrink-0 md:justify-end">
+                              <Badge
+                                variant="outline"
+                                className={`text-xs ${DECISION_CLASSES[match.decision_label] ?? DECISION_CLASSES.needs_review}`}
+                              >
+                                {DECISION_LABELS[match.decision_label] ?? "Needs Review"}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                Score {match.match_score}
+                              </Badge>
+                              <MatchGeneratedByBadge generatedBy={match.generated_by} />
+                            </div>
+                          </div>
+
+                          {/* Fit reasons / risks / missing items */}
+                          {(fitReasons.length > 0 || risks.length > 0 || missing.length > 0) && (
+                            <div className="grid gap-3 text-xs md:grid-cols-3">
+                              {fitReasons.length > 0 && (
+                                <div>
+                                  <div className="font-medium text-slate-600 mb-1">Why it fits</div>
+                                  <ul className="space-y-0.5 text-slate-600">
+                                    {fitReasons.map((r) => <li key={r}>• {r}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                              {risks.length > 0 && (
+                                <div>
+                                  <div className="font-medium text-red-600 mb-1">Risks</div>
+                                  <ul className="space-y-0.5 text-red-700">
+                                    {risks.map((r) => <li key={r}>• {r}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                              {missing.length > 0 && (
+                                <div>
+                                  <div className="font-medium text-amber-700 mb-1">Missing info</div>
+                                  <ul className="space-y-0.5 text-amber-700">
+                                    {missing.map((m) => <li key={m}>• {m}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Recommended next step */}
+                          {actions.length > 0 && (
+                            <div className="rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-700">
+                              <span className="font-medium">Next step:</span> {actions[0]}
+                            </div>
+                          )}
+
+                          {/* Footer: timestamp + actions */}
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-[11px] text-slate-400">
+                              Generated {new Date(match.generated_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              {match.reviewed_at && ` · Reviewed ${new Date(match.reviewed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {match.project?.slug && (
+                                <Link href={`/dashboard/projects/${match.project.slug}`}>
+                                  <Button size="sm" variant="outline" className="h-7 text-xs">Open Project</Button>
+                                </Link>
+                              )}
+                              {canCreateTable("applications") && (
+                                <Button size="sm" className="h-7 text-xs" onClick={() => openOrStartApplication(match.project_id)}>
+                                  Create Application
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Collapsible raw details */}
+                          <details className="rounded border border-slate-200 bg-slate-50">
+                            <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-500">
+                              Raw match details
+                            </summary>
+                            <pre className="px-3 pb-3 pt-1 text-[11px] text-slate-600 overflow-auto max-h-40 whitespace-pre-wrap">
+                              {JSON.stringify(rawDetails, null, 2)}
+                            </pre>
+                          </details>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
         </TabsContent>
 
