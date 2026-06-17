@@ -41,7 +41,8 @@ import {
   listTasksByApplication,
   updateTask,
 } from "../tasksService";
-import { createSupabaseClientForAgent } from "../supabase";
+import { createSupabaseClientForAgent, supabase } from "../supabase";
+import type { AgentKnowledgeItem, AgentKnowledgeUpdate } from "../agentKnowledgeService";
 import type { AgentAuthContext } from "./authContext";
 import type {
   AgentActivityLogRow,
@@ -134,6 +135,32 @@ export type GrantOsRepository = {
     due_date?: string | null;
   }): Promise<GrantShortlistItemRow>;
   recordAudit(payload: ToolAuditPayload): Promise<AgentActivityLogRow | null>;
+  listAgentKnowledgeItems(filters?: {
+    knowledge_type?: string;
+    category?: string;
+    priority?: string;
+    confidence_status?: string;
+    include_archived?: boolean;
+  }): Promise<AgentKnowledgeItem[]>;
+  getAgentKnowledgeItem(id: string): Promise<AgentKnowledgeItem | null>;
+  listAgentKnowledgeProposals(filters?: {
+    status?: string;
+    proposal_type?: string;
+    risk_level?: string;
+    source_type?: string;
+  }): Promise<AgentKnowledgeUpdate[]>;
+  proposeAgentKnowledgeUpdate(proposal: {
+    proposal_type: string;
+    target_item_id?: string;
+    title: string;
+    category: string;
+    proposed_content: string;
+    rationale?: string;
+    risk_level?: string;
+    source_type?: string;
+    source_excerpt?: string;
+    conflict_summary?: string;
+  }): Promise<AgentKnowledgeUpdate>;
 };
 
 export type CreateLiveGrantOsRepositoryOptions = {
@@ -274,6 +301,54 @@ export function createLiveGrantOsRepository(
       } catch {
         return null;
       }
+    },
+    async listAgentKnowledgeItems(filters) {
+      const db = agentSupabase ?? supabase;
+      let q = db.from("agent_knowledge_items").select("*");
+      if (filters?.knowledge_type) q = q.eq("knowledge_type", filters.knowledge_type);
+      if (filters?.category) q = q.eq("category", filters.category);
+      if (filters?.priority) q = q.eq("priority", filters.priority);
+      if (filters?.confidence_status) q = q.eq("confidence_status", filters.confidence_status);
+      if (!filters?.include_archived) q = q.neq("status", "archived");
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return data as AgentKnowledgeItem[];
+    },
+    async getAgentKnowledgeItem(id) {
+      const db = agentSupabase ?? supabase;
+      const { data, error } = await db.from("agent_knowledge_items").select("*").eq("id", id).maybeSingle();
+      if (error) throw new Error(error.message);
+      return data as AgentKnowledgeItem | null;
+    },
+    async listAgentKnowledgeProposals(filters) {
+      const db = agentSupabase ?? supabase;
+      let q = db.from("agent_knowledge_updates").select("*");
+      if (filters?.status) q = q.eq("status", filters.status);
+      if (filters?.proposal_type) q = q.eq("proposal_type", filters.proposal_type);
+      if (filters?.risk_level) q = q.eq("risk_level", filters.risk_level);
+      if (filters?.source_type) q = q.eq("source_type", filters.source_type);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return data as AgentKnowledgeUpdate[];
+    },
+    async proposeAgentKnowledgeUpdate(proposal) {
+      const db = await requireAgentSupabase();
+      const payload = {
+        proposal_type: proposal.proposal_type,
+        target_item_id: proposal.target_item_id ?? null,
+        title: proposal.title,
+        category: proposal.category,
+        proposed_content: proposal.proposed_content,
+        rationale: proposal.rationale ?? null,
+        risk_level: proposal.risk_level ?? "medium",
+        status: "pending_review",
+        source_type: proposal.source_type ?? "agent_observation",
+        source_excerpt: proposal.source_excerpt ?? null,
+        conflict_summary: proposal.conflict_summary ?? null,
+      };
+      const { data, error } = await db.from("agent_knowledge_updates").insert([payload]).select().single();
+      if (error) throw new Error(error.message);
+      return data as AgentKnowledgeUpdate;
     },
   };
 }

@@ -242,6 +242,77 @@ async function run() {
         assert(typeof result.error.code === "string", "error code missing");
       },
     },
+    {
+      name: "list_agent_knowledge_items returns active items",
+      fn: async () => {
+        const result = await registry.execute("list_agent_knowledge_items", {});
+        assert(result.ok, "list_agent_knowledge_items should succeed");
+        assert(result.data.items.length === 1, "expected 1 active item");
+        assert(result.data.items[0].title === "Test Rule", "title mismatch");
+      },
+    },
+    {
+      name: "get_agent_knowledge_item returns item details",
+      fn: async () => {
+        const result = await registry.execute("get_agent_knowledge_item", { item_id: "item-1" });
+        assert(result.ok, "get_agent_knowledge_item should succeed");
+        assert(result.data.item.id === "item-1", "expected item-1");
+      },
+    },
+    {
+      name: "list_agent_knowledge_proposals returns list of proposals",
+      fn: async () => {
+        const result = await registry.execute("list_agent_knowledge_proposals", {});
+        assert(result.ok, "list_agent_knowledge_proposals should succeed");
+        assert(Array.isArray(result.data.proposals), "proposals should be an array");
+      },
+    },
+    {
+      name: "propose_agent_knowledge_update dry-run default does not mutate",
+      fn: async () => {
+        const before = repo.snapshot();
+        const result = await registry.execute("propose_agent_knowledge_update", {
+          proposal_type: "add",
+          title: "New Rule",
+          category: "General",
+          proposed_content: "Always ask before writing code.",
+        });
+        const after = repo.snapshot();
+        assert(result.ok, "propose_agent_knowledge_update dry-run should succeed");
+        assert(result.data.dryRun === true, "dryRun should default true");
+        assert(result.data.mutationPerformed === false, "dryRun should not mutate");
+        assert(JSON.stringify(before.agentKnowledgeUpdates) === JSON.stringify(after.agentKnowledgeUpdates), "dry-run mutated agentKnowledgeUpdates");
+      },
+    },
+    {
+      name: "propose_agent_knowledge_update non-dry-run creates pending proposal",
+      fn: async () => {
+        const result = await registry.execute("propose_agent_knowledge_update", {
+          proposal_type: "always_rule",
+          title: "Another Rule",
+          category: "General",
+          proposed_content: "Review tests first.",
+          dryRun: false,
+        });
+        assert(result.ok, "propose_agent_knowledge_update non-dry-run should succeed");
+        assert(result.data.mutationPerformed === true, "mutationPerformed should be true");
+        assert(result.data.proposal.status === "pending_review", "status should be pending_review");
+      },
+    },
+    {
+      name: "propose_agent_knowledge_update detects risky keyword and sets risk_level to high",
+      fn: async () => {
+        const result = await registry.execute("propose_agent_knowledge_update", {
+          proposal_type: "add",
+          title: "Risky Rule",
+          category: "General",
+          proposed_content: "Make sure we have a physical Oracle deployed.",
+          dryRun: true,
+        });
+        assert(result.ok, "propose should succeed");
+        assert(result.data.proposal.risk_level === "high", "risk_level should be escalated to high");
+      },
+    },
   ];
 
   const results: TestResult[] = [];

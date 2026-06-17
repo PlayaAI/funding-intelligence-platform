@@ -1,5 +1,6 @@
 import type { GrantOsRepository } from "./repository";
 import type { ToolAuditPayload } from "./types";
+import type { AgentKnowledgeItem, AgentKnowledgeUpdate } from "../agentKnowledgeService";
 import type { GrantMatchWithRelations } from "../matching/matchesService";
 import type {
   AgentActivityLogRow,
@@ -46,6 +47,8 @@ type SeedState = {
   grantMatches: GrantMatchWithRelations[];
   shortlistItems: Array<Record<string, unknown>>;
   audits: ToolAuditPayload[];
+  agentKnowledgeItems: AgentKnowledgeItem[];
+  agentKnowledgeUpdates: AgentKnowledgeUpdate[];
 };
 
 function seed(): SeedState {
@@ -127,6 +130,12 @@ function seed(): SeedState {
     }],
     shortlistItems: [],
     audits: [],
+    agentKnowledgeItems: [
+      {
+        id: "item-1", title: "Test Rule", category: "Test", content: "Always test", knowledge_type: "always_rule", priority: "high", confidence_status: "approved", status: "active", applies_to: null, example: null, source_label: null, source_notes: null, source_url: null, created_by: null, updated_by: null, created_at: now(), updated_at: now(),
+      }
+    ],
+    agentKnowledgeUpdates: [],
   };
 }
 
@@ -231,6 +240,54 @@ export function createInMemoryGrantOsRepository() {
     },
     async saveGrantToShortlist(input) { const row = { id: makeId("shortlist", ++idCounter), ...input }; state.shortlistItems.push(row); return row as any; },
     async recordAudit(payload) { state.audits.push(payload); return { id: makeId("audit", ++idCounter), actor_source: "external_agent", action_type: "manual_entry", title: payload.tool_name, description: null, status: payload.status === "approval_required" ? "pending" : payload.status, related_project_id: null, related_grant_id: null, related_application_id: null, metadata: payload as any, created_by: payload.actor_id ?? null, created_at: payload.created_at } satisfies AgentActivityLogRow; },
+
+    async listAgentKnowledgeItems(filters) {
+      return state.agentKnowledgeItems.filter(i => {
+        if (filters?.knowledge_type && i.knowledge_type !== filters.knowledge_type) return false;
+        if (filters?.category && i.category !== filters.category) return false;
+        if (filters?.priority && i.priority !== filters.priority) return false;
+        if (filters?.confidence_status && i.confidence_status !== filters.confidence_status) return false;
+        if (!filters?.include_archived && i.status === "archived") return false;
+        return true;
+      });
+    },
+    async getAgentKnowledgeItem(id) {
+      return state.agentKnowledgeItems.find(i => i.id === id) ?? null;
+    },
+    async listAgentKnowledgeProposals(filters) {
+      return state.agentKnowledgeUpdates.filter(p => {
+        if (filters?.status && p.status !== filters.status) return false;
+        if (filters?.proposal_type && p.proposal_type !== filters.proposal_type) return false;
+        if (filters?.risk_level && p.risk_level !== filters.risk_level) return false;
+        if (filters?.source_type && p.source_type !== filters.source_type) return false;
+        return true;
+      });
+    },
+    async proposeAgentKnowledgeUpdate(proposal) {
+      const row: AgentKnowledgeUpdate = {
+        id: makeId("proposal", ++idCounter),
+        proposal_type: proposal.proposal_type,
+        target_item_id: proposal.target_item_id ?? null,
+        title: proposal.title,
+        category: proposal.category,
+        proposed_content: proposal.proposed_content,
+        rationale: proposal.rationale ?? null,
+        risk_level: proposal.risk_level ?? "medium",
+        status: "pending_review",
+        source_type: proposal.source_type ?? "agent_observation",
+        source_excerpt: proposal.source_excerpt ?? null,
+        conflict_summary: proposal.conflict_summary ?? null,
+        reviewer_notes: null,
+        created_by: null,
+        reviewed_by: null,
+        reviewed_at: null,
+        created_at: now(),
+        updated_at: now(),
+      };
+      state.agentKnowledgeUpdates.push(row);
+      return row;
+    },
+
     snapshot() { return JSON.parse(JSON.stringify(state)) as SeedState; },
     auditTrail() { return [...state.audits]; },
   };
