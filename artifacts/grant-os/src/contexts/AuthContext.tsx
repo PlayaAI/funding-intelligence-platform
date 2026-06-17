@@ -4,6 +4,7 @@ import { supabase, getSupabaseConfigError, isSupabaseConfigured } from "@/lib/su
 import { getProfile } from "@/lib/profilesService";
 import { isAppRole, type AppRole } from "@/lib/roles";
 import { authDebug } from "@/lib/authDebug";
+import { toast } from "@/hooks/use-toast";
 
 export interface AuthUser {
   id: string;
@@ -130,11 +131,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(mapProfileToUser(profile, nextSession.user.email ?? ""));
       authDebug("user ready", { role: profile.role });
     } catch (err) {
-      authDebug("profile load failed", {
-        message: err instanceof Error ? err.message : String(err),
-      });
-      setUser(null);
-      setProfileError(err instanceof Error ? err.message : "Failed to load your profile.");
+      const errMessage = err instanceof Error ? err.message : String(err);
+      authDebug("profile load failed", { message: errMessage });
+
+      if (userRef.current && userRef.current.id === userId) {
+        authDebug("preserving existing user profile on background load failure");
+        toast({
+          title: "Connection delayed",
+          description: "Could not refresh profile in the background. Continuing with existing session.",
+          variant: "destructive",
+        });
+      } else {
+        setUser(null);
+        setProfileError(errMessage || "Failed to load your profile.");
+      }
     }
   }, []);
 
@@ -246,13 +256,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
 
-          // All other events (SIGNED_IN, USER_UPDATED, etc.) — show loading
-          setLoading(true);
-          authDebug("loading → true", { reason: event });
+          // All other events (SIGNED_IN, USER_UPDATED, etc.) — avoid unmounting the dashboard
+          const isInitialLoad = !userRef.current;
+
+          if (isInitialLoad) {
+            setLoading(true);
+            authDebug("loading → true", { reason: event });
+          } else {
+            authDebug("background auth sync", { reason: event });
+          }
+
           try {
             await loadUserFromSession(nextSession);
           } finally {
-            if (mounted) {
+            if (mounted && isInitialLoad) {
               finishLoading();
             }
             authDebug("auth state sync end", { event });
