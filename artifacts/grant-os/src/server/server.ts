@@ -403,10 +403,154 @@ async function serveStatic(request: IncomingMessage, response: ServerResponse) {
   stream.pipe(response);
 }
 
+async function handleAgentKnowledge(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  if (!url.pathname.startsWith("/api/agent-knowledge/")) return false;
+
+  const hasServiceRole = Boolean(supabaseServiceRoleKey);
+  const authResult = await getAuthenticatedProfile(request, hasServiceRole);
+  if (!authResult.body.ok || !("profile" in authResult.body)) {
+    sendJson(response, authResult.status, authResult.body);
+    return true;
+  }
+
+  const profile = authResult.body.profile as { role?: string; access_status?: string };
+  if (profile.access_status !== "approved") {
+    sendJson(response, 403, {
+      ok: false,
+      error: { code: "not_approved", message: "Only approved users can access agent knowledge." },
+    });
+    return true;
+  }
+
+  const isAdmin = profile.role === "Admin";
+
+  // Use the user's token so RLS applies if we don't use service role
+  const client = createClient(supabaseUrl, hasServiceRole ? supabaseServiceRoleKey : supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    ...(hasServiceRole ? {} : { global: { headers: { Authorization: `Bearer ${bearerTokenFrom(request)}` } } }),
+  });
+
+  const pathParts = url.pathname.split("/").filter(Boolean); // ['api', 'agent-knowledge', 'items'...]
+  const resource = pathParts[2]; // 'items' or 'proposals'
+  const id = pathParts[3];
+  const action = pathParts[4]; // 'archive', 'approve', 'reject'
+
+  if (resource === "items") {
+    if (request.method === "GET" && !id) {
+      const { data, error } = await client.from("agent_knowledge_items").select("*").order("created_at", { ascending: false });
+      if (error) return sendJson(response, 500, { ok: false, error }), true;
+      return sendJson(response, 200, { ok: true, items: data }), true;
+    }
+
+    if (request.method === "POST" && !id) {
+      if (!isAdmin) return sendJson(response, 403, { ok: false, error: { message: "Admin required" } }), true;
+      const body = await readJsonBody(request);
+      const { data, error } = await client.from("agent_knowledge_items").insert([{ ...body as any, created_by: authResult.body.user?.id }]).select().single();
+      if (error) return sendJson(response, 500, { ok: false, error }), true;
+      return sendJson(response, 200, { ok: true, item: data }), true;
+    }
+
+    if (request.method === "PATCH" && id && !action) {
+      if (!isAdmin) return sendJson(response, 403, { ok: false, error: { message: "Admin required" } }), true;
+      const body = await readJsonBody(request);
+      const { data, error } = await client.from("agent_knowledge_items").update({ ...body as any, updated_by: authResult.body.user?.id }).eq("id", id).select().single();
+      if (error) return sendJson(response, 500, { ok: false, error }), true;
+      return sendJson(response, 200, { ok: true, item: data }), true;
+    }
+
+    if (request.method === "POST" && id && action === "archive") {
+      if (!isAdmin) return sendJson(response, 403, { ok: false, error: { message: "Admin required" } }), true;
+      const { data, error } = await client.from("agent_knowledge_items").update({ status: "archived", updated_by: authResult.body.user?.id }).eq("id", id).select().single();
+      if (error) return sendJson(response, 500, { ok: false, error }), true;
+      return sendJson(response, 200, { ok: true, item: data }), true;
+    }
+  }
+
+  if (resource === "proposals") {
+    if (request.method === "GET" && !id) {
+      const { data, error } = await client.from("agent_knowledge_updates").select("*").order("created_at", { ascending: false });
+      if (error) return sendJson(response, 500, { ok: false, error }), true;
+      return sendJson(response, 200, { ok: true, proposals: data }), true;
+    }
+
+    if (request.method === "POST" && !id) {
+      const body = await readJsonBody(request);
+      const { data, error } = await client.from("agent_knowledge_updates").insert([{ ...body as any, created_by: authResult.body.user?.id }]).select().single();
+      if (error) return sendJson(response, 500, { ok: false, error }), true;
+      return sendJson(response, 200, { ok: true, proposal: data }), true;
+    }
+
+    if (request.method === "POST" && id && action === "approve") {
+      if (!isAdmin) return sendJson(response, 403, { ok: false, error: { message: "Admin required" } }), true;
+
+      const { data: proposal, error: fetchError } = await client.from("agent_knowledge_updates").select("*").eq("id", id).single();
+      if (fetchError || !proposal) return sendJson(response, 404, { ok: false, error: { message: "Proposal not found" } }), true;
+
+      // Handle the target item creation or update
+      let targetItemId = proposal.target_item_id;
+      if (proposal.proposal_type === "add" || !targetItemId) {
+        const { data: newItem, error: insertError } = await client.from("agent_knowledge_items").insert([{
+          title: proposal.title,
+          category: proposal.category,
+          content: proposal.proposed_content,
+          knowledge_type: proposal.proposal_type === "add" ? "custom_instruction" : proposal.proposal_type,
+          priority: "medium",
+          status: "active",
+          created_by: authResult.body.user?.id,
+          source_label: proposal.source_type,
+        }]).select("id").single();
+        if (insertError) return sendJson(response, 500, { ok: false, error: insertError }), true;
+        targetItemId = newItem.id;
+      } else if (proposal.proposal_type === "edit") {
+        const { error: updateError } = await client.from("agent_knowledge_items").update({
+          content: proposal.proposed_content,
+          updated_by: authResult.body.user?.id
+        }).eq("id", targetItemId);
+        if (updateError) return sendJson(response, 500, { ok: false, error: updateError }), true;
+      } else if (proposal.proposal_type === "archive") {
+        const { error: updateError } = await client.from("agent_knowledge_items").update({
+          status: "archived",
+          updated_by: authResult.body.user?.id
+        }).eq("id", targetItemId);
+        if (updateError) return sendJson(response, 500, { ok: false, error: updateError }), true;
+      }
+
+      // Update proposal status
+      const { error: propUpdateError } = await client.from("agent_knowledge_updates").update({
+        status: "approved",
+        target_item_id: targetItemId,
+        reviewed_by: authResult.body.user?.id,
+        reviewed_at: new Date().toISOString()
+      }).eq("id", id);
+      if (propUpdateError) return sendJson(response, 500, { ok: false, error: propUpdateError }), true;
+
+      return sendJson(response, 200, { ok: true }), true;
+    }
+
+    if (request.method === "POST" && id && action === "reject") {
+      if (!isAdmin) return sendJson(response, 403, { ok: false, error: { message: "Admin required" } }), true;
+      const body = await readJsonBody(request) as any;
+      const { error: propUpdateError } = await client.from("agent_knowledge_updates").update({
+        status: "rejected",
+        reviewer_notes: body.reviewer_notes,
+        reviewed_by: authResult.body.user?.id,
+        reviewed_at: new Date().toISOString()
+      }).eq("id", id);
+      if (propUpdateError) return sendJson(response, 500, { ok: false, error: propUpdateError }), true;
+
+      return sendJson(response, 200, { ok: true }), true;
+    }
+  }
+
+  return sendJson(response, 404, { ok: false, error: { message: "Route not found" } }), true;
+}
+
 async function handleApi(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   if (url.pathname.startsWith("/api/admin/users")) return handleAdminUsers(request, response);
   if (url.pathname.startsWith("/api/team/")) return handleTeamInvite(request, response);
+  if (url.pathname.startsWith("/api/agent-knowledge/")) return handleAgentKnowledge(request, response);
   if (!url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/mcp/")) return false;
 
   try {

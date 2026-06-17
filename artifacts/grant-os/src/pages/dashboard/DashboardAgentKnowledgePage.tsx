@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
+import { useAgentActivity } from "@/hooks/useAgentActivity";
 import {
   approvedFacts,
   briefing,
@@ -29,6 +30,8 @@ import {
   type RecommendationRule,
 } from "@/lib/agent-knowledge/playaAiKnowledgeBase";
 import { applicationManual } from "@/lib/agent-knowledge/applicationManual";
+import { AgentKnowledgeCustomTab } from "@/components/dashboard/AgentKnowledgeCustomTab";
+import { AgentKnowledgeProposalsTab } from "@/components/dashboard/AgentKnowledgeProposalsTab";
 
 const factStatusLabels: Record<FactStatus, string> = {
   approved: "Approved",
@@ -141,6 +144,8 @@ export default function DashboardAgentKnowledgePage() {
           <TabsTrigger value="risk" className="text-xs">Risky Claims</TabsTrigger>
           <TabsTrigger value="daily" className="text-xs">Daily Instructions</TabsTrigger>
           <TabsTrigger value="manual" className="text-xs">Application Manual</TabsTrigger>
+          <TabsTrigger value="custom" className="text-xs font-semibold text-blue-700">Custom Instructions</TabsTrigger>
+          <TabsTrigger value="proposals" className="text-xs font-semibold text-amber-600">Proposed Updates</TabsTrigger>
         </TabsList>
 
         <TabsContent value="briefing" className="space-y-4">
@@ -504,6 +509,14 @@ export default function DashboardAgentKnowledgePage() {
               ))}
             </div>
           </SectionCard>
+        </TabsContent>
+
+        <TabsContent value="custom" className="space-y-4">
+          <AgentKnowledgeCustomTab />
+        </TabsContent>
+
+        <TabsContent value="proposals" className="space-y-4">
+          <AgentKnowledgeProposalsTab />
         </TabsContent>
       </Tabs>
     </div>
