@@ -28,6 +28,7 @@ import {
   type ProofStatus,
   type RecommendationRule,
 } from "@/lib/agent-knowledge/playaAiKnowledgeBase";
+import { applicationManual } from "@/lib/agent-knowledge/applicationManual";
 
 const factStatusLabels: Record<FactStatus, string> = {
   approved: "Approved",
@@ -139,6 +140,7 @@ export default function DashboardAgentKnowledgePage() {
           <TabsTrigger value="proof" className="text-xs">Proof Needed</TabsTrigger>
           <TabsTrigger value="risk" className="text-xs">Risky Claims</TabsTrigger>
           <TabsTrigger value="daily" className="text-xs">Daily Instructions</TabsTrigger>
+          <TabsTrigger value="manual" className="text-xs">Application Manual</TabsTrigger>
         </TabsList>
 
         <TabsContent value="briefing" className="space-y-4">
@@ -353,6 +355,155 @@ export default function DashboardAgentKnowledgePage() {
               ))}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="manual" className="space-y-4">
+          <Card className="border-blue-200 bg-blue-50/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2"><Bot size={15} />{applicationManual.purpose.title}</CardTitle>
+              <CardDescription className="text-xs">{applicationManual.purpose.description}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm font-medium text-slate-900">{applicationManual.purpose.corePrinciple}</p>
+              <p className="text-sm text-slate-700">{applicationManual.purpose.note}</p>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <SectionCard title={applicationManual.workflow.title}>
+              <div className="space-y-3">
+                {applicationManual.workflow.steps.map((w, i) => (
+                  <div key={w.step} className="flex gap-3">
+                    <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">{i + 1}</div>
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">{w.step}</div>
+                      <div className="text-xs text-slate-500">{w.details}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+
+            <SectionCard title={applicationManual.decisionTree.title}>
+              <div className="space-y-4">
+                <CompactList title="1. Agent must ask/confirm:" items={applicationManual.decisionTree.askConfirm} />
+                <CompactList title="2. Agent must run/check:" items={applicationManual.decisionTree.runCheck} />
+                <CompactList title="3. Agent must produce:" items={applicationManual.decisionTree.produce} />
+              </div>
+            </SectionCard>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <SectionCard title={applicationManual.matchAndReadinessRules.title}>
+              <div className="space-y-4">
+                <CompactList title="Check before drafting:" items={applicationManual.matchAndReadinessRules.checkBeforeDrafting} />
+                <div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Recommendation Rules</div>
+                  <div className="space-y-2 mt-2">
+                    {applicationManual.matchAndReadinessRules.recommendationRules.map(r => (
+                      <div key={r.label} className="flex gap-3 items-center rounded-lg border border-slate-100 bg-slate-50 p-2">
+                        <div className="shrink-0"><StatusBadge status={r.label as RecommendationRule} /></div>
+                        <div className="text-xs text-slate-600 leading-snug">{r.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title={applicationManual.externalResearch.title} description={applicationManual.externalResearch.instructions}>
+              <div className="space-y-4 mt-2">
+                <CompactList title="NotebookLM Rules" items={applicationManual.externalResearch.notebookLMRules} />
+                <CompactList title="Categorize Research Into" items={applicationManual.externalResearch.categories} />
+              </div>
+            </SectionCard>
+          </div>
+
+          <SectionCard title={applicationManual.folderStructure.title} description={`Root format: ${applicationManual.folderStructure.rootFormat}`}>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {applicationManual.folderStructure.folders.map(f => (
+                <div key={f.name} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs font-bold text-slate-800 mb-2">{f.name}</div>
+                  <ul className="space-y-1">
+                    {f.contents.map(c => <li key={c} className="text-xs text-slate-600 flex gap-2"><div className="w-1 h-1 rounded-full bg-slate-300 mt-1.5 shrink-0" />{c}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <span className="font-semibold">Important: </span>{applicationManual.folderStructure.important}
+            </div>
+          </SectionCard>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <SectionCard title={applicationManual.agentOutputs.title}>
+              <BulletList items={applicationManual.agentOutputs.list} />
+            </SectionCard>
+
+            <SectionCard title={applicationManual.humanTasks.title}>
+              <ul className="space-y-1.5 text-sm text-slate-700">
+                {applicationManual.humanTasks.list.map((item) => (
+                  <li key={item} className="flex gap-2">
+                    <ClipboardCheck size={14} className="mt-0.5 flex-shrink-0 text-slate-400" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+
+            <SectionCard title={applicationManual.askAlexQuestions.title}>
+              <ul className="space-y-1.5 text-sm text-slate-700">
+                {applicationManual.askAlexQuestions.list.map((item) => (
+                  <li key={item} className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 shrink-0" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-red-200 bg-red-50/70 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2 text-red-900"><ShieldAlert size={15} />{applicationManual.riskSafety.title}</CardTitle>
+                <CardDescription className="text-xs text-red-700">Do not use without approval.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {applicationManual.riskSafety.doNotUseWithoutApproval.map((claim) => (
+                    <div key={claim} className="flex gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-xs text-red-800">
+                      <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                      <span>{claim}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-800">Preferred safer language</div>
+                  <ThemePills items={applicationManual.riskSafety.preferredSaferLanguage} />
+                </div>
+              </CardContent>
+            </Card>
+
+            <SectionCard title={applicationManual.toolUsage.title}>
+              <div className="space-y-4">
+                <CompactList title="Before Recommending" items={applicationManual.toolUsage.beforeRecommending} />
+                <CompactList title="Before Saving" items={applicationManual.toolUsage.beforeSaving} />
+                <CompactList title="Never Without Approval" items={applicationManual.toolUsage.neverWithoutApproval} warning />
+              </div>
+            </SectionCard>
+          </div>
+
+          <SectionCard title={applicationManual.outputTemplates.title}>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {applicationManual.outputTemplates.templates.map(t => (
+                <div key={t.id} className="rounded-md border border-slate-200 bg-slate-50 p-3 flex flex-col h-full">
+                  <div className="text-xs font-bold text-slate-800 mb-2 border-b border-slate-200 pb-1">{t.id}. {t.name}</div>
+                  <pre className="text-[10px] text-slate-600 whitespace-pre-wrap font-mono flex-1">{t.content}</pre>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
         </TabsContent>
       </Tabs>
     </div>
