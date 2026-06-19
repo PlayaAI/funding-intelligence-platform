@@ -1,14 +1,20 @@
 import { supabase } from "./supabase";
 import type { AgentActivityLogInsert, AgentActivityLogRow } from "@/types/database";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+export type GrantOsSupabaseClient = SupabaseClient<Database>;
+
 
 export type { AgentActivityLogInsert, AgentActivityLogRow };
 
 type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { message: string } };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
 
-export async function listAgentActivity(limit = 100): Promise<AgentActivityLogRow[]> {
+
+export async function listAgentActivity(limit = 100, client?: GrantOsSupabaseClient): Promise<AgentActivityLogRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<AgentActivityLogRow[]> = await db
     .from("agent_activity_logs")
     .select("*")
@@ -20,7 +26,9 @@ export async function listAgentActivity(limit = 100): Promise<AgentActivityLogRo
 
 export async function createAgentActivity(
   input: Omit<AgentActivityLogInsert, "id" | "created_at">
-): Promise<AgentActivityLogRow> {
+, client?: GrantOsSupabaseClient): Promise<AgentActivityLogRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<AgentActivityLogRow> = await db
     .from("agent_activity_logs")
     .insert(input)

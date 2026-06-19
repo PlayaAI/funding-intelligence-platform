@@ -1,5 +1,10 @@
 import { supabase } from "./supabase";
 import type { ProofItemRow, ProofItemInsert, ProofItemUpdate } from "@/types/database";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+export type GrantOsSupabaseClient = SupabaseClient<Database>;
+
 
 export type { ProofItemRow, ProofItemInsert, ProofItemUpdate };
 
@@ -8,10 +13,11 @@ type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { messa
 // Cast supabase to any so we bypass the generic type-inference issue with
 // custom Database schemas. The actual runtime behaviour is correct; we
 // enforce our own types through explicit return-type annotations.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
 
-export async function listProofItems(projectId?: string): Promise<ProofItemRow[]> {
+
+export async function listProofItems(projectId?: string, client?: GrantOsSupabaseClient): Promise<ProofItemRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   let query = db
     .from("proof_items")
     .select("*")
@@ -27,7 +33,9 @@ export async function listProofItems(projectId?: string): Promise<ProofItemRow[]
   return result.data ?? [];
 }
 
-export async function getProofItem(id: string): Promise<ProofItemRow | null> {
+export async function getProofItem(id: string, client?: GrantOsSupabaseClient): Promise<ProofItemRow | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ProofItemRow | null> = await db
     .from("proof_items")
     .select("*")
@@ -41,7 +49,9 @@ export async function getProofItem(id: string): Promise<ProofItemRow | null> {
 
 export async function createProofItem(
   input: Omit<ProofItemInsert, "id" | "created_at" | "updated_at">
-): Promise<ProofItemRow> {
+, client?: GrantOsSupabaseClient): Promise<ProofItemRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ProofItemRow> = await db
     .from("proof_items")
     .insert(input)
@@ -56,7 +66,9 @@ export async function createProofItem(
 export async function updateProofItem(
   id: string,
   updates: Omit<ProofItemUpdate, "id" | "created_at">
-): Promise<ProofItemRow> {
+, client?: GrantOsSupabaseClient): Promise<ProofItemRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ProofItemRow> = await db
     .from("proof_items")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -70,7 +82,9 @@ export async function updateProofItem(
   return result.data;
 }
 
-export async function archiveProofItem(id: string): Promise<void> {
+export async function archiveProofItem(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db
     .from("proof_items")
     .update({ archived_at: new Date().toISOString() })
@@ -79,7 +93,9 @@ export async function archiveProofItem(id: string): Promise<void> {
   if (result.error) throw new Error(result.error.message);
 }
 
-export async function deleteProofItem(id: string): Promise<void> {
+export async function deleteProofItem(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db
     .from("proof_items")
     .delete()

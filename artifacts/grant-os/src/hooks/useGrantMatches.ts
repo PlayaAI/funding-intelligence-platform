@@ -49,27 +49,27 @@ function useInvalidateMatches() {
 
 export function useGenerateMatchesForProject() {
   const invalidate = useInvalidateMatches();
-  return useMutation({ mutationFn: generateMatchesForProject, onSuccess: invalidate });
+  return useMutation({ mutationFn: (id: string) => generateMatchesForProject(id), onSuccess: invalidate });
 }
 
 export function useGenerateMatchesForGrant() {
   const invalidate = useInvalidateMatches();
-  return useMutation({ mutationFn: generateMatchesForGrant, onSuccess: invalidate });
+  return useMutation({ mutationFn: (id: string) => generateMatchesForGrant(id), onSuccess: invalidate });
 }
 
 export function useGenerateMatchesForAllProjects() {
   const invalidate = useInvalidateMatches();
-  return useMutation({ mutationFn: generateMatchesForAllProjects, onSuccess: invalidate });
+  return useMutation({ mutationFn: () => generateMatchesForAllProjects(), onSuccess: invalidate });
 }
 
 export function useRefreshMatch() {
   const invalidate = useInvalidateMatches();
-  return useMutation({ mutationFn: refreshMatch, onSuccess: invalidate });
+  return useMutation({ mutationFn: (id: string) => refreshMatch(id), onSuccess: invalidate });
 }
 
 export function useSaveMatch() {
   const invalidate = useInvalidateMatches();
-  return useMutation({ mutationFn: saveMatch, onSuccess: invalidate });
+  return useMutation({ mutationFn: (id: string) => saveMatch(id), onSuccess: invalidate });
 }
 
 export function useHideMatch() {

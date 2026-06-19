@@ -1,5 +1,10 @@
 import { supabase } from "./supabase";
 import type { Json } from "@/types/database";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+export type GrantOsSupabaseClient = SupabaseClient<Database>;
+
 
 export type GrantShortlistStatus = "New" | "Watching" | "Shortlisted" | "Apply" | "Skip" | "Archived" | "Not relevant";
 export type GrantShortlistPriority = "Low" | "Medium" | "High" | "Urgent";
@@ -40,14 +45,15 @@ export type GrantShortlistItemUpdate = Partial<GrantShortlistItemInsert>;
 
 type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { message: string; code?: string; details?: string } };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+
 
 function isMissingShortlistTable(error: { message: string; code?: string }) {
   return error.code === "42P01" || /grant_shortlist_items/i.test(error.message) && /does not exist|schema cache/i.test(error.message);
 }
 
-export async function listGrantShortlistItems(): Promise<GrantShortlistItemRow[]> {
+export async function listGrantShortlistItems(client?: GrantOsSupabaseClient): Promise<GrantShortlistItemRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<GrantShortlistItemRow[]> = await db
     .from("grant_shortlist_items")
     .select("*")
@@ -61,7 +67,9 @@ export async function listGrantShortlistItems(): Promise<GrantShortlistItemRow[]
   return result.data ?? [];
 }
 
-export async function upsertGrantShortlistItem(input: GrantShortlistItemInsert): Promise<GrantShortlistItemRow> {
+export async function upsertGrantShortlistItem(input: GrantShortlistItemInsert, client?: GrantOsSupabaseClient): Promise<GrantShortlistItemRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   // Avoid relying on PostgreSQL unique handling for nullable project_id.
   // Null project scopes are common in the current UI and UNIQUE(grant_id, project_id)
   // would otherwise allow duplicate global shortlist rows.
@@ -86,7 +94,9 @@ export async function upsertGrantShortlistItem(input: GrantShortlistItemInsert):
   return result.data;
 }
 
-export async function archiveGrantShortlistItem(id: string): Promise<void> {
+export async function archiveGrantShortlistItem(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<Json> = await db
     .from("grant_shortlist_items")
     .update({ archived_at: new Date().toISOString(), status: "Archived" })

@@ -14,7 +14,7 @@ export const GRANT_SHORTLIST_QUERY_KEY = ["grant_shortlist_items"] as const;
 export function useGrantShortlistItems() {
   return useQuery({
     queryKey: GRANT_SHORTLIST_QUERY_KEY,
-    queryFn: listGrantShortlistItems,
+    queryFn: () => listGrantShortlistItems(),
     staleTime: 1000 * 60,
   });
 }
@@ -22,7 +22,7 @@ export function useGrantShortlistItems() {
 export function useUpsertGrantShortlistItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: upsertGrantShortlistItem,
+    mutationFn: (input: GrantShortlistItemInsert) => upsertGrantShortlistItem(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: GRANT_SHORTLIST_QUERY_KEY }),
   });
 }
@@ -30,7 +30,7 @@ export function useUpsertGrantShortlistItem() {
 export function useArchiveGrantShortlistItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: archiveGrantShortlistItem,
+    mutationFn: (id: string) => archiveGrantShortlistItem(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: GRANT_SHORTLIST_QUERY_KEY }),
   });
 }

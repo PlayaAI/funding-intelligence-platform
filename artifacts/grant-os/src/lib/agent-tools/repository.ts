@@ -198,11 +198,11 @@ export function createLiveGrantOsRepository(
   return {
     listGrants: () => listGrants(undefined, agentSupabase),
     getGrant: (id) => getGrantById(id, agentSupabase),
-    updateGrantStatus: (id, status) => updateGrant(id, { status }),
-    listFunders: () => listFunders(),
-    getFunder: (id) => getFunderByIdOrLegacy(id),
-    listDocuments: (filters) => listDocuments(filters),
-    getDocument: (id) => getDocument(id),
+    updateGrantStatus: (id, status) => updateGrant(id, { status }, agentSupabase),
+    listFunders: () => listFunders(agentSupabase),
+    getFunder: (id) => getFunderByIdOrLegacy(id, agentSupabase),
+    listDocuments: (filters) => listDocuments(filters, agentSupabase),
+    getDocument: (id) => getDocument(id, agentSupabase),
     listGrantDocuments: (grant, funder) =>
       listGrantDocuments({
         grantId: grant.id,
@@ -211,34 +211,34 @@ export function createLiveGrantOsRepository(
         funderName: grant.funder_name,
         sourceUrl: grant.source_url,
         applicationUrl: grant.application_url,
-      }),
-    listProjects: () => listProjects(),
+      }, agentSupabase),
+    listProjects: () => listProjects(agentSupabase),
     async getProject(idOrSlug) {
-      const bySlug = await getProjectBySlug(idOrSlug);
+      const bySlug = await getProjectBySlug(idOrSlug, agentSupabase);
       if (bySlug) return bySlug;
-      const projects = await listProjects();
+      const projects = await listProjects(agentSupabase);
       return projects.find((project) => project.id === idOrSlug) ?? null;
     },
-    listProofItems: (projectId) => listProofItems(projectId),
-    listApplications: () => listApplications(),
-    getApplication: (id) => getApplicationById(id),
-    listApplicationsByGrant: (grantId) => listApplicationsByGrant(grantId),
-    listApplicationQuestions: (applicationId) => listApplicationQuestions(applicationId),
-    listApplicationRequiredDocuments: (applicationId) => listApplicationRequiredDocuments(applicationId),
-    createApplication: (input) => createApplication(input),
-    listTasks: () => listTasks(),
-    getTask: (id) => getTaskById(id),
-    listTasksByApplication: (applicationId) => listTasksByApplication(applicationId),
-    createTask: (input) => createTask(input),
+    listProofItems: (projectId) => listProofItems(projectId, agentSupabase),
+    listApplications: () => listApplications(undefined, agentSupabase),
+    getApplication: (id) => getApplicationById(id, agentSupabase),
+    listApplicationsByGrant: (grantId) => listApplicationsByGrant(grantId, agentSupabase),
+    listApplicationQuestions: (applicationId) => listApplicationQuestions(applicationId, agentSupabase),
+    listApplicationRequiredDocuments: (applicationId) => listApplicationRequiredDocuments(applicationId, agentSupabase),
+    createApplication: (input) => createApplication(input, agentSupabase),
+    listTasks: () => listTasks(undefined, agentSupabase),
+    getTask: (id) => getTaskById(id, agentSupabase),
+    listTasksByApplication: (applicationId) => listTasksByApplication(applicationId, agentSupabase),
+    createTask: (input) => createTask(input, agentSupabase),
     async updateTaskStatus(id, status) {
-      return updateTask(id, { status });
+      return updateTask(id, { status }, agentSupabase);
     },
-    listPeers: () => listPeerOrganizations(),
-    getPeer: (id) => getPeerByIdOrLegacy(id),
-    listPeerFundingRecords: (peerOrganizationId) => listPeerFundingRecords(peerOrganizationId),
-    listAllPeerFundingRecords: () => listAllPeerFundingRecords(),
-    createPeerOrganization: (input) => createPeerOrganization(input),
-    createPeerFundingRecord: (input) => createPeerFundingRecord(input),
+    listPeers: () => listPeerOrganizations(undefined, agentSupabase),
+    getPeer: (id) => getPeerByIdOrLegacy(id, agentSupabase),
+    listPeerFundingRecords: (peerOrganizationId) => listPeerFundingRecords(peerOrganizationId, agentSupabase),
+    listAllPeerFundingRecords: () => listAllPeerFundingRecords(agentSupabase),
+    createPeerOrganization: (input) => createPeerOrganization(input, agentSupabase),
+    createPeerFundingRecord: (input) => createPeerFundingRecord(input, agentSupabase),
     createApplicationNote: ({ applicationId, title, content, createdBy }) =>
       createAgentNote({
         note_type: "general",
@@ -247,13 +247,13 @@ export function createLiveGrantOsRepository(
         related_application_id: applicationId,
         created_by: createdBy ?? null,
         source: "external_agent",
-      }),
-    listAgentNotes: (filters) => listAgentNotes(filters),
+      }, agentSupabase),
+    listAgentNotes: (filters) => listAgentNotes(filters, agentSupabase),
     async listAgentReports(filters) {
-      return await listAgentReports(filters);
+      return await listAgentReports(filters, agentSupabase);
     },
     async listGrantMatches(filters) {
-      const matches = await listMatches({ status: "all" });
+      const matches = await listMatches({ status: "all" }, agentSupabase);
       return matches.filter((match) => {
         if (filters?.grantId && match.grant_id !== filters.grantId) return false;
         if (filters?.projectId && match.project_id !== filters.projectId) return false;
@@ -278,7 +278,7 @@ export function createLiveGrantOsRepository(
       if (!result.data) throw new Error("No grant match row returned from upsert.");
       return hydrateGrantMatch(result.data as GrantMatchRow);
     },
-    saveGrantToShortlist: (input) => upsertGrantShortlistItem(input),
+    saveGrantToShortlist: (input) => upsertGrantShortlistItem(input, agentSupabase),
     async recordAudit(payload) {
       try {
         return await createAgentActivity({
@@ -297,7 +297,7 @@ export function createLiveGrantOsRepository(
           status: payload.status === "approval_required" ? "pending" : payload.status,
           metadata: payload as unknown as Json,
           created_by: payload.actor_id ?? null,
-        });
+        }, agentSupabase);
       } catch {
         return null;
       }

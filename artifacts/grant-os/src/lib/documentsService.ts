@@ -1,12 +1,16 @@
 import { supabase } from "./supabase";
 import type { DocumentInsert, DocumentRow, DocumentUpdate } from "@/types/database";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+export type GrantOsSupabaseClient = SupabaseClient<Database>;
+
 
 export type { DocumentInsert, DocumentRow, DocumentUpdate };
 
 type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { message: string } };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+
 
 export const DOCUMENT_BUCKET = "grant-documents";
 
@@ -29,7 +33,9 @@ export type GrantDocumentLookup = {
   applicationUrl?: string | null;
 };
 
-export async function listDocuments(filters?: DocumentFilters): Promise<DocumentRow[]> {
+export async function listDocuments(filters?: DocumentFilters, client?: GrantOsSupabaseClient): Promise<DocumentRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   let query = db.from("documents").select("*").order("created_at", { ascending: false });
   if (!filters?.includeArchived) query = query.is("archived_at", null);
   if (filters?.documentType && filters.documentType !== "all") query = query.eq("document_type", filters.documentType);
@@ -56,7 +62,9 @@ function containsAny(haystack: string, needles: string[]) {
   return needles.some((needle) => needle.length >= 8 && haystack.includes(needle));
 }
 
-export async function listGrantDocuments(input: GrantDocumentLookup): Promise<DocumentRow[]> {
+export async function listGrantDocuments(input: GrantDocumentLookup, client?: GrantOsSupabaseClient): Promise<DocumentRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const queries: Promise<DocumentRow[]>[] = [listDocuments({ relatedGrantId: input.grantId })];
   if (input.funderId) queries.push(listDocuments({ relatedFunderId: input.funderId }));
 
@@ -80,20 +88,26 @@ export async function listGrantDocuments(input: GrantDocumentLookup): Promise<Do
   });
 }
 
-export async function getDocument(id: string): Promise<DocumentRow | null> {
+export async function getDocument(id: string, client?: GrantOsSupabaseClient): Promise<DocumentRow | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<DocumentRow | null> = await db.from("documents").select("*").eq("id", id).maybeSingle();
   if (result.error) throw new Error(result.error.message);
   return result.data;
 }
 
-export async function createDocument(input: Omit<DocumentInsert, "created_at" | "updated_at">): Promise<DocumentRow> {
+export async function createDocument(input: Omit<DocumentInsert, "created_at" | "updated_at">, client?: GrantOsSupabaseClient): Promise<DocumentRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<DocumentRow> = await db.from("documents").insert(input).select().single();
   if (result.error) throw new Error(result.error.message);
   if (!result.data) throw new Error("No data returned from insert");
   return result.data;
 }
 
-export async function updateDocument(id: string, updates: Omit<DocumentUpdate, "id" | "created_at">): Promise<DocumentRow> {
+export async function updateDocument(id: string, updates: Omit<DocumentUpdate, "id" | "created_at">, client?: GrantOsSupabaseClient): Promise<DocumentRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<DocumentRow> = await db
     .from("documents")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -105,7 +119,9 @@ export async function updateDocument(id: string, updates: Omit<DocumentUpdate, "
   return result.data;
 }
 
-export async function archiveDocument(id: string): Promise<void> {
+export async function archiveDocument(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db
     .from("documents")
     .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -113,7 +129,9 @@ export async function archiveDocument(id: string): Promise<void> {
   if (result.error) throw new Error(result.error.message);
 }
 
-export async function deleteDocument(id: string): Promise<void> {
+export async function deleteDocument(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db.from("documents").delete().eq("id", id);
   if (result.error) throw new Error(result.error.message);
 }
@@ -142,7 +160,9 @@ async function extractTextFromFile(file: File): Promise<{ text: string | null; s
 export async function uploadDocumentFile(
   file: File,
   metadata: Omit<DocumentInsert, "id" | "created_at" | "updated_at" | "file_name" | "file_path" | "mime_type" | "file_size_bytes" | "extracted_text" | "extraction_status" | "extraction_error">
-): Promise<DocumentRow> {
+, client?: GrantOsSupabaseClient): Promise<DocumentRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const id = crypto.randomUUID();
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
   const filePath = `${id}/${Date.now()}-${safeName}`;
@@ -162,7 +182,9 @@ export async function uploadDocumentFile(
   });
 }
 
-export async function getDocumentSignedUrl(doc: DocumentRow): Promise<string | null> {
+export async function getDocumentSignedUrl(doc: DocumentRow, client?: GrantOsSupabaseClient): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   if (doc.source_url) return doc.source_url;
   if (doc.file_url) return doc.file_url;
   if (!doc.file_path) return null;
@@ -171,7 +193,9 @@ export async function getDocumentSignedUrl(doc: DocumentRow): Promise<string | n
   return result.data?.signedUrl ?? null;
 }
 
-export async function extractDocumentText(documentId: string): Promise<DocumentRow> {
+export async function extractDocumentText(documentId: string, client?: GrantOsSupabaseClient): Promise<DocumentRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const doc = await getDocument(documentId);
   if (!doc) throw new Error("Document not found");
   if (!doc.file_path) {
@@ -199,7 +223,9 @@ export async function extractDocumentText(documentId: string): Promise<DocumentR
   }
 }
 
-export function exportDocumentPayload(doc: DocumentRow) {
+export function exportDocumentPayload(doc: DocumentRow, client?: GrantOsSupabaseClient) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   return {
     exported_at: new Date().toISOString(),
     package_type: "document",
@@ -208,7 +234,9 @@ export function exportDocumentPayload(doc: DocumentRow) {
   };
 }
 
-export function downloadDocumentJson(doc: DocumentRow) {
+export function downloadDocumentJson(doc: DocumentRow, client?: GrantOsSupabaseClient) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const blob = new Blob([JSON.stringify(exportDocumentPayload(doc), null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

@@ -1,5 +1,10 @@
 import { supabase } from "./supabase";
 import type { ProjectRow, ProjectInsert, ProjectUpdate } from "@/types/database";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+export type GrantOsSupabaseClient = SupabaseClient<Database>;
+
 
 export type { ProjectRow, ProjectInsert, ProjectUpdate };
 
@@ -8,10 +13,11 @@ type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { messa
 // Cast supabase to any so we bypass the generic type-inference issue with
 // custom Database schemas. The actual runtime behaviour is correct; we
 // enforce our own types through explicit return-type annotations.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
 
-export async function listProjects(): Promise<ProjectRow[]> {
+
+export async function listProjects(client?: GrantOsSupabaseClient): Promise<ProjectRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ProjectRow[]> = await db
     .from("projects")
     .select("*")
@@ -22,7 +28,9 @@ export async function listProjects(): Promise<ProjectRow[]> {
   return result.data ?? [];
 }
 
-export async function getProjectBySlug(slug: string): Promise<ProjectRow | null> {
+export async function getProjectBySlug(slug: string, client?: GrantOsSupabaseClient): Promise<ProjectRow | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ProjectRow | null> = await db
     .from("projects")
     .select("*")
@@ -36,7 +44,9 @@ export async function getProjectBySlug(slug: string): Promise<ProjectRow | null>
 
 export async function createProject(
   input: Omit<ProjectInsert, "id" | "created_at" | "updated_at">
-): Promise<ProjectRow> {
+, client?: GrantOsSupabaseClient): Promise<ProjectRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ProjectRow> = await db
     .from("projects")
     .insert(input)
@@ -51,7 +61,9 @@ export async function createProject(
 export async function updateProject(
   slug: string,
   updates: Omit<ProjectUpdate, "id" | "slug" | "created_at">
-): Promise<ProjectRow> {
+, client?: GrantOsSupabaseClient): Promise<ProjectRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ProjectRow> = await db
     .from("projects")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -65,7 +77,9 @@ export async function updateProject(
   return result.data;
 }
 
-export async function archiveProject(slug: string): Promise<void> {
+export async function archiveProject(slug: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db
     .from("projects")
     .update({ archived_at: new Date().toISOString() })
@@ -74,7 +88,9 @@ export async function archiveProject(slug: string): Promise<void> {
   if (result.error) throw new Error(result.error.message);
 }
 
-export async function deleteProject(id: string): Promise<void> {
+export async function deleteProject(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db
     .from("projects")
     .delete()

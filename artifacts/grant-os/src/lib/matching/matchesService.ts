@@ -1,5 +1,10 @@
 import { supabase } from "@/lib/supabase";
 import { calculateGrantMatch } from "@/lib/matching/matchingEngine";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+export type GrantOsSupabaseClient = SupabaseClient<Database>;
+
 import type {
   AgentNoteRow,
   AgentReportRow,
@@ -17,7 +22,14 @@ import type {
 type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { message: string } };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+const globalDb = supabase as any;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getDb(client?: GrantOsSupabaseClient): any {
+  return client ? (client as any) : globalDb;
+}
+
+
 
 export type GrantMatchWithRelations = GrantMatchRow & {
   project?: ProjectRow | null;
@@ -38,7 +50,8 @@ export type MatchFilters = {
 const arrayFromJson = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 
-export function matchJsonArray(value: unknown): string[] {
+export function matchJsonArray(value: unknown, client?: GrantOsSupabaseClient): string[] {
+  const db = getDb(client);
   return arrayFromJson(value);
 }
 
@@ -46,13 +59,15 @@ function isUuid(value: string | null | undefined): boolean {
   return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 }
 
-async function selectAll<T>(table: string): Promise<T[]> {
+async function selectAll<T>(table: string, client?: GrantOsSupabaseClient): Promise<T[]> {
+  const db = getDb(client);
   const result: SupabaseResult<T[]> = await db.from(table).select("*");
   if (result.error) throw new Error(result.error.message);
   return result.data ?? [];
 }
 
-async function fetchMatchingInputs(projectId?: string, grantId?: string) {
+async function fetchMatchingInputs(projectId?: string, grantId?: string, client?: GrantOsSupabaseClient) {
+  const db = getDb(client);
   let projectsQuery = db.from("projects").select("*").is("archived_at", null);
   if (projectId) projectsQuery = projectsQuery.eq("id", projectId);
   const projectsResult: SupabaseResult<ProjectRow[]> = await projectsQuery;
@@ -64,13 +79,13 @@ async function fetchMatchingInputs(projectId?: string, grantId?: string) {
   if (grantsResult.error) throw new Error(grantsResult.error.message);
 
   const [funders, proofItems, documents, applications, tasks, agentNotes, agentReports] = await Promise.all([
-    selectAll<FunderRow>("funders"),
-    selectAll<ProofItemRow>("proof_items"),
-    selectAll<DocumentRow>("documents"),
-    selectAll<ApplicationRow>("applications"),
-    selectAll<TaskRow>("tasks"),
-    selectAll<AgentNoteRow>("agent_notes"),
-    selectAll<AgentReportRow>("agent_reports"),
+    selectAll<FunderRow>("funders", client),
+    selectAll<ProofItemRow>("proof_items", client),
+    selectAll<DocumentRow>("documents", client),
+    selectAll<ApplicationRow>("applications", client),
+    selectAll<TaskRow>("tasks", client),
+    selectAll<AgentNoteRow>("agent_notes", client),
+    selectAll<AgentReportRow>("agent_reports", client),
   ]);
 
   return {
@@ -106,7 +121,8 @@ function preserveStatus(existing?: GrantMatchRow | null) {
   };
 }
 
-async function getExistingMatches(projectIds: string[], grantIds: string[]): Promise<GrantMatchRow[]> {
+async function getExistingMatches(projectIds: string[], grantIds: string[], client?: GrantOsSupabaseClient): Promise<GrantMatchRow[]> {
+  const db = getDb(client);
   if (!projectIds.length || !grantIds.length) return [];
   const result: SupabaseResult<GrantMatchRow[]> = await db
     .from("grant_matches")
@@ -117,11 +133,13 @@ async function getExistingMatches(projectIds: string[], grantIds: string[]): Pro
   return result.data ?? [];
 }
 
-async function generateMatches(projectId?: string, grantId?: string): Promise<GrantMatchRow[]> {
-  const inputs = await fetchMatchingInputs(projectId, grantId);
+async function generateMatches(projectId?: string, grantId?: string, client?: GrantOsSupabaseClient): Promise<GrantMatchRow[]> {
+  const db = getDb(client);
+  const inputs = await fetchMatchingInputs(projectId, grantId, client);
   const existing = await getExistingMatches(
     inputs.projects.map((project) => project.id),
-    inputs.grants.map((grant) => grant.id)
+    inputs.grants.map((grant) => grant.id),
+    client
   );
   const existingByPair = new Map(existing.map((match) => [`${match.project_id}:${match.grant_id}`, match]));
 
@@ -190,19 +208,23 @@ async function generateMatches(projectId?: string, grantId?: string): Promise<Gr
   return result.data ?? [];
 }
 
-export async function generateMatchesForProject(projectId: string): Promise<GrantMatchRow[]> {
+export async function generateMatchesForProject(projectId: string, client?: GrantOsSupabaseClient): Promise<GrantMatchRow[]> {
+  const db = getDb(client);
   return generateMatches(projectId);
 }
 
-export async function generateMatchesForGrant(grantId: string): Promise<GrantMatchRow[]> {
-  return generateMatches(undefined, grantId);
+export async function generateMatchesForGrant(grantId: string, client?: GrantOsSupabaseClient): Promise<GrantMatchRow[]> {
+  const db = getDb(client);
+  return generateMatches(undefined, grantId, client);
 }
 
-export async function generateMatchesForAllProjects(): Promise<GrantMatchRow[]> {
-  return generateMatches();
+export async function generateMatchesForAllProjects(client?: GrantOsSupabaseClient): Promise<GrantMatchRow[]> {
+  const db = getDb(client);
+  return generateMatches(undefined, undefined, client);
 }
 
-export async function refreshMatch(matchId: string): Promise<GrantMatchRow> {
+export async function refreshMatch(matchId: string, client?: GrantOsSupabaseClient): Promise<GrantMatchRow> {
+  const db = getDb(client);
   const current = await getMatch(matchId);
   if (!current) throw new Error("Match not found");
   const rows = await generateMatches(current.project_id, current.grant_id);
@@ -211,13 +233,15 @@ export async function refreshMatch(matchId: string): Promise<GrantMatchRow> {
   return refreshed;
 }
 
-export async function getMatch(matchId: string): Promise<GrantMatchRow | null> {
+export async function getMatch(matchId: string, client?: GrantOsSupabaseClient): Promise<GrantMatchRow | null> {
+  const db = getDb(client);
   const result: SupabaseResult<GrantMatchRow | null> = await db.from("grant_matches").select("*").eq("id", matchId).maybeSingle();
   if (result.error) throw new Error(result.error.message);
   return result.data;
 }
 
-export async function listMatches(filters?: MatchFilters): Promise<GrantMatchWithRelations[]> {
+export async function listMatches(filters?: MatchFilters, client?: GrantOsSupabaseClient): Promise<GrantMatchWithRelations[]> {
+  const db = getDb(client);
   let query = db.from("grant_matches").select("*").order("match_score", { ascending: false });
   if (filters?.projectId) query = query.eq("project_id", filters.projectId);
   if (filters?.grantId) query = query.eq("grant_id", filters.grantId);
@@ -232,9 +256,9 @@ export async function listMatches(filters?: MatchFilters): Promise<GrantMatchWit
   if (!rows.length) return [];
 
   const [projects, grants, funders] = await Promise.all([
-    selectAll<ProjectRow>("projects"),
-    selectAll<GrantRow>("grants"),
-    selectAll<FunderRow>("funders"),
+    selectAll<ProjectRow>("projects", client),
+    selectAll<GrantRow>("grants", client),
+    selectAll<FunderRow>("funders", client),
   ]);
   const projectsById = new Map(projects.map((project) => [project.id, project]));
   const grantsById = new Map(grants.map((grant) => [grant.id, grant]));
@@ -260,15 +284,18 @@ export async function listMatches(filters?: MatchFilters): Promise<GrantMatchWit
     });
 }
 
-export async function listMatchesForProject(projectId: string) {
-  return listMatches({ projectId });
+export async function listMatchesForProject(projectId: string, client?: GrantOsSupabaseClient) {
+  const db = getDb(client);
+  return listMatches({ projectId }, client);
 }
 
-export async function listMatchesForGrant(grantId: string) {
-  return listMatches({ grantId });
+export async function listMatchesForGrant(grantId: string, client?: GrantOsSupabaseClient) {
+  const db = getDb(client);
+  return listMatches({ grantId }, client);
 }
 
-async function updateMatchStatus(matchId: string, updates: Partial<GrantMatchRow>): Promise<GrantMatchRow> {
+async function updateMatchStatus(matchId: string, updates: Partial<GrantMatchRow>, client?: GrantOsSupabaseClient): Promise<GrantMatchRow> {
+  const db = getDb(client);
   const result: SupabaseResult<GrantMatchRow> = await db
     .from("grant_matches")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -280,18 +307,22 @@ async function updateMatchStatus(matchId: string, updates: Partial<GrantMatchRow
   return result.data;
 }
 
-export function saveMatch(matchId: string) {
-  return updateMatchStatus(matchId, { status: "saved", saved_at: new Date().toISOString(), hidden_at: null, dismissed_reason: null });
+export function saveMatch(matchId: string, client?: GrantOsSupabaseClient) {
+  const db = getDb(client);
+  return updateMatchStatus(matchId, { status: "saved", saved_at: new Date().toISOString(), hidden_at: null, dismissed_reason: null }, client);
 }
 
-export function hideMatch(matchId: string, reason?: string) {
-  return updateMatchStatus(matchId, { status: "hidden", hidden_at: new Date().toISOString(), dismissed_reason: reason ?? null });
+export function hideMatch(matchId: string, reason?: string, client?: GrantOsSupabaseClient) {
+  const db = getDb(client);
+  return updateMatchStatus(matchId, { status: "hidden", hidden_at: new Date().toISOString(), dismissed_reason: reason ?? null }, client);
 }
 
-export function dismissMatch(matchId: string, reason?: string) {
-  return updateMatchStatus(matchId, { status: "dismissed", hidden_at: new Date().toISOString(), dismissed_reason: reason ?? "Dismissed from matching dashboard" });
+export function dismissMatch(matchId: string, reason?: string, client?: GrantOsSupabaseClient) {
+  const db = getDb(client);
+  return updateMatchStatus(matchId, { status: "dismissed", hidden_at: new Date().toISOString(), dismissed_reason: reason ?? "Dismissed from matching dashboard" }, client);
 }
 
-export function markReviewed(matchId: string, userId?: string | null) {
-  return updateMatchStatus(matchId, { reviewed_at: new Date().toISOString(), reviewed_by: userId ?? null });
+export function markReviewed(matchId: string, userId?: string | null, client?: GrantOsSupabaseClient) {
+  const db = getDb(client);
+  return updateMatchStatus(matchId, { reviewed_at: new Date().toISOString(), reviewed_by: userId ?? null }, client);
 }

@@ -1,12 +1,16 @@
 import { supabase } from "./supabase";
 import type { AgentNoteInsert, AgentNoteRow, AgentNoteUpdate } from "@/types/database";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+export type GrantOsSupabaseClient = SupabaseClient<Database>;
+
 
 export type { AgentNoteInsert, AgentNoteRow, AgentNoteUpdate };
 
 type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { message: string } };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+
 
 export type AgentNoteFilters = {
   relatedProjectId?: string;
@@ -16,7 +20,9 @@ export type AgentNoteFilters = {
   includeArchived?: boolean;
 };
 
-export async function listAgentNotes(filters?: AgentNoteFilters): Promise<AgentNoteRow[]> {
+export async function listAgentNotes(filters?: AgentNoteFilters, client?: GrantOsSupabaseClient): Promise<AgentNoteRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   let query = db.from("agent_notes").select("*").order("created_at", { ascending: false });
   if (!filters?.includeArchived) query = query.is("archived_at", null);
   if (filters?.relatedProjectId) query = query.eq("related_project_id", filters.relatedProjectId);
@@ -30,7 +36,9 @@ export async function listAgentNotes(filters?: AgentNoteFilters): Promise<AgentN
 
 export async function createAgentNote(
   input: Omit<AgentNoteInsert, "id" | "created_at" | "updated_at">
-): Promise<AgentNoteRow> {
+, client?: GrantOsSupabaseClient): Promise<AgentNoteRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<AgentNoteRow> = await db.from("agent_notes").insert(input).select().single();
   if (result.error) throw new Error(result.error.message);
   if (!result.data) throw new Error("No data returned from insert");
@@ -40,7 +48,9 @@ export async function createAgentNote(
 export async function updateAgentNote(
   id: string,
   updates: Omit<AgentNoteUpdate, "id" | "created_at">
-): Promise<AgentNoteRow> {
+, client?: GrantOsSupabaseClient): Promise<AgentNoteRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<AgentNoteRow> = await db
     .from("agent_notes")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -52,7 +62,9 @@ export async function updateAgentNote(
   return result.data;
 }
 
-export async function archiveAgentNote(id: string): Promise<void> {
+export async function archiveAgentNote(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db
     .from("agent_notes")
     .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -60,7 +72,9 @@ export async function archiveAgentNote(id: string): Promise<void> {
   if (result.error) throw new Error(result.error.message);
 }
 
-export async function deleteAgentNote(id: string): Promise<void> {
+export async function deleteAgentNote(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db.from("agent_notes").delete().eq("id", id);
   if (result.error) throw new Error(result.error.message);
 }

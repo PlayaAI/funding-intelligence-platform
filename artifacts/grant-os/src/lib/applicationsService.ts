@@ -1,4 +1,9 @@
 import { supabase } from "./supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+export type GrantOsSupabaseClient = SupabaseClient<Database>;
+
 import type {
   ApplicationRow,
   ApplicationInsert,
@@ -25,8 +30,7 @@ export type {
 
 type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { message: string } };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+
 
 // ============================================================
 // Applications
@@ -36,7 +40,9 @@ export type ListApplicationsOptions = {
   includeSoftArchived?: boolean;
 };
 
-export async function listApplications(opts?: ListApplicationsOptions): Promise<ApplicationRow[]> {
+export async function listApplications(opts?: ListApplicationsOptions, client?: GrantOsSupabaseClient): Promise<ApplicationRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   let query = db.from("applications").select("*").order("created_at", { ascending: false });
   if (!opts?.includeSoftArchived) {
     query = query.is("archived_at", null);
@@ -46,7 +52,9 @@ export async function listApplications(opts?: ListApplicationsOptions): Promise<
   return result.data ?? [];
 }
 
-export async function getApplicationById(id: string): Promise<ApplicationRow | null> {
+export async function getApplicationById(id: string, client?: GrantOsSupabaseClient): Promise<ApplicationRow | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationRow | null> = await db
     .from("applications")
     .select("*")
@@ -56,7 +64,9 @@ export async function getApplicationById(id: string): Promise<ApplicationRow | n
   return result.data;
 }
 
-export async function listApplicationsByGrant(grantId: string): Promise<ApplicationRow[]> {
+export async function listApplicationsByGrant(grantId: string, client?: GrantOsSupabaseClient): Promise<ApplicationRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationRow[]> = await db
     .from("applications")
     .select("*")
@@ -67,7 +77,9 @@ export async function listApplicationsByGrant(grantId: string): Promise<Applicat
   return result.data ?? [];
 }
 
-export async function listApplicationsByProject(projectId: string): Promise<ApplicationRow[]> {
+export async function listApplicationsByProject(projectId: string, client?: GrantOsSupabaseClient): Promise<ApplicationRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationRow[]> = await db
     .from("applications")
     .select("*")
@@ -80,7 +92,9 @@ export async function listApplicationsByProject(projectId: string): Promise<Appl
 
 export async function createApplication(
   input: Omit<ApplicationInsert, "id" | "created_at" | "updated_at">
-): Promise<ApplicationRow> {
+, client?: GrantOsSupabaseClient): Promise<ApplicationRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationRow> = await db
     .from("applications")
     .insert(input)
@@ -94,7 +108,9 @@ export async function createApplication(
 export async function updateApplication(
   id: string,
   updates: Omit<ApplicationUpdate, "id" | "created_at">
-): Promise<ApplicationRow> {
+, client?: GrantOsSupabaseClient): Promise<ApplicationRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationRow> = await db
     .from("applications")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -106,7 +122,9 @@ export async function updateApplication(
   return result.data;
 }
 
-export async function archiveApplication(id: string): Promise<void> {
+export async function archiveApplication(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const now = new Date().toISOString();
   const result: SupabaseResult<null> = await db
     .from("applications")
@@ -115,7 +133,9 @@ export async function archiveApplication(id: string): Promise<void> {
   if (result.error) throw new Error(result.error.message);
 }
 
-export async function deleteApplication(id: string): Promise<void> {
+export async function deleteApplication(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db.from("applications").delete().eq("id", id);
   if (result.error) throw new Error(result.error.message);
 }
@@ -124,7 +144,9 @@ export async function deleteApplication(id: string): Promise<void> {
 // Application Questions
 // ============================================================
 
-export async function listApplicationQuestions(applicationId: string): Promise<ApplicationQuestionRow[]> {
+export async function listApplicationQuestions(applicationId: string, client?: GrantOsSupabaseClient): Promise<ApplicationQuestionRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationQuestionRow[]> = await db
     .from("application_questions")
     .select("*")
@@ -136,7 +158,9 @@ export async function listApplicationQuestions(applicationId: string): Promise<A
 
 export async function createApplicationQuestion(
   input: Omit<ApplicationQuestionInsert, "id" | "created_at" | "updated_at">
-): Promise<ApplicationQuestionRow> {
+, client?: GrantOsSupabaseClient): Promise<ApplicationQuestionRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationQuestionRow> = await db
     .from("application_questions")
     .insert(input)
@@ -150,7 +174,9 @@ export async function createApplicationQuestion(
 export async function updateApplicationQuestion(
   id: string,
   updates: Omit<ApplicationQuestionUpdate, "id" | "created_at">
-): Promise<ApplicationQuestionRow> {
+, client?: GrantOsSupabaseClient): Promise<ApplicationQuestionRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationQuestionRow> = await db
     .from("application_questions")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -162,7 +188,9 @@ export async function updateApplicationQuestion(
   return result.data;
 }
 
-export async function deleteApplicationQuestion(id: string): Promise<void> {
+export async function deleteApplicationQuestion(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db.from("application_questions").delete().eq("id", id);
   if (result.error) throw new Error(result.error.message);
 }
@@ -171,7 +199,9 @@ export async function deleteApplicationQuestion(id: string): Promise<void> {
 // Application Required Documents
 // ============================================================
 
-export async function listApplicationRequiredDocuments(applicationId: string): Promise<ApplicationRequiredDocumentRow[]> {
+export async function listApplicationRequiredDocuments(applicationId: string, client?: GrantOsSupabaseClient): Promise<ApplicationRequiredDocumentRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationRequiredDocumentRow[]> = await db
     .from("application_required_documents")
     .select("*")
@@ -183,7 +213,9 @@ export async function listApplicationRequiredDocuments(applicationId: string): P
 
 export async function createApplicationRequiredDocument(
   input: Omit<ApplicationRequiredDocumentInsert, "id" | "created_at" | "updated_at">
-): Promise<ApplicationRequiredDocumentRow> {
+, client?: GrantOsSupabaseClient): Promise<ApplicationRequiredDocumentRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationRequiredDocumentRow> = await db
     .from("application_required_documents")
     .insert(input)
@@ -197,7 +229,9 @@ export async function createApplicationRequiredDocument(
 export async function updateApplicationRequiredDocument(
   id: string,
   updates: Omit<ApplicationRequiredDocumentUpdate, "id" | "created_at">
-): Promise<ApplicationRequiredDocumentRow> {
+, client?: GrantOsSupabaseClient): Promise<ApplicationRequiredDocumentRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<ApplicationRequiredDocumentRow> = await db
     .from("application_required_documents")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -209,7 +243,9 @@ export async function updateApplicationRequiredDocument(
   return result.data;
 }
 
-export async function deleteApplicationRequiredDocument(id: string): Promise<void> {
+export async function deleteApplicationRequiredDocument(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db.from("application_required_documents").delete().eq("id", id);
   if (result.error) throw new Error(result.error.message);
 }

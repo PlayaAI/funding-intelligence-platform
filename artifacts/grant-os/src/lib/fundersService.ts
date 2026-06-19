@@ -1,17 +1,23 @@
 import { supabase } from "./supabase";
 import type { FunderInsert, FunderRow, FunderUpdate } from "@/types/database";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+export type GrantOsSupabaseClient = SupabaseClient<Database>;
+
 
 export type { FunderRow, FunderInsert, FunderUpdate };
 
 type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { message: string } };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export async function listFunders(): Promise<FunderRow[]> {
+export async function listFunders(client?: GrantOsSupabaseClient): Promise<FunderRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<FunderRow[]> = await db
     .from("funders")
     .select("*")
@@ -22,7 +28,9 @@ export async function listFunders(): Promise<FunderRow[]> {
   return result.data ?? [];
 }
 
-export async function getFunderByIdOrLegacy(id: string): Promise<FunderRow | null> {
+export async function getFunderByIdOrLegacy(id: string, client?: GrantOsSupabaseClient): Promise<FunderRow | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   if (UUID_RE.test(id)) {
     const result: SupabaseResult<FunderRow | null> = await db
       .from("funders")
@@ -45,7 +53,9 @@ export async function getFunderByIdOrLegacy(id: string): Promise<FunderRow | nul
 
 export async function createFunder(
   input: Omit<FunderInsert, "id" | "created_at" | "updated_at">
-): Promise<FunderRow> {
+, client?: GrantOsSupabaseClient): Promise<FunderRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<FunderRow> = await db.from("funders").insert(input).select().single();
 
   if (result.error) throw new Error(result.error.message);
@@ -56,7 +66,9 @@ export async function createFunder(
 export async function updateFunder(
   id: string,
   updates: Omit<FunderUpdate, "id" | "created_at">
-): Promise<FunderRow> {
+, client?: GrantOsSupabaseClient): Promise<FunderRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<FunderRow> = await db
     .from("funders")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -69,7 +81,9 @@ export async function updateFunder(
   return result.data;
 }
 
-export async function archiveFunder(id: string): Promise<void> {
+export async function archiveFunder(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db
     .from("funders")
     .update({ archived_at: new Date().toISOString() })
@@ -78,7 +92,9 @@ export async function archiveFunder(id: string): Promise<void> {
   if (result.error) throw new Error(result.error.message);
 }
 
-export async function deleteFunder(id: string): Promise<void> {
+export async function deleteFunder(id: string, client?: GrantOsSupabaseClient): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
   const result: SupabaseResult<null> = await db.from("funders").delete().eq("id", id);
 
   if (result.error) throw new Error(result.error.message);

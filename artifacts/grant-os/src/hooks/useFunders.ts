@@ -28,7 +28,7 @@ export const PEER_FUNDING_ALL_KEY = ["peer_funding_records", "all"] as const;
 export function useFunders() {
   return useQuery({
     queryKey: FUNDERS_QUERY_KEY,
-    queryFn: listFunders,
+    queryFn: () => listFunders(),
     staleTime: 1000 * 60,
   });
 }
@@ -45,7 +45,7 @@ export function useFunder(id: string | undefined) {
 export function useAllPeerFundingRecords() {
   return useQuery({
     queryKey: PEER_FUNDING_ALL_KEY,
-    queryFn: listAllPeerFundingRecords,
+    queryFn: () => listAllPeerFundingRecords(),
     staleTime: 1000 * 60,
   });
 }

@@ -63,9 +63,10 @@ export async function createGrant(
 
 export async function updateGrant(
   id: string,
-  updates: Omit<GrantUpdate, "id" | "created_at">
+  updates: Omit<GrantUpdate, "id" | "created_at">,
+  client?: GrantOsSupabaseClient
 ): Promise<GrantRow> {
-  const result: SupabaseResult<GrantRow> = await db
+  const result: SupabaseResult<GrantRow> = await getDb(client)
     .from("grants")
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq("id", id)

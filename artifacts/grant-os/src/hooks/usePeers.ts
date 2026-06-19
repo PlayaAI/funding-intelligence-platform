@@ -67,7 +67,7 @@ export function useMappedPeers(opts?: ListPeerOrganizationsOptions) {
   const peersQuery = usePeerOrganizations(opts);
   const recordsQuery = useQuery({
     queryKey: PEER_FUNDING_ALL_KEY,
-    queryFn: listAllPeerFundingRecords,
+    queryFn: () => listAllPeerFundingRecords(),
     staleTime: 1000 * 60,
   });
 

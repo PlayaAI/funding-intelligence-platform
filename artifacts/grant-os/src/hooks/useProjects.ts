@@ -18,7 +18,7 @@ export const PROJECT_QUERY_KEY = ["projects"] as const;
 export function useProjects() {
   return useQuery({
     queryKey: PROJECT_QUERY_KEY,
-    queryFn: listProjects,
+    queryFn: () => listProjects(),
     staleTime: 1000 * 60,
   });
 }
