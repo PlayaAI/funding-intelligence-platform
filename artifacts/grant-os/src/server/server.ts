@@ -98,7 +98,7 @@ async function getAuthenticatedProfile(request: IncomingMessage, useServiceRole:
 
   const { data: profile, error: profileError } = await profileClient
     .from("profiles")
-    .select("id,email,full_name,role")
+    .select("id,email,full_name,role,access_status")
     .eq("id", userData.user.id)
     .maybeSingle();
 
@@ -124,10 +124,10 @@ async function handleAdminUsers(request: IncomingMessage, response: ServerRespon
   }
 
   const profile = authResult.body.profile as { role?: string; access_status?: string };
-  if (profile.role !== "Admin") {
+  if (profile.access_status !== "approved" || profile.role !== "Admin") {
     sendJson(response, 403, {
       ok: false,
-      error: { code: "admin_required", message: "Only admins can perform this action." },
+      error: { code: "admin_required", message: "Only approved admins can perform this action." },
     });
     return true;
   }
@@ -256,11 +256,11 @@ async function handleTeamInvite(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
-    const profile = authResult.body.profile as { role?: string };
-    if (profile.role !== "Admin") {
+    const profile = authResult.body.profile as { role?: string; access_status?: string };
+    if (profile.access_status !== "approved" || profile.role !== "Admin") {
       sendJson(response, 403, {
         ok: false,
-        error: { code: "admin_required", message: "Only admins can invite teammates." },
+        error: { code: "admin_required", message: "Only approved admins can invite teammates." },
       });
       return true;
     }

@@ -266,15 +266,15 @@ export function createInMemoryGrantOsRepository() {
     async proposeAgentKnowledgeUpdate(proposal) {
       const row: AgentKnowledgeUpdate = {
         id: makeId("proposal", ++idCounter),
-        proposal_type: proposal.proposal_type,
+        proposal_type: proposal.proposal_type as any,
         target_item_id: proposal.target_item_id ?? null,
         title: proposal.title,
         category: proposal.category,
         proposed_content: proposal.proposed_content,
         rationale: proposal.rationale ?? null,
-        risk_level: proposal.risk_level ?? "medium",
+        risk_level: (proposal.risk_level ?? "medium") as any,
         status: "pending_review",
-        source_type: proposal.source_type ?? "agent_observation",
+        source_type: (proposal.source_type ?? "agent_observation") as any,
         source_excerpt: proposal.source_excerpt ?? null,
         conflict_summary: proposal.conflict_summary ?? null,
         reviewer_notes: null,

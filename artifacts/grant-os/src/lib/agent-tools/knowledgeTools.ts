@@ -217,14 +217,16 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
             permission_level: "write_safe",
             actor_type: ctx.actor?.type ?? "agent",
             actor_id: ctx.actor?.id,
-            status: "success",
+            status: "completed",
             dry_run: false,
-            metadata: {
+            input: input,
+            output_summary: {
               title: proposal.title,
               proposal_type: proposal.proposal_type,
               risk_level: proposal.risk_level,
               source_type: proposal.source_type
-            } as any
+            },
+            created_at: new Date().toISOString()
           });
         } catch (e) {
           // ignore
