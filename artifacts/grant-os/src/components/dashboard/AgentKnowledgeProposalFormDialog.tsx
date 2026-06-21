@@ -82,10 +82,13 @@ export function AgentKnowledgeProposalFormDialog({ open, onOpenChange }: AgentKn
               <Select value={proposalType} onValueChange={(val: any) => setProposalType(val)}>
                 <SelectTrigger id="proposal_type"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="always_rule">Always Rule</SelectItem>
-                  <SelectItem value="never_rule">Never Rule</SelectItem>
-                  <SelectItem value="do_not_use_rule">Do Not Use Rule</SelectItem>
-                  <SelectItem value="add">General Addition</SelectItem>
+                  <SelectItem value="always_rule">Always do this</SelectItem>
+                  <SelectItem value="never_rule">Never do this</SelectItem>
+                  <SelectItem value="do_not_use_rule">Mark as do-not-use</SelectItem>
+                  <SelectItem value="add">Add new knowledge</SelectItem>
+                  <SelectItem value="edit">Edit existing knowledge</SelectItem>
+                  <SelectItem value="archive">Archive existing knowledge</SelectItem>
+                  <SelectItem value="conflict_alert">Conflict alert</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -163,7 +163,7 @@ async function handleAdminUsers(request: IncomingMessage, response: ServerRespon
         sendJson(response, 501, { ok: false, error: { code: "service_role_required", message: "Deleting users requires the SUPABASE_SERVICE_ROLE_KEY." } });
         return true;
       }
-      
+
       // Prevent deleting the only admin
       const { data: admins } = await adminClient.from("profiles").select("id").eq("role", "Admin").eq("access_status", "approved");
       if (admins && admins.length === 1 && admins[0].id === userId) {
@@ -487,14 +487,52 @@ async function handleAgentKnowledge(request: IncomingMessage, response: ServerRe
       const { data: proposal, error: fetchError } = await client.from("agent_knowledge_updates").select("*").eq("id", id).single();
       if (fetchError || !proposal) return sendJson(response, 404, { ok: false, error: { message: "Proposal not found" } }), true;
 
-      // Handle the target item creation or update
+      if (proposal.status !== "pending_review") {
+        return sendJson(response, 400, { ok: false, error: { message: `Proposal cannot be approved because its status is ${proposal.status}` } }), true;
+      }
+
+      const proposalType = proposal.proposal_type;
       let targetItemId = proposal.target_item_id;
-      if (proposal.proposal_type === "add" || !targetItemId) {
+
+      if (proposalType === "edit" || proposalType === "archive") {
+        if (!targetItemId) {
+          return sendJson(response, 400, { ok: false, error: { message: `${proposalType} requires a target_item_id` } }), true;
+        }
+        const { data: existingItem, error: existingError } = await client.from("agent_knowledge_items").select("id").eq("id", targetItemId).single();
+        if (existingError || !existingItem) {
+          return sendJson(response, 404, { ok: false, error: { message: "Target item not found" } }), true;
+        }
+      }
+
+      if (!proposal.proposed_content?.trim() && proposalType !== "archive") {
+        return sendJson(response, 400, { ok: false, error: { message: "Proposal content is empty" } }), true;
+      }
+
+      let knowledgeType = "custom_instruction";
+      if (proposalType === "never_rule" || proposalType === "do_not_use_rule") {
+        knowledgeType = "do_not_use";
+      }
+
+      if (proposalType === "edit") {
+        const { error: updateError } = await client.from("agent_knowledge_items").update({
+          content: proposal.proposed_content,
+          updated_by: authResult.body.user?.id
+        }).eq("id", targetItemId);
+        if (updateError) return sendJson(response, 500, { ok: false, error: updateError }), true;
+      } else if (proposalType === "archive") {
+        const { error: updateError } = await client.from("agent_knowledge_items").update({
+          status: "archived",
+          updated_by: authResult.body.user?.id
+        }).eq("id", targetItemId);
+        if (updateError) return sendJson(response, 500, { ok: false, error: updateError }), true;
+      } else if (proposalType === "conflict_alert" && !targetItemId) {
+        // Do nothing to active items, just mark proposal approved
+      } else {
         const { data: newItem, error: insertError } = await client.from("agent_knowledge_items").insert([{
           title: proposal.title,
           category: proposal.category,
           content: proposal.proposed_content,
-          knowledge_type: proposal.proposal_type === "add" ? "custom_instruction" : proposal.proposal_type,
+          knowledge_type: knowledgeType,
           priority: "medium",
           status: "active",
           created_by: authResult.body.user?.id,
@@ -502,21 +540,8 @@ async function handleAgentKnowledge(request: IncomingMessage, response: ServerRe
         }]).select("id").single();
         if (insertError) return sendJson(response, 500, { ok: false, error: insertError }), true;
         targetItemId = newItem.id;
-      } else if (proposal.proposal_type === "edit") {
-        const { error: updateError } = await client.from("agent_knowledge_items").update({
-          content: proposal.proposed_content,
-          updated_by: authResult.body.user?.id
-        }).eq("id", targetItemId);
-        if (updateError) return sendJson(response, 500, { ok: false, error: updateError }), true;
-      } else if (proposal.proposal_type === "archive") {
-        const { error: updateError } = await client.from("agent_knowledge_items").update({
-          status: "archived",
-          updated_by: authResult.body.user?.id
-        }).eq("id", targetItemId);
-        if (updateError) return sendJson(response, 500, { ok: false, error: updateError }), true;
       }
 
-      // Update proposal status
       const { error: propUpdateError } = await client.from("agent_knowledge_updates").update({
         status: "approved",
         target_item_id: targetItemId,
@@ -530,6 +555,13 @@ async function handleAgentKnowledge(request: IncomingMessage, response: ServerRe
 
     if (request.method === "POST" && id && action === "reject") {
       if (!isAdmin) return sendJson(response, 403, { ok: false, error: { message: "Admin required" } }), true;
+
+      const { data: proposal, error: fetchError } = await client.from("agent_knowledge_updates").select("status").eq("id", id).single();
+      if (fetchError || !proposal) return sendJson(response, 404, { ok: false, error: { message: "Proposal not found" } }), true;
+      if (proposal.status !== "pending_review") {
+        return sendJson(response, 400, { ok: false, error: { message: `Proposal cannot be rejected because its status is ${proposal.status}` } }), true;
+      }
+
       const body = await readJsonBody(request) as any;
       const { error: propUpdateError } = await client.from("agent_knowledge_updates").update({
         status: "rejected",

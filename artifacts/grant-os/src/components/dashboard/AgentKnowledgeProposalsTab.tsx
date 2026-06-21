@@ -55,7 +55,17 @@ export function AgentKnowledgeProposalsTab() {
                     <CardHeader className="pb-2 flex flex-row items-start justify-between">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="outline" className="text-[10px] uppercase tracking-wider">{p.proposal_type.replace(/_/g, ' ')}</Badge>
+                          <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+                            {{
+                              always_rule: "Always do this",
+                              never_rule: "Never do this",
+                              do_not_use_rule: "Mark as do-not-use",
+                              add: "Add new knowledge",
+                              edit: "Edit existing knowledge",
+                              archive: "Archive existing knowledge",
+                              conflict_alert: "Conflict alert"
+                            }[p.proposal_type] || p.proposal_type.replace(/_/g, ' ')}
+                          </Badge>
                           {p.risk_level === 'high' && <Badge variant="destructive" className="text-[10px]">High Risk</Badge>}
                         </div>
                         <CardTitle className="text-sm">{p.title}</CardTitle>
