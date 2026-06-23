@@ -64,7 +64,7 @@ export const MCP_ENABLED_TOOL_NAMES = new Set<string>([
   "generate_application_readiness_report",
 ]);
 
-const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput: JsonRecord }> = {
+const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonRecord }> = {
   list_grants: { schemaSummary: "{ status?: string, funderId?: string }", exampleInput: {} },
   search_grants: { schemaSummary: "{ query: string }", exampleInput: { query: "Humanity AI" } },
   get_grant: { schemaSummary: "{ grantId: string }", exampleInput: { grantId: "grant-1" } },
@@ -107,7 +107,7 @@ const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput: JsonRe
   add_peer_funding_record: { schemaSummary: "{ peerOrganizationId: string, funderName: string, year?: number, dryRun?: boolean }", exampleInput: { peerOrganizationId: "peer-1", funderName: "MIT Solve", year: 2025, dryRun: true } },
   mark_grant_status: { schemaSummary: "{ grantId: string, status: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", status: "Applying", dryRun: true } },
   save_grant_to_shortlist: { schemaSummary: "{ grantId: string, projectId?: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", dryRun: true } },
-  list_grant_matches: { schemaSummary: "{ grantId?: string, projectId?: string }", exampleInput: { projectId: "project-1" } },
+  list_grant_matches: { schemaSummary: "{ grantId?: string, projectId?: string, limit?: number (default 20, max 100) }" },
   get_grant_match: { schemaSummary: "{ matchId: string }", exampleInput: { matchId: "match-1" } },
   generate_grant_match: { schemaSummary: "{ grantId: string, projectId: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", dryRun: true } },
   save_grant_match: { schemaSummary: "{ grantId: string, projectId: string, fitScore: number, priorityScore: number, matchSummary: string, strengths: string[], risks: string[], missingInfo: string[], recommendedNextStep: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", fitScore: 8, priorityScore: 7, matchSummary: "Strong alignment with some eligibility questions.", strengths: ["AI focus overlap"], risks: ["Need budget details"], missingInfo: ["Eligibility confirmation"], recommendedNextStep: "Review and save for follow-up", dryRun: true } },
@@ -119,7 +119,7 @@ export function buildMcpToolManifest(tools: ToolMetadata[]): McpToolManifestEntr
   return tools
     .filter((tool) => MCP_ENABLED_TOOL_NAMES.has(tool.name))
     .map((tool) => {
-      const details = TOOL_DETAILS[tool.name] ?? { schemaSummary: "{}", exampleInput: {} };
+      const details = TOOL_DETAILS[tool.name] ?? { schemaSummary: "{}" };
       return {
         name: tool.name,
         description: tool.description,
@@ -127,7 +127,7 @@ export function buildMcpToolManifest(tools: ToolMetadata[]): McpToolManifestEntr
         enabled: true,
         defaultDryRun: tool.permissionLevel === "write_safe" && tool.dryRunSupported ? true : undefined,
         schemaSummary: details.schemaSummary,
-        exampleInput: details.exampleInput,
+        // exampleInput intentionally omitted from live manifest to reduce per-session token cost
       };
     });
 }

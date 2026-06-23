@@ -159,14 +159,21 @@ export function createMatchTools(repository: GrantOsRepository): Array<ToolDefin
       name: "list_grant_matches",
       description: "List saved or generated grant matches for the dashboard.",
       permissionLevel: "read",
-      inputSchema: z.object({ grantId: z.string().optional(), projectId: z.string().optional() }),
+      inputSchema: z.object({
+        grantId: z.string().optional(),
+        projectId: z.string().optional(),
+        limit: z.number().int().positive().max(100).optional(),
+      }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
       risks: ["Grant match records may reveal internal prioritization logic and strategy."],
       relatedTables: ["grant_matches", "grants", "projects", "funders"],
       touchesRealDb: false,
-      async execute({ grantId, projectId }) {
-        return repository.listGrantMatches({ grantId, projectId });
+      async execute({ grantId, projectId, limit }) {
+        const DEFAULT_LIMIT = 20;
+        const cap = Math.min(limit ?? DEFAULT_LIMIT, 100);
+        const matches = await repository.listGrantMatches({ grantId, projectId });
+        return { items: matches.slice(0, cap), total: matches.length, limit: cap };
       },
     },
     {

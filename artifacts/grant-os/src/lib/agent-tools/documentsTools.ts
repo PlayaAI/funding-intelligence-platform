@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { GrantOsRepository } from "./repository";
 import type { ToolDefinition } from "./types";
+import { stripDocumentContent } from "./builders";
 import { makeToolError } from "./safety";
 
 export function createDocumentTools(repository: GrantOsRepository): Array<ToolDefinition<any, any>> {
@@ -14,7 +15,8 @@ export function createDocumentTools(repository: GrantOsRepository): Array<ToolDe
         relatedApplicationId: z.string().optional(),
         relatedProjectId: z.string().optional(),
         relatedFunderId: z.string().optional(),
-        limit: z.number().int().positive().max(200).optional(),
+        limit: z.number().int().positive().max(100).optional(),
+        includeExtractedText: z.boolean().optional(),
       }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
@@ -22,8 +24,12 @@ export function createDocumentTools(repository: GrantOsRepository): Array<ToolDe
       relatedTables: ["documents"],
       touchesRealDb: true,
       async execute(input) {
+        const DEFAULT_LIMIT = 25;
+        const cap = Math.min(input.limit ?? DEFAULT_LIMIT, 100);
         const documents = await repository.listDocuments(input);
-        return { items: input.limit ? documents.slice(0, input.limit) : documents, total: documents.length };
+        const paged = documents.slice(0, cap);
+        const items = input.includeExtractedText ? paged : paged.map(stripDocumentContent);
+        return { items, total: documents.length, limit: cap, includeExtractedText: input.includeExtractedText ?? false };
       },
     },
     {

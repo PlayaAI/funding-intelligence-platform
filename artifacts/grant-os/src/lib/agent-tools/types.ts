@@ -147,17 +147,27 @@ export type DashboardSummary = {
   peers: { total: number; fundingRecords: number };
 };
 
+export type DeadlineGrantStub = {
+  id: string;
+  title: string;
+  status: string | null;
+  deadline: string | null;
+  days_remaining: number | null;
+};
+
 export type DeadlineReport = {
   generatedAt: string;
-  windows: Record<"within_30_days" | "within_14_days" | "within_7_days" | "within_3_days", GrantRow[]>;
-  rolling: GrantRow[];
-  unknown: GrantRow[];
+  windows: Record<"within_30_days" | "within_14_days" | "within_7_days" | "within_3_days", DeadlineGrantStub[]>;
+  rolling: DeadlineGrantStub[];
+  unknown: DeadlineGrantStub[];
 };
 
 export type ApplicationWorkloadReport = {
   generatedAt: string;
   applications: Array<{
-    application: ApplicationRow;
+    applicationId: string;
+    title: string | null;
+    status: string | null;
     taskCount: number;
     openTaskCount: number;
     documentCount: number;
@@ -166,13 +176,19 @@ export type ApplicationWorkloadReport = {
   }>;
 };
 
+export type DataQualityStub = {
+  id: string;
+  title: string | null;
+  issue: string;
+};
+
 export type DataQualityReport = {
   generatedAt: string;
-  grantsMissingDeadlines: GrantRow[];
-  grantsMissingUrls: GrantRow[];
-  applicationsWithoutProject: ApplicationRow[];
-  tasksWithoutOwner: TaskRow[];
-  documentsWithoutSource: DocumentRow[];
+  grantsMissingDeadlines: DataQualityStub[];
+  grantsMissingUrls: DataQualityStub[];
+  applicationsWithoutProject: DataQualityStub[];
+  tasksWithoutOwner: DataQualityStub[];
+  documentsWithoutSource: DataQualityStub[];
 };
 
 export type DryRunPlan<T extends Record<string, unknown> = Record<string, unknown>> = {

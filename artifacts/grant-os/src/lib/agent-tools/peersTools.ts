@@ -10,15 +10,17 @@ export function createPeerTools(repository: GrantOsRepository): Array<ToolDefini
       name: "list_peers",
       description: "List peer organizations.",
       permissionLevel: "read",
-      inputSchema: z.object({ limit: z.number().int().positive().max(200).optional() }),
+      inputSchema: z.object({ limit: z.number().int().positive().max(100).optional() }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
       risks: ["Peer intelligence data may be sensitive research material."],
       relatedTables: ["peer_organizations"],
       touchesRealDb: true,
       async execute({ limit }) {
+        const DEFAULT_LIMIT = 50;
+        const cap = Math.min(limit ?? DEFAULT_LIMIT, 100);
         const peers = await repository.listPeers();
-        return { items: limit ? peers.slice(0, limit) : peers, total: peers.length };
+        return { items: peers.slice(0, cap), total: peers.length, limit: cap };
       },
     },
     {

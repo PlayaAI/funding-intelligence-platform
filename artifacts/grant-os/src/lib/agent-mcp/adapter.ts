@@ -36,6 +36,18 @@ function jsonError(status: number, code: string, message: string): McpAdapterRes
   };
 }
 
+function authError(code: string, message: string): McpAdapterResponse {
+  return {
+    status: 401,
+    body: {
+      ok: false,
+      error: { code, message },
+      do_not_retry: true,
+      action_required: "report_to_user",
+    },
+  };
+}
+
 function getHeader(headers: McpAdapterHeaders, name: string): string | null {
   const lowerName = name.toLowerCase();
   const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === lowerName);
@@ -59,24 +71,29 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 function authenticate(headers: McpAdapterHeaders): AgentAuthContext | McpAdapterResponse {
   const authorization = getHeader(headers, "authorization")?.trim();
   if (!authorization) {
-    return jsonError(401, "missing_authorization", "Authorization bearer token is required.");
+    return authError("missing_authorization", "Authorization bearer token is required. Do not retry — report this to the user.");
   }
 
   const match = authorization.match(/^Bearer\s+(.+)$/i);
   const token = match?.[1]?.trim();
   if (!token) {
-    return jsonError(401, "malformed_authorization", "Authorization must use Bearer token format.");
+    return authError("malformed_authorization", "Authorization must use Bearer token format. Do not retry — report this to the user.");
   }
 
   const payload = decodeJwtPayload(token);
   if (!payload) {
-    return jsonError(401, "malformed_authorization", "Bearer token must be a well-formed JWT.");
+    return authError("malformed_authorization", "Bearer token must be a well-formed JWT. Do not retry — report this to the user.");
+  }
+
+  // Detect expired JWT before any DB calls
+  if (typeof payload.exp === "number" && payload.exp < Math.floor(Date.now() / 1000)) {
+    return authError("auth_expired", "Your MCP session token has expired. Re-authenticate and retry once.");
   }
 
   try {
     assertNormalUserAccessToken(token);
   } catch {
-    return jsonError(401, "service_role_rejected", "Service-role tokens are not allowed.");
+    return authError("service_role_rejected", "Service-role tokens are not allowed. Do not retry — report this to the user.");
   }
 
   return {

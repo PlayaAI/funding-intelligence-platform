@@ -13,7 +13,7 @@ export function createTaskTools(repository: GrantOsRepository): Array<ToolDefini
         relatedGrantId: z.string().optional(),
         relatedApplicationId: z.string().optional(),
         status: z.string().optional(),
-        limit: z.number().int().positive().max(200).optional(),
+        limit: z.number().int().positive().max(100).optional(),
       }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
@@ -21,11 +21,13 @@ export function createTaskTools(repository: GrantOsRepository): Array<ToolDefini
       relatedTables: ["tasks"],
       touchesRealDb: true,
       async execute({ relatedGrantId, relatedApplicationId, status, limit }) {
+        const DEFAULT_LIMIT = 25;
+        const cap = Math.min(limit ?? DEFAULT_LIMIT, 100);
         let tasks = await repository.listTasks();
         if (relatedGrantId) tasks = tasks.filter((task) => task.related_grant_id === relatedGrantId);
         if (relatedApplicationId) tasks = tasks.filter((task) => task.related_application_id === relatedApplicationId);
         if (status) tasks = tasks.filter((task) => task.status === status);
-        return { items: limit ? tasks.slice(0, limit) : tasks, total: tasks.length };
+        return { items: tasks.slice(0, cap), total: tasks.length, limit: cap };
       },
     },
     {

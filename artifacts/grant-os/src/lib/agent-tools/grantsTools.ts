@@ -10,17 +10,19 @@ export function createGrantTools(repository: GrantOsRepository): Array<ToolDefin
       name: "list_grants",
       description: "List active grants with optional limit and status filter.",
       permissionLevel: "read",
-      inputSchema: z.object({ limit: z.number().int().positive().max(200).optional(), status: z.string().optional() }),
+      inputSchema: z.object({ limit: z.number().int().positive().max(100).optional(), status: z.string().optional() }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
       risks: ["May surface sensitive internal grant notes to authenticated actors."],
       relatedTables: ["grants"],
       touchesRealDb: true,
       async execute(input) {
+        const DEFAULT_LIMIT = 25;
+        const limit = Math.min(input.limit ?? DEFAULT_LIMIT, 100);
         let grants = await repository.listGrants();
         if (input.status) grants = grants.filter((grant) => grant.status === input.status);
-        if (input.limit) grants = grants.slice(0, input.limit);
-        return { items: grants, total: grants.length };
+        grants = grants.slice(0, limit);
+        return { items: grants, total: grants.length, limit };
       },
     },
     {
@@ -50,6 +52,8 @@ export function createGrantTools(repository: GrantOsRepository): Array<ToolDefin
       relatedTables: ["grants"],
       touchesRealDb: true,
       async execute({ query, limit }) {
+        const DEFAULT_LIMIT = 25;
+        const cap = Math.min(limit ?? DEFAULT_LIMIT, 100);
         const normalized = query.trim().toLowerCase();
         const grants = (await repository.listGrants()).filter((grant) => {
           const haystack = [grant.title, grant.funder_name ?? "", grant.geography ?? "", ...(grant.focus_areas ?? [])]
@@ -58,7 +62,7 @@ export function createGrantTools(repository: GrantOsRepository): Array<ToolDefin
           return haystack.includes(normalized);
         });
         const sorted = sortGrantsForSearch(grants, query);
-        return { items: limit ? sorted.slice(0, limit) : sorted, total: sorted.length, query };
+        return { items: sorted.slice(0, cap), total: sorted.length, query, limit: cap };
       },
     },
     {

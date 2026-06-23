@@ -15,6 +15,8 @@ import type {
   ChecklistTemplateItem,
   DashboardSummary,
   DataQualityReport,
+  DataQualityStub,
+  DeadlineGrantStub,
   DeadlineReport,
   GrantExportPacket,
   PeerExportPacket,
@@ -199,25 +201,34 @@ export async function buildDeadlineReport(repository: GrantOsRepository): Promis
     within_7_days: [],
     within_3_days: [],
   };
-  const rolling: GrantRow[] = [];
-  const unknown: GrantRow[] = [];
+  const rolling: DeadlineGrantStub[] = [];
+  const unknown: DeadlineGrantStub[] = [];
   for (const grant of grants) {
     const rawDeadline = grant.next_deadline ?? grant.deadline;
+    const stub: DeadlineGrantStub = {
+      id: grant.id,
+      title: grant.title,
+      status: grant.status ?? null,
+      deadline: rawDeadline ?? null,
+      days_remaining: null,
+    };
     if (!rawDeadline) {
-      if (grant.application_url || grant.source_url) rolling.push(grant);
-      else unknown.push(grant);
+      if (grant.application_url || grant.source_url) rolling.push(stub);
+      else unknown.push(stub);
       continue;
     }
     const deadline = new Date(rawDeadline);
     if (Number.isNaN(deadline.getTime())) {
-      unknown.push(grant);
+      unknown.push(stub);
       continue;
     }
     const days = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    if (days <= 30) windows.within_30_days.push(grant);
-    if (days <= 14) windows.within_14_days.push(grant);
-    if (days <= 7) windows.within_7_days.push(grant);
-    if (days <= 3) windows.within_3_days.push(grant);
+    const stubWithDays: DeadlineGrantStub = { ...stub, days_remaining: days };
+    // Each grant appears in at most one window (the tightest one), avoiding duplication
+    if (days <= 3) windows.within_3_days.push(stubWithDays);
+    else if (days <= 7) windows.within_7_days.push(stubWithDays);
+    else if (days <= 14) windows.within_14_days.push(stubWithDays);
+    else if (days <= 30) windows.within_30_days.push(stubWithDays);
   }
   return { generatedAt: new Date().toISOString(), windows, rolling, unknown };
 }
@@ -233,7 +244,9 @@ export async function buildApplicationWorkloadReport(repository: GrantOsReposito
         repository.listApplicationRequiredDocuments(application.id),
       ]);
       return {
-        application,
+        applicationId: application.id,
+        title: application.title ?? null,
+        status: application.status ?? null,
         taskCount: tasks.length,
         openTaskCount: tasks.filter(isOpenTask).length,
         documentCount: documents.length,
@@ -252,13 +265,17 @@ export async function buildDataQualityReport(repository: GrantOsRepository): Pro
     repository.listTasks(),
     repository.listDocuments(),
   ]);
+  const toGrantStub = (g: GrantRow, issue: string): DataQualityStub => ({ id: g.id, title: g.title ?? null, issue });
+  const toAppStub = (a: ApplicationRow, issue: string): DataQualityStub => ({ id: a.id, title: (a as any).title ?? null, issue });
+  const toTaskStub = (t: TaskRow, issue: string): DataQualityStub => ({ id: t.id, title: t.title ?? null, issue });
+  const toDocStub = (d: DocumentRow, issue: string): DataQualityStub => ({ id: d.id, title: d.title ?? null, issue });
   return {
     generatedAt: new Date().toISOString(),
-    grantsMissingDeadlines: grants.filter((grant) => !grant.deadline && !grant.next_deadline),
-    grantsMissingUrls: grants.filter((grant) => !grant.application_url && !grant.source_url),
-    applicationsWithoutProject: applications.filter((application) => !application.project_id),
-    tasksWithoutOwner: tasks.filter((task) => !task.owner_name),
-    documentsWithoutSource: documents.filter((document) => !document.source_url && !document.file_url),
+    grantsMissingDeadlines: grants.filter((g) => !g.deadline && !g.next_deadline).map((g) => toGrantStub(g, "missing_deadline")),
+    grantsMissingUrls: grants.filter((g) => !g.application_url && !g.source_url).map((g) => toGrantStub(g, "missing_url")),
+    applicationsWithoutProject: applications.filter((a) => !a.project_id).map((a) => toAppStub(a, "no_project_link")),
+    tasksWithoutOwner: tasks.filter((t) => !t.owner_name).map((t) => toTaskStub(t, "no_owner")),
+    documentsWithoutSource: documents.filter((d) => !d.source_url && !d.file_url).map((d) => toDocStub(d, "no_source")),
   };
 }
 
@@ -270,6 +287,12 @@ export function summarizeDocuments(documents: DocumentRow[]) {
     related_grant_id: document.related_grant_id,
     related_application_id: document.related_application_id,
   }));
+}
+
+/** Strip extracted_text (and other heavy blob fields) from a document for compact list responses. */
+export function stripDocumentContent(document: DocumentRow): Omit<DocumentRow, "extracted_text"> {
+  const { extracted_text: _removed, ...rest } = document as DocumentRow & { extracted_text?: unknown };
+  return rest as Omit<DocumentRow, "extracted_text">;
 }
 
 export function sortGrantsForSearch(grants: GrantRow[], query: string) {

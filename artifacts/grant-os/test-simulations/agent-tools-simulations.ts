@@ -313,7 +313,186 @@ async function run() {
         assert(result.data.proposal.risk_level === "high", "risk_level should be escalated to high");
       },
     },
+
+    // ─── V2.10A Phase 1: Token-Safety Tests ─────────────────────────────────
+
+    {
+      name: "V2.10A: list_grants default limit is 25",
+      fn: async () => {
+        const result = await registry.execute("list_grants", {});
+        assert(result.ok, "list_grants should succeed");
+        assert(typeof result.data.limit === "number", "response should include limit field");
+        assert(result.data.limit === 25, `expected default limit 25, got ${result.data.limit}`);
+        assert(Array.isArray(result.data.items), "items should be an array");
+        assert(result.data.items.length <= 25, "items should not exceed default limit of 25");
+      },
+    },
+    {
+      name: "V2.10A: list_grants respects explicit limit and caps at 100",
+      fn: async () => {
+        const result = await registry.execute("list_grants", { limit: 999 });
+        assert(result.ok === false || result.data.limit <= 100, "limit should be capped at 100");
+      },
+    },
+    {
+      name: "V2.10A: list_applications default limit is 25",
+      fn: async () => {
+        const result = await registry.execute("list_applications", {});
+        assert(result.ok, "list_applications should succeed");
+        assert(result.data.limit === 25, `expected default limit 25, got ${result.data.limit}`);
+        assert(result.data.items.length <= 25, "items should not exceed 25");
+      },
+    },
+    {
+      name: "V2.10A: list_tasks default limit is 25",
+      fn: async () => {
+        const result = await registry.execute("list_tasks", {});
+        assert(result.ok, "list_tasks should succeed");
+        assert(result.data.limit === 25, `expected default limit 25, got ${result.data.limit}`);
+        assert(result.data.items.length <= 25, "items should not exceed 25");
+      },
+    },
+    {
+      name: "V2.10A: list_documents does not include extracted_text by default",
+      fn: async () => {
+        const result = await registry.execute("list_documents", {});
+        assert(result.ok, "list_documents should succeed");
+        assert(result.data.includeExtractedText === false, "includeExtractedText should default to false");
+        const items = result.data.items as Array<Record<string, unknown>>;
+        assert(items.every((item) => !("extracted_text" in item)), "no item should have extracted_text by default");
+      },
+    },
+    {
+      name: "V2.10A: list_documents respects default limit of 25",
+      fn: async () => {
+        const result = await registry.execute("list_documents", {});
+        assert(result.ok, "list_documents should succeed");
+        assert(result.data.limit === 25, `expected default limit 25, got ${result.data.limit}`);
+      },
+    },
+    {
+      name: "V2.10A: list_grant_matches returns items/total/limit shape",
+      fn: async () => {
+        const result = await registry.execute("list_grant_matches", {});
+        assert(result.ok, "list_grant_matches should succeed");
+        assert("items" in result.data, "response should have items key");
+        assert("total" in result.data, "response should have total key");
+        assert("limit" in result.data, "response should have limit key");
+        assert((result.data.limit as number) === 20, `expected default limit 20, got ${result.data.limit}`);
+        assert(Array.isArray(result.data.items), "items should be an array");
+      },
+    },
+    {
+      name: "V2.10A: get_deadline_report returns stubs not full GrantRows",
+      fn: async () => {
+        const result = await registry.execute("get_deadline_report", {});
+        assert(result.ok, "get_deadline_report should succeed");
+        const allItems = [
+          ...(result.data.windows?.within_30_days ?? []),
+          ...(result.data.windows?.within_14_days ?? []),
+          ...(result.data.windows?.within_7_days ?? []),
+          ...(result.data.windows?.within_3_days ?? []),
+          ...(result.data.rolling ?? []),
+          ...(result.data.unknown ?? []),
+        ] as Array<Record<string, unknown>>;
+        // Stubs should NOT have heavy grant-specific fields like funder_name, source_url, eligibility
+        assert(allItems.every((item) => !("funder_name" in item)), "stub should not include funder_name");
+        assert(allItems.every((item) => !("source_url" in item)), "stub should not include source_url");
+        assert(allItems.every((item) => !("eligibility" in item)), "stub should not include eligibility");
+        // Stubs MUST have id, title, status, deadline
+        if (allItems.length > 0) {
+          assert("id" in allItems[0], "stub must have id");
+          assert("title" in allItems[0], "stub must have title");
+          assert("days_remaining" in allItems[0], "stub must have days_remaining");
+        }
+      },
+    },
+    {
+      name: "V2.10A: get_deadline_report does not duplicate grants across windows",
+      fn: async () => {
+        const result = await registry.execute("get_deadline_report", {});
+        assert(result.ok, "get_deadline_report should succeed");
+        const allWindowItems = [
+          ...(result.data.windows?.within_30_days ?? []),
+          ...(result.data.windows?.within_14_days ?? []),
+          ...(result.data.windows?.within_7_days ?? []),
+          ...(result.data.windows?.within_3_days ?? []),
+        ] as Array<{ id: string }>;
+        const ids = allWindowItems.map((item) => item.id);
+        const uniqueIds = new Set(ids);
+        assert(ids.length === uniqueIds.size, `grants should appear in at most one window — found ${ids.length} entries for ${uniqueIds.size} unique grants`);
+      },
+    },
+    {
+      name: "V2.10A: get_data_quality_report returns stubs not full rows",
+      fn: async () => {
+        const result = await registry.execute("get_data_quality_report", {});
+        assert(result.ok, "get_data_quality_report should succeed");
+        const allStubs = [
+          ...(result.data.grantsMissingDeadlines ?? []),
+          ...(result.data.grantsMissingUrls ?? []),
+          ...(result.data.applicationsWithoutProject ?? []),
+          ...(result.data.tasksWithoutOwner ?? []),
+          ...(result.data.documentsWithoutSource ?? []),
+        ] as Array<Record<string, unknown>>;
+        assert(allStubs.every((s) => "id" in s), "every stub must have id");
+        assert(allStubs.every((s) => "issue" in s), "every stub must have issue");
+        // Must NOT contain heavy fields
+        assert(allStubs.every((s) => !("funder_name" in s)), "stub must not include funder_name");
+        assert(allStubs.every((s) => !("source_url" in s)), "stub must not include source_url");
+        assert(allStubs.every((s) => !("description" in s)), "stub must not include description");
+      },
+    },
+    {
+      name: "V2.10A: get_application_workload_report does not return full application row",
+      fn: async () => {
+        const result = await registry.execute("get_application_workload_report", {});
+        assert(result.ok, "get_application_workload_report should succeed");
+        const rows = result.data.applications as Array<Record<string, unknown>>;
+        assert(rows.every((row) => !("application" in row)), "report rows must not include full application object");
+        assert(rows.every((row) => "applicationId" in row), "report rows must include applicationId");
+        assert(rows.every((row) => "taskCount" in row), "report rows must include taskCount");
+        assert(rows.every((row) => "openTaskCount" in row), "report rows must include openTaskCount");
+      },
+    },
+    {
+      name: "V2.10A: list_agent_knowledge_items does not include content/example by default",
+      fn: async () => {
+        const result = await registry.execute("list_agent_knowledge_items", {});
+        assert(result.ok, "list_agent_knowledge_items should succeed");
+        assert(result.data.includeContent === false, "includeContent should default to false");
+        const items = result.data.items as Array<Record<string, unknown>>;
+        assert(items.every((item) => !("content" in item)), "items must not include content by default");
+        assert(items.every((item) => !("example" in item)), "items must not include example by default");
+      },
+    },
+    {
+      name: "V2.10A: list_agent_knowledge_items returns content when includeContent true",
+      fn: async () => {
+        const result = await registry.execute("list_agent_knowledge_items", { includeContent: true });
+        assert(result.ok, "list_agent_knowledge_items should succeed");
+        assert(result.data.includeContent === true, "includeContent should be true");
+        const items = result.data.items as Array<Record<string, unknown>>;
+        if (items.length > 0) {
+          assert("content" in items[0], "items should include content when includeContent is true");
+        }
+      },
+    },
+    {
+      name: "V2.10A: list_agent_knowledge_proposals does not include proposed_content/rationale by default",
+      fn: async () => {
+        const result = await registry.execute("list_agent_knowledge_proposals", {});
+        assert(result.ok, "list_agent_knowledge_proposals should succeed");
+        assert(result.data.includeContent === false, "includeContent should default to false");
+        const proposals = result.data.proposals as Array<Record<string, unknown>>;
+        assert(proposals.every((p) => !("proposed_content" in p)), "proposals must not include proposed_content by default");
+        assert(proposals.every((p) => !("rationale" in p)), "proposals must not include rationale by default");
+        assert(proposals.every((p) => !("source_excerpt" in p)), "proposals must not include source_excerpt by default");
+        assert(proposals.every((p) => !("conflict_summary" in p)), "proposals must not include conflict_summary by default");
+      },
+    },
   ];
+
 
   const results: TestResult[] = [];
   for (const testCase of cases) {

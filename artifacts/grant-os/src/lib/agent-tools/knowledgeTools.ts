@@ -32,8 +32,9 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
         confidence_status: z.string().optional(),
         applies_to: z.string().optional(),
         search: z.string().optional(),
-        limit: z.number().min(1).max(100).optional().default(50),
+        limit: z.number().min(1).max(100).optional().default(25),
         include_archived: z.boolean().optional().default(false),
+        includeContent: z.boolean().optional().default(false),
       }),
       async execute(input, ctx) {
         const items = await repository.listAgentKnowledgeItems({
@@ -68,23 +69,31 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
           return 0;
         });
 
-        const limited = filtered.slice(0, input.limit);
+        const cap = Math.min(input.limit ?? 25, 100);
+        const limited = filtered.slice(0, cap);
 
         return {
-          items: limited.map(item => ({
-            id: item.id,
-            title: item.title,
-            category: item.category,
-            content: item.content,
-            knowledge_type: item.knowledge_type,
-            priority: item.priority,
-            confidence_status: item.confidence_status,
-            applies_to: item.applies_to,
-            example: item.example,
-            source_label: item.source_label,
-            updated_at: item.updated_at,
-          })),
+          items: limited.map(item => {
+            const base = {
+              id: item.id,
+              title: item.title,
+              category: item.category,
+              knowledge_type: item.knowledge_type,
+              priority: item.priority,
+              confidence_status: item.confidence_status,
+              applies_to: item.applies_to,
+              source_label: item.source_label,
+              updated_at: item.updated_at,
+            };
+            if (input.includeContent) {
+              return { ...base, content: item.content, example: item.example };
+            }
+            return base;
+          }),
           count: limited.length,
+          total: filtered.length,
+          limit: cap,
+          includeContent: input.includeContent ?? false,
           filters_applied: input,
           safety_note: "Use approved active knowledge first. Treat background-only, needs-confirmation, do-not-use, and outdated items carefully."
         };
@@ -129,7 +138,8 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
         proposal_type: z.string().optional(),
         risk_level: z.string().optional(),
         source_type: z.string().optional(),
-        limit: z.number().min(1).max(100).optional().default(50),
+        limit: z.number().min(1).max(100).optional().default(25),
+        includeContent: z.boolean().optional().default(false),
       }),
       async execute(input, ctx) {
         const proposals = await repository.listAgentKnowledgeProposals({
@@ -139,11 +149,37 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
           source_type: input.source_type,
         });
         
-        const limited = proposals.slice(0, input.limit);
-        
+        const cap = Math.min(input.limit ?? 25, 100);
+        const limited = proposals.slice(0, cap);
+
         return {
-          proposals: limited,
+          proposals: limited.map(p => {
+            const base = {
+              id: p.id,
+              proposal_type: p.proposal_type,
+              title: p.title,
+              category: p.category,
+              status: p.status,
+              risk_level: p.risk_level,
+              source_type: p.source_type,
+              target_item_id: p.target_item_id,
+              created_at: p.created_at,
+            };
+            if (input.includeContent) {
+              return {
+                ...base,
+                proposed_content: p.proposed_content,
+                rationale: p.rationale,
+                source_excerpt: p.source_excerpt,
+                conflict_summary: p.conflict_summary,
+              };
+            }
+            return base;
+          }),
           count: limited.length,
+          total: proposals.length,
+          limit: cap,
+          includeContent: input.includeContent ?? false,
           filters_applied: input,
         };
       },

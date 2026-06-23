@@ -16,7 +16,7 @@ export type McpToolManifestEntry = {
   enabled: boolean;
   defaultDryRun?: boolean;
   schemaSummary: string;
-  exampleInput: JsonRecord;
+  exampleInput?: JsonRecord;
 };
 
 export type McpCallRequest = {

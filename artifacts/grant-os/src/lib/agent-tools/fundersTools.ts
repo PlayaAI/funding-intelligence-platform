@@ -10,15 +10,17 @@ export function createFunderTools(repository: GrantOsRepository): Array<ToolDefi
       name: "list_funders",
       description: "List active funders.",
       permissionLevel: "read",
-      inputSchema: z.object({ limit: z.number().int().positive().max(200).optional() }),
+      inputSchema: z.object({ limit: z.number().int().positive().max(100).optional() }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
       risks: ["Funders may contain private notes or relationship metadata."],
       relatedTables: ["funders"],
       touchesRealDb: true,
       async execute({ limit }) {
+        const DEFAULT_LIMIT = 50;
+        const cap = Math.min(limit ?? DEFAULT_LIMIT, 100);
         const funders = await repository.listFunders();
-        return { items: limit ? funders.slice(0, limit) : funders, total: funders.length };
+        return { items: funders.slice(0, cap), total: funders.length, limit: cap };
       },
     },
     {
