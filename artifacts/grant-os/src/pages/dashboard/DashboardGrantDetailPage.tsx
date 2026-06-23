@@ -23,6 +23,8 @@ import { exportGrantPackage } from "@/lib/exports/exportPackages";
 import GrantFormDialog, { type GrantFormValues } from "@/components/dashboard/GrantFormDialog";
 import ApplicationFormDialog, { type ApplicationFormValues } from "@/components/dashboard/ApplicationFormDialog";
 import DocumentFormDialog, { type DocumentFormValues } from "@/components/dashboard/DocumentFormDialog";
+import { deriveGrantDataQualityFlags } from "@/lib/grantDataQuality";
+import { GrantDataQualityCard } from "@/components/dashboard/GrantDataQualityBadges";
 import TaskFormDialog, { type TaskFormValues } from "@/components/dashboard/TaskFormDialog";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
 import AgentNotesPanel from "@/components/dashboard/AgentNotesPanel";
@@ -568,6 +570,17 @@ export default function DashboardGrantDetailPage() {
               <ScoreBar label="Ease" value={100 - grant.difficultyScore} />
             </CardContent>
           </Card>
+
+          <GrantDataQualityCard
+            flags={deriveGrantDataQualityFlags(grantRow, {
+              documentCount: relatedDocs.length,
+              applicationCount: relatedApps.length,
+              hasOnlySystemMatches:
+                grantMatchesQuery.data &&
+                grantMatchesQuery.data.length > 0 &&
+                grantMatchesQuery.data.every((m) => m.generated_by === "rules_engine"),
+            })}
+          />
         </TabsContent>
 
         <TabsContent value="documents" className="mt-4 space-y-3">

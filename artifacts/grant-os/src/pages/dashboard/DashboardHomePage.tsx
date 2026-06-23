@@ -6,6 +6,7 @@ import { useTasks } from "@/hooks/useTasks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
+import { Top3ReviewPanel } from "@/components/dashboard/Top3ReviewPanel";
 import { toast } from "@/hooks/use-toast";
 import {
   AlertCircle,
@@ -231,6 +232,8 @@ export default function DashboardHomePage() {
               }) : <div className="text-center py-6 text-slate-400 text-sm">No top focus grants marked yet.</div>}
             </CardContent>
           </Card>
+
+          <Top3ReviewPanel grants={grants} />
 
           <Card className="border-slate-200">
             <CardHeader className="pb-3">

@@ -10,6 +10,8 @@ import { useGrantShortlistItems, useUpsertGrantShortlistItem } from "@/hooks/use
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import GrantStatusBadge from "@/components/dashboard/GrantStatusBadge";
+import { deriveGrantDataQualityFlags } from "@/lib/grantDataQuality";
+import { GrantDataQualityBadges } from "@/components/dashboard/GrantDataQualityBadges";
 import GrantFormDialog, { type GrantFormValues } from "@/components/dashboard/GrantFormDialog";
 import { grantFormValuesToInsert } from "@/lib/grantFormUtils";
 import { toast } from "@/hooks/use-toast";
@@ -355,6 +357,21 @@ export default function DashboardGrantsPage() {
                             {g.title}
                           </span>
                         </div>
+                        {(() => {
+                          const dqFlags = deriveGrantDataQualityFlags({
+                            deadline: g.deadline || null,
+                            amount_min: g.amountMin,
+                            amount_max: g.amountMax,
+                            eligibility: g.eligibility || null,
+                            notes: g.notes || null,
+                            application_url: g.applicationUrl || null,
+                          });
+                          return dqFlags.length > 0 ? (
+                            <div className="mt-1.5" onClick={(e) => e.preventDefault()}>
+                              <GrantDataQualityBadges flags={dqFlags} maxVisible={2} />
+                            </div>
+                          ) : null;
+                        })()}
                       </Link>
                     </td>
                     <td className="py-3 px-4 text-xs text-slate-600 hidden md:table-cell">{g.funderName}</td>
