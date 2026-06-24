@@ -6,6 +6,7 @@ import {
   buildDashboardSummary,
   buildDataQualityReport,
   buildDeadlineReport,
+  buildAgentContextBrief,
 } from "./builders";
 
 export function createReportTools(repository: GrantOsRepository): Array<ToolDefinition<any, any>> {
@@ -57,6 +58,18 @@ export function createReportTools(repository: GrantOsRepository): Array<ToolDefi
       relatedTables: ["grants", "applications", "tasks", "documents"],
       touchesRealDb: true,
       execute: () => buildDataQualityReport(repository),
+    },
+    {
+      name: "get_agent_context_brief",
+      description: "Return a lightweight, serialized JSON payload of the workspace context for agent startup.",
+      permissionLevel: "read",
+      inputSchema: z.object({}),
+      dryRunSupported: false,
+      auditAction: "data_reviewed",
+      risks: ["Minimal context exposes high-level counts and titles."],
+      relatedTables: ["grants", "applications", "tasks", "agent_knowledge"],
+      touchesRealDb: true,
+      execute: () => buildAgentContextBrief(repository),
     },
   ];
 }

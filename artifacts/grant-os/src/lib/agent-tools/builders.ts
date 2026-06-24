@@ -72,7 +72,7 @@ export function buildChecklistTemplate(grant: GrantRow, project: ProjectRow | nu
   ];
 }
 
-export async function buildGrantPacket(repository: GrantOsRepository, grant: GrantRow, funder: FunderRow | null): Promise<GrantExportPacket> {
+export async function buildGrantPacket(repository: GrantOsRepository, grant: GrantRow, funder: FunderRow | null, compact = true): Promise<GrantExportPacket | Record<string, unknown>> {
   const [applications, tasks, agentNotes, agentReports, grantMatches] = await Promise.all([
     repository.listApplicationsByGrant(grant.id),
     repository.listTasks(),
@@ -96,6 +96,25 @@ export async function buildGrantPacket(repository: GrantOsRepository, grant: Gra
     (await Promise.all(relatedProjects.map((project) => repository.listProofItems(project.id)))).flat()
   );
   const documents = await repository.listGrantDocuments(grant, funder);
+
+  if (compact) {
+    return {
+      ...packageBase("grant", {
+        grant: { id: grant.id, title: grant.title, status: grant.status, deadline: grant.deadline ?? grant.next_deadline, funder_id: grant.funder_id, url: grant.application_url ?? grant.source_url },
+        funder: funder ? { id: funder.id, name: funder.name, website: funder.website } : null,
+        projects: relatedProjects.map(p => ({ id: p.id, name: p.name, slug: p.slug })),
+        applications: applications.map(a => ({ id: a.id, title: a.title ?? null, status: a.status, project_id: a.project_id, grant_id: a.grant_id })),
+        tasks: filteredTasks.map(t => ({ id: t.id, title: t.title, status: t.status, due_date: t.due_date, owner_name: t.owner_name, related_grant_id: t.related_grant_id, related_application_id: t.related_application_id })),
+        proof_items: proofItems.map(p => ({ id: p.id, title: p.title, project_id: p.project_id, proof_type: p.type })),
+        documents: documents.map(d => ({ id: d.id, title: d.title, document_type: d.document_type, source_url: d.source_url ?? d.file_url, created_at: d.created_at })),
+        notes: agentNotes.map(n => ({ id: n.id, title: n.title, created_at: n.created_at })),
+        reports: agentReports.map(r => ({ id: r.id, title: r.title, created_at: r.created_at })),
+        matches: grantMatches.map(m => ({ id: m.id, project_id: m.project_id, grant_id: m.grant_id, match_score: m.match_score, decision_label: m.decision_label }))
+      }),
+      generated_at: new Date().toISOString(),
+    };
+  }
+
   return {
     ...packageBase("grant", {
       grant,
@@ -113,7 +132,7 @@ export async function buildGrantPacket(repository: GrantOsRepository, grant: Gra
   };
 }
 
-export async function buildApplicationPacket(repository: GrantOsRepository, application: ApplicationRow): Promise<ApplicationExportPacket> {
+export async function buildApplicationPacket(repository: GrantOsRepository, application: ApplicationRow, compact = true): Promise<ApplicationExportPacket | Record<string, unknown>> {
   const [grant, project, questions, requiredDocuments, tasks, appDocuments, agentNotes, agentReports] = await Promise.all([
     application.grant_id ? repository.getGrant(application.grant_id) : Promise.resolve(null),
     application.project_id ? repository.getProject(application.project_id) : Promise.resolve(null),
@@ -133,6 +152,26 @@ export async function buildApplicationPacket(repository: GrantOsRepository, appl
   const grantMatch = application.project_id && application.grant_id
     ? (await repository.listGrantMatches({ projectId: application.project_id, grantId: application.grant_id }))[0] ?? null
     : null;
+
+  const allDocuments = uniqueById([...appDocuments, ...grantDocuments, ...projectDocuments]);
+
+  if (compact) {
+    return {
+      ...packageBase("application", {
+        application: { id: application.id, title: application.title ?? null, status: application.status, project_id: application.project_id, grant_id: application.grant_id },
+        grant: grant ? { id: grant.id, title: grant.title, status: grant.status, deadline: grant.deadline ?? grant.next_deadline, funder_id: grant.funder_id, url: grant.application_url ?? grant.source_url } : null,
+        project: project ? { id: project.id, name: project.name, slug: project.slug } : null,
+        funder: funder ? { id: funder.id, name: funder.name, website: funder.website } : null,
+        tasks: tasks.map(t => ({ id: t.id, title: t.title, status: t.status, due_date: t.due_date, owner_name: t.owner_name })),
+        documents: allDocuments.map(d => ({ id: d.id, title: d.title, document_type: d.document_type, source_url: d.source_url ?? d.file_url, created_at: d.created_at })),
+        questions: questions.map(q => ({ id: q.id, prompt: q.question, status: q.status })),
+        required_documents: requiredDocuments.map(r => ({ id: r.id, title: r.title, status: r.status })),
+        proof_items: proofItems.map(p => ({ id: p.id, title: p.title, project_id: p.project_id, proof_type: p.type })),
+      }),
+      generated_at: new Date().toISOString(),
+    };
+  }
+
   return {
     ...packageBase("application", {
       application,
@@ -142,7 +181,7 @@ export async function buildApplicationPacket(repository: GrantOsRepository, appl
       questions,
       required_documents: requiredDocuments,
       tasks,
-      documents: uniqueById([...appDocuments, ...grantDocuments, ...projectDocuments]),
+      documents: allDocuments,
       proof_items: proofItems,
       agent_notes: agentNotes,
       agent_reports: agentReports,
@@ -152,16 +191,45 @@ export async function buildApplicationPacket(repository: GrantOsRepository, appl
   };
 }
 
-export async function buildPeerPacket(repository: GrantOsRepository, peer: PeerOrganizationRow): Promise<PeerExportPacket> {
+export async function buildPeerPacket(repository: GrantOsRepository, peer: PeerOrganizationRow, compact = true): Promise<PeerExportPacket> {
   const fundingRecords = await repository.listPeerFundingRecords(peer.id);
   const funders = await repository.listFunders();
   const linkedFunders = funders.filter((funder) => fundingRecords.some((record) => record.funder_id === funder.id));
+
+  const peerRecord = compact
+    ? {
+        id: peer.id,
+        name: peer.name,
+        slug: peer.slug,
+        website: peer.website,
+        confidence: peer.confidence,
+        focus_areas: peer.focus_areas,
+        location: peer.location,
+        relevance: peer.relevance,
+      }
+    : peer;
+
+  const fundingRecordItems = compact
+    ? fundingRecords.map((record) => ({
+        id: record.id,
+        funder_name: record.funder_name,
+        year: record.year,
+        amount: record.amount,
+        purpose: record.purpose,
+        confidence: record.confidence,
+      }))
+    : fundingRecords;
+
+  const funderItems = compact
+    ? linkedFunders.map((funder) => ({ id: funder.id, name: funder.name, website: funder.website }))
+    : linkedFunders;
+
   return {
     ...packageBase("peer", {
-      peer_organization: peer,
-      funding_records: fundingRecords,
-      linked_funders: linkedFunders,
-      source_metadata: (peer.source_metadata ?? {}) as Record<string, unknown>,
+      peer_organization: peerRecord,
+      funding_records: fundingRecordItems,
+      linked_funders: funderItems,
+      source_metadata: compact ? {} : ((peer.source_metadata ?? {}) as Record<string, unknown>),
     }),
     generated_at: new Date().toISOString(),
   };
@@ -256,6 +324,58 @@ export async function buildApplicationWorkloadReport(repository: GrantOsReposito
     })
   );
   return { generatedAt: new Date().toISOString(), applications: rows };
+}
+
+export async function buildAgentContextBrief(repository: GrantOsRepository) {
+  const [grants, applications, tasks, knowledgeItems] = await Promise.all([
+    repository.listGrants(),
+    repository.listApplications(),
+    repository.listTasks(),
+    repository.listAgentKnowledgeItems ? repository.listAgentKnowledgeItems() : Promise.resolve([]),
+  ]);
+
+  const now = new Date();
+  const nowStr = now.toISOString();
+
+  // Find open tasks and overdue tasks
+  let openTaskCount = 0;
+  let overdueTaskCount = 0;
+  for (const task of tasks) {
+    if (isOpenTask(task)) {
+      openTaskCount++;
+      if (task.due_date && task.due_date < nowStr) {
+        overdueTaskCount++;
+      }
+    }
+  }
+
+  // Get top 3 applications (e.g. by status progression, or just first 3)
+  const top_3_applications = applications
+    .slice(0, 3)
+    .map((app) => ({ id: app.id, title: app.title ?? null, status: app.status ?? null }));
+
+  // Get grants due soon (next 5)
+  const upcomingGrants = grants
+    .filter((g) => g.deadline || g.next_deadline)
+    .map((g) => {
+      const d = new Date((g.deadline ?? g.next_deadline)!);
+      const days = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      return { id: g.id, title: g.title, deadline: g.deadline ?? g.next_deadline, days_remaining: days, dateObj: d };
+    })
+    .filter((g) => g.days_remaining >= 0)
+    .sort((a, b) => a.days_remaining - b.days_remaining)
+    .slice(0, 5)
+    .map((g) => ({ id: g.id, title: g.title, deadline: g.deadline, days_remaining: g.days_remaining }));
+
+  return {
+    grant_count: grants.length,
+    application_count: applications.length,
+    open_task_count: openTaskCount,
+    overdue_task_count: overdueTaskCount,
+    grants_due_soon: upcomingGrants,
+    top_3_applications,
+    knowledge_item_count: knowledgeItems.length,
+  };
 }
 
 export async function buildDataQualityReport(repository: GrantOsRepository): Promise<DataQualityReport> {

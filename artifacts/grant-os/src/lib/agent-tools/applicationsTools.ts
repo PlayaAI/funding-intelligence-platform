@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { GrantOsRepository } from "./repository";
 import type { ToolDefinition } from "./types";
-import { buildApplicationPacket } from "./builders";
+import { buildApplicationPacket, stripDocumentContent } from "./builders";
 import { makeToolError } from "./safety";
 
 export function createApplicationTools(repository: GrantOsRepository): Array<ToolDefinition<any, any>> {
@@ -60,32 +60,33 @@ export function createApplicationTools(repository: GrantOsRepository): Array<Too
       name: "get_application_documents",
       description: "List documents linked to an application.",
       permissionLevel: "read",
-      inputSchema: z.object({ applicationId: z.string().min(1) }),
+      inputSchema: z.object({ applicationId: z.string().min(1), includeExtractedText: z.boolean().optional() }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
       risks: ["Application documents may expose draft or source content."],
       relatedTables: ["applications", "documents"],
       touchesRealDb: true,
-      async execute({ applicationId }) {
+      async execute({ applicationId, includeExtractedText }) {
         const application = await repository.getApplication(applicationId);
         if (!application) throw makeToolError("application_not_found", `Application ${applicationId} was not found.`);
-        return { application, documents: await repository.listDocuments({ relatedApplicationId: applicationId }) };
+        const documents = await repository.listDocuments({ relatedApplicationId: applicationId });
+        return { application, documents: includeExtractedText ? documents : documents.map(stripDocumentContent) };
       },
     },
     {
       name: "export_application_packet",
       description: "Export an application workspace packet for internal use.",
       permissionLevel: "read",
-      inputSchema: z.object({ applicationId: z.string().min(1) }),
+      inputSchema: z.object({ applicationId: z.string().min(1), compact: z.boolean().optional() }),
       dryRunSupported: false,
       auditAction: "export_created",
       risks: ["Application exports aggregate many private records; keep internal only."],
       relatedTables: ["applications", "grants", "funders", "projects", "documents", "tasks", "application_questions", "application_required_documents", "agent_notes", "agent_reports", "grant_matches"],
       touchesRealDb: true,
-      async execute({ applicationId }) {
+      async execute({ applicationId, compact }) {
         const application = await repository.getApplication(applicationId);
         if (!application) throw makeToolError("application_not_found", `Application ${applicationId} was not found.`);
-        return buildApplicationPacket(repository, application);
+        return buildApplicationPacket(repository, application, compact ?? true);
       },
     },
   ];

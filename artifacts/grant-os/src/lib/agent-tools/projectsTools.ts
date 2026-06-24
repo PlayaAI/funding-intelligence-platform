@@ -8,7 +8,7 @@ export function createProjectTools(repository: GrantOsRepository): Array<ToolDef
   return [
     {
       name: "list_projects",
-      description: "List internal projects.",
+      description: "List internal projects. Default limit is 25.",
       permissionLevel: "read",
       inputSchema: z.object({ limit: z.number().int().positive().max(200).optional() }),
       dryRunSupported: false,
@@ -17,8 +17,10 @@ export function createProjectTools(repository: GrantOsRepository): Array<ToolDef
       relatedTables: ["projects"],
       touchesRealDb: true,
       async execute({ limit }) {
+        const DEFAULT_LIMIT = 25;
+        const cap = Math.min(limit ?? DEFAULT_LIMIT, 200);
         const projects = await repository.listProjects();
-        return { items: limit ? projects.slice(0, limit) : projects, total: projects.length };
+        return { items: projects.slice(0, cap), total: projects.length, limit: cap };
       },
     },
     {
@@ -39,7 +41,7 @@ export function createProjectTools(repository: GrantOsRepository): Array<ToolDef
     },
     {
       name: "list_proof_items",
-      description: "List proof items with optional project filter.",
+      description: "List proof items with optional project filter. Default limit is 50.",
       permissionLevel: "read",
       inputSchema: z.object({ projectId: z.string().optional(), limit: z.number().int().positive().max(200).optional() }),
       dryRunSupported: false,
@@ -48,8 +50,10 @@ export function createProjectTools(repository: GrantOsRepository): Array<ToolDef
       relatedTables: ["proof_items"],
       touchesRealDb: true,
       async execute({ projectId, limit }) {
+        const DEFAULT_LIMIT = 50;
+        const cap = Math.min(limit ?? DEFAULT_LIMIT, 200);
         const items = await repository.listProofItems(projectId);
-        return { items: limit ? items.slice(0, limit) : items, total: items.length };
+        return { items: items.slice(0, cap), total: items.length, limit: cap };
       },
     },
     {

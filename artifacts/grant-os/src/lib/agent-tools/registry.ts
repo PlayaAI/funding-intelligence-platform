@@ -73,7 +73,7 @@ export function createToolRegistry(options: CreateToolRegistryOptions = {}) {
           error_message: `Unknown tool ${toolName}`,
         });
         await auditLogger.log(audit);
-        return { ok: false, tool: toolName, permissionLevel: "read", error: { code: "tool_not_found", message: `Unknown tool ${toolName}` }, audit };
+        return { ok: false, tool: toolName, permissionLevel: "read", error: { code: "tool_not_found", message: `Unknown tool ${toolName}. Do not retry — check the tool name.` }, audit, do_not_retry: true } as unknown as ToolExecutionResult<any>;
       }
       const parsed = tool.inputSchema.safeParse(rawInput ?? {});
       if (!parsed.success) {

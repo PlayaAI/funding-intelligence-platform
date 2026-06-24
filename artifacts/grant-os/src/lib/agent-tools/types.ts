@@ -131,9 +131,9 @@ export type PeerExportPacket = {
   package_type: "peer";
   app: "Grant OS";
   records: {
-    peer_organization: PeerOrganizationRow;
-    funding_records: PeerFundingRecordRow[];
-    linked_funders: FunderRow[];
+    peer_organization: PeerOrganizationRow | Record<string, unknown>;
+    funding_records: PeerFundingRecordRow[] | Record<string, unknown>[];
+    linked_funders: FunderRow[] | Record<string, unknown>[];
     source_metadata: Record<string, unknown>;
   };
 };

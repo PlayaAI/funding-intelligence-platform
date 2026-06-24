@@ -17,7 +17,7 @@ export function createPeerTools(repository: GrantOsRepository): Array<ToolDefini
       relatedTables: ["peer_organizations"],
       touchesRealDb: true,
       async execute({ limit }) {
-        const DEFAULT_LIMIT = 50;
+        const DEFAULT_LIMIT = 25;
         const cap = Math.min(limit ?? DEFAULT_LIMIT, 100);
         const peers = await repository.listPeers();
         return { items: peers.slice(0, cap), total: peers.length, limit: cap };
@@ -57,18 +57,18 @@ export function createPeerTools(repository: GrantOsRepository): Array<ToolDefini
     },
     {
       name: "export_peer_packet",
-      description: "Export a peer intelligence packet.",
+      description: "Export a peer intelligence packet. compact mode (default true) returns stubs only without source_metadata or key_people blobs.",
       permissionLevel: "read",
-      inputSchema: z.object({ peerId: z.string().min(1) }),
+      inputSchema: z.object({ peerId: z.string().min(1), compact: z.boolean().optional() }),
       dryRunSupported: false,
       auditAction: "export_created",
       risks: ["Peer export packets aggregate potentially sensitive research context."],
       relatedTables: ["peer_organizations", "peer_funding_records", "funders"],
       touchesRealDb: true,
-      async execute({ peerId }) {
+      async execute({ peerId, compact }) {
         const peer = await repository.getPeer(peerId);
         if (!peer) throw makeToolError("peer_not_found", `Peer ${peerId} was not found.`);
-        return buildPeerPacket(repository, peer);
+        return buildPeerPacket(repository, peer, compact ?? true);
       },
     },
   ];

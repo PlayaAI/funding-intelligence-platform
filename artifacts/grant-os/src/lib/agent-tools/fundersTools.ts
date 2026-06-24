@@ -17,7 +17,7 @@ export function createFunderTools(repository: GrantOsRepository): Array<ToolDefi
       relatedTables: ["funders"],
       touchesRealDb: true,
       async execute({ limit }) {
-        const DEFAULT_LIMIT = 50;
+        const DEFAULT_LIMIT = 25;
         const cap = Math.min(limit ?? DEFAULT_LIMIT, 100);
         const funders = await repository.listFunders();
         return { items: funders.slice(0, cap), total: funders.length, limit: cap };

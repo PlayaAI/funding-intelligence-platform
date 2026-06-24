@@ -34,51 +34,53 @@ export function createDocumentTools(repository: GrantOsRepository): Array<ToolDe
     },
     {
       name: "get_document",
-      description: "Get one document by id.",
+      description: "Get one document by id. extracted_text is omitted by default; pass includeExtractedText: true to include it.",
       permissionLevel: "read",
-      inputSchema: z.object({ documentId: z.string().min(1) }),
+      inputSchema: z.object({ documentId: z.string().min(1), includeExtractedText: z.boolean().optional() }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
-      risks: ["Full document metadata may include internal storage paths."],
+      risks: ["Full document metadata may include internal storage paths. Extracted text can be very large."],
       relatedTables: ["documents"],
       touchesRealDb: true,
-      async execute({ documentId }) {
+      async execute({ documentId, includeExtractedText }) {
         const document = await repository.getDocument(documentId);
         if (!document) throw makeToolError("document_not_found", `Document ${documentId} was not found.`);
-        return { document };
+        return { document: includeExtractedText ? document : stripDocumentContent(document) };
       },
     },
     {
       name: "get_documents_for_grant",
       description: "Fetch documents for a grant and related funder context.",
       permissionLevel: "read",
-      inputSchema: z.object({ grantId: z.string().min(1) }),
+      inputSchema: z.object({ grantId: z.string().min(1), includeExtractedText: z.boolean().optional() }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
       risks: ["Document lists may expose funder-linked private materials."],
       relatedTables: ["grants", "funders", "documents"],
       touchesRealDb: true,
-      async execute({ grantId }) {
+      async execute({ grantId, includeExtractedText }) {
         const grant = await repository.getGrant(grantId);
         if (!grant) throw makeToolError("grant_not_found", `Grant ${grantId} was not found.`);
         const funder = grant.funder_id ? await repository.getFunder(grant.funder_id) : null;
-        return { documents: await repository.listGrantDocuments(grant, funder) };
+        const documents = await repository.listGrantDocuments(grant, funder);
+        return { documents: includeExtractedText ? documents : documents.map(stripDocumentContent) };
       },
     },
     {
       name: "get_documents_for_application",
       description: "Fetch documents linked to an application.",
       permissionLevel: "read",
-      inputSchema: z.object({ applicationId: z.string().min(1) }),
+      inputSchema: z.object({ applicationId: z.string().min(1), includeExtractedText: z.boolean().optional() }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
       risks: ["Application documents may expose draft submissions."],
       relatedTables: ["applications", "documents"],
       touchesRealDb: true,
-      async execute({ applicationId }) {
+      async execute({ applicationId, includeExtractedText }) {
         const application = await repository.getApplication(applicationId);
         if (!application) throw makeToolError("application_not_found", `Application ${applicationId} was not found.`);
-        return { application, documents: await repository.listDocuments({ relatedApplicationId: applicationId }) };
+        const documents = await repository.listDocuments({ relatedApplicationId: applicationId });
+        return { application, documents: includeExtractedText ? documents : documents.map(stripDocumentContent) };
       },
     },
   ];

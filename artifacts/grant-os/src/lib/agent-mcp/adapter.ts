@@ -232,13 +232,28 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
         return blockedToolResponse();
       }
       if (!MCP_ENABLED_TOOL_NAMES.has(request.name)) {
-        return jsonError(403, "tool_not_allowed", "This tool is not enabled for the MCP-compatible adapter.");
+        return {
+          status: 403,
+          body: {
+            ok: false,
+            blocked: true,
+            error: { code: "tool_not_allowed", message: "This tool is not enabled for the MCP-compatible adapter. Do not retry — check tool name and permissions." },
+            do_not_retry: true,
+          },
+        };
       }
 
       const registry = createRegistryForRequest(authContext, createRepository, registryFactory);
       const metadata = registry.listTools().find((tool) => tool.name === request.name);
       if (!metadata) {
-        return jsonError(404, "tool_not_found", `Unknown tool ${request.name}`);
+        return {
+          status: 404,
+          body: {
+            ok: false,
+            error: { code: "tool_not_found", message: `Unknown tool ${request.name}. Do not retry — check the tool name.` },
+            do_not_retry: true,
+          },
+        };
       }
 
       const input = normalizeArguments(request.name, request.arguments ?? {}, metadata);

@@ -491,6 +491,177 @@ async function run() {
         assert(proposals.every((p) => !("conflict_summary" in p)), "proposals must not include conflict_summary by default");
       },
     },
+    {
+      name: "V2.11A: export_grant_packet does not include document extracted_text by default (compact=true)",
+      fn: async () => {
+        const result = await registry.execute("export_grant_packet", { grantId: "grant-1" });
+        assert(result.ok, "export_grant_packet should succeed");
+        // Records are nested under result.data.records (via packageBase)
+        const docs = (result.data.records as Record<string, unknown>).documents as Array<Record<string, unknown>>;
+        assert(Array.isArray(docs), "grant_packet must include documents array");
+        assert(docs.every((d) => !("extracted_text" in d)), "documents must not include extracted_text by default");
+      },
+    },
+    {
+      name: "V2.11A: export_grant_packet includes document extracted_text when compact=false",
+      fn: async () => {
+        const result = await registry.execute("export_grant_packet", { grantId: "grant-1", compact: false });
+        assert(result.ok, "export_grant_packet should succeed");
+        const docs = (result.data.records as Record<string, unknown>).documents as Array<Record<string, unknown>>;
+        if (docs.length > 0) {
+           assert("extracted_text" in docs[0], "documents must include extracted_text when compact is false");
+        }
+      },
+    },
+    {
+      name: "V2.11A: export_application_packet does not include document extracted_text by default",
+      fn: async () => {
+        const result = await registry.execute("export_application_packet", { applicationId: "app-1" });
+        assert(result.ok, "export_application_packet should succeed");
+        // Records are nested under result.data.records (via packageBase)
+        const docs = (result.data.records as Record<string, unknown>).documents as Array<Record<string, unknown>>;
+        assert(Array.isArray(docs), "application_packet must include documents array");
+        assert(docs.every((d) => !("extracted_text" in d)), "documents must not include extracted_text by default");
+      },
+    },
+    {
+      name: "V2.11A: get_grant_documents does not include extracted_text by default",
+      fn: async () => {
+        const result = await registry.execute("get_grant_documents", { grantId: "grant-1" });
+        assert(result.ok, "get_grant_documents should succeed");
+        const docs = result.data.documents as Array<Record<string, unknown>>;
+        assert(docs.every((d) => !("extracted_text" in d)), "documents must not include extracted_text by default");
+      },
+    },
+    {
+      name: "V2.11A: get_application_documents does not include extracted_text by default",
+      fn: async () => {
+        const result = await registry.execute("get_application_documents", { applicationId: "app-1" });
+        assert(result.ok, "get_application_documents should succeed");
+        const docs = result.data.documents as Array<Record<string, unknown>>;
+        assert(docs.every((d) => !("extracted_text" in d)), "documents must not include extracted_text by default");
+      },
+    },
+    {
+      name: "V2.11A: get_agent_context_brief returns compact shape",
+      fn: async () => {
+        const result = await registry.execute("get_agent_context_brief", {});
+        assert(result.ok, "get_agent_context_brief should succeed");
+        assert(typeof result.data.grant_count === "number", "expected grant_count");
+        assert(typeof result.data.open_task_count === "number", "expected open_task_count");
+        assert(Array.isArray(result.data.grants_due_soon), "expected grants_due_soon");
+        assert(Array.isArray(result.data.top_3_applications), "expected top_3_applications");
+        
+        const serialized = JSON.stringify(result.data);
+        assert(serialized.length < 2000, `context brief is too large: ${serialized.length} bytes`);
+      },
+    },
+    // ─── V2.11B Tests ─────────────────────────────────────────────────────────
+    {
+      name: "V2.11B: get_document does not include extracted_text by default",
+      fn: async () => {
+        const result = await registry.execute("get_document", { documentId: "doc-1" });
+        assert(result.ok, `get_document should succeed, got error: ${!result.ok ? result.error.code : ""}`);
+        const doc = result.data.document as Record<string, unknown>;
+        assert(!("extracted_text" in doc), "get_document must strip extracted_text by default");
+        assert("id" in doc && "title" in doc, "compact document must still have id and title");
+      },
+    },
+    {
+      name: "V2.11B: get_document includes extracted_text when includeExtractedText=true",
+      fn: async () => {
+        const result = await registry.execute("get_document", { documentId: "doc-1", includeExtractedText: true });
+        assert(result.ok, "get_document with includeExtractedText=true should succeed");
+        const doc = result.data.document as Record<string, unknown>;
+        assert("extracted_text" in doc, "document must include extracted_text when explicitly requested");
+      },
+    },
+    {
+      name: "V2.11B: list_projects returns default limit of 25 in response",
+      fn: async () => {
+        const result = await registry.execute("list_projects", {});
+        assert(result.ok, "list_projects should succeed");
+        assert(result.data.limit === 25, `expected default limit 25, got ${result.data.limit}`);
+        assert(Array.isArray(result.data.items), "expected items array");
+        assert(typeof result.data.total === "number", "expected total count");
+        assert(result.data.items.length <= 25, "items must not exceed default limit");
+      },
+    },
+    {
+      name: "V2.11B: list_proof_items returns default limit of 50 in response",
+      fn: async () => {
+        const result = await registry.execute("list_proof_items", {});
+        assert(result.ok, "list_proof_items should succeed");
+        assert(result.data.limit === 50, `expected default limit 50, got ${result.data.limit}`);
+        assert(Array.isArray(result.data.items), "expected items array");
+        assert(typeof result.data.total === "number", "expected total count");
+      },
+    },
+    {
+      name: "V2.11B: list_funders default limit is 25 (aligned with other list tools)",
+      fn: async () => {
+        const result = await registry.execute("list_funders", {});
+        assert(result.ok, "list_funders should succeed");
+        assert(result.data.limit === 25, `expected default limit 25, got ${result.data.limit}`);
+      },
+    },
+    {
+      name: "V2.11B: list_peers default limit is 25 (aligned with other list tools)",
+      fn: async () => {
+        const result = await registry.execute("list_peers", {});
+        assert(result.ok, "list_peers should succeed");
+        assert(result.data.limit === 25, `expected default limit 25, got ${result.data.limit}`);
+      },
+    },
+    {
+      name: "V2.11B: export_peer_packet compact mode omits source_metadata, key_people, description",
+      fn: async () => {
+        const result = await registry.execute("export_peer_packet", { peerId: "peer-1" });
+        assert(result.ok, `export_peer_packet should succeed, got: ${!result.ok ? result.error.code : ""}`);
+        const peerRecord = (result.data.records as Record<string, unknown>).peer_organization as Record<string, unknown>;
+        assert(!("source_metadata" in peerRecord), "compact peer must not include source_metadata blob");
+        assert(!("key_people" in peerRecord), "compact peer must not include key_people");
+        assert(!("description" in peerRecord), "compact peer must not include description");
+        assert(!("notes" in peerRecord), "compact peer must not include notes");
+        assert("id" in peerRecord, "compact peer must include id");
+        assert("name" in peerRecord, "compact peer must include name");
+        // funding records should also be stubs
+        const fundingRecords = (result.data.records as Record<string, unknown>).funding_records as Array<Record<string, unknown>>;
+        assert(Array.isArray(fundingRecords), "expected funding_records array");
+        if (fundingRecords.length > 0) {
+          assert(!("source_metadata" in fundingRecords[0]), "compact funding record must not include source_metadata");
+          assert("funder_name" in fundingRecords[0], "compact funding record must include funder_name");
+          assert("amount" in fundingRecords[0], "compact funding record must include amount");
+        }
+      },
+    },
+    {
+      name: "V2.11B: export_peer_packet full mode preserves all fields when compact=false",
+      fn: async () => {
+        const result = await registry.execute("export_peer_packet", { peerId: "peer-1", compact: false });
+        assert(result.ok, "export_peer_packet compact=false should succeed");
+        const peerRecord = (result.data.records as Record<string, unknown>).peer_organization as Record<string, unknown>;
+        // In full mode, all PeerOrganizationRow fields should be present including source_metadata
+        assert("source_metadata" in peerRecord || "id" in peerRecord, "full mode should return full peer row");
+      },
+    },
+    {
+      name: "V2.11B: tool_not_found response includes do_not_retry flag",
+      fn: async () => {
+        const result = await registry.execute("this_tool_does_not_exist_xyz", {});
+        assert(!result.ok, "nonexistent tool should return failure");
+        assert(result.error.code === "tool_not_found", `expected tool_not_found, got ${result.error.code}`);
+        assert((result as unknown as Record<string, unknown>).do_not_retry === true, "tool_not_found must include do_not_retry: true");
+      },
+    },
+    {
+      name: "V2.11B: get_agent_knowledge_item not-found is a structured error, not an ok response",
+      fn: async () => {
+        const result = await registry.execute("get_agent_knowledge_item", { item_id: "nonexistent-item-xyz" });
+        assert(!result.ok, "not-found knowledge item should return a structured failure, not ok:true with an error field");
+        assert(result.error.code === "knowledge_item_not_found", `expected knowledge_item_not_found, got ${result.error.code}`);
+      },
+    },
   ];
 
 

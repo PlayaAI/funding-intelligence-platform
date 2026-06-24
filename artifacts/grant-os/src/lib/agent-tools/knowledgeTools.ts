@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { GrantOsRepository } from "./repository";
 import type { ToolDefinition } from "./types";
+import { makeToolError } from "./safety";
 
 const RISKY_KEYWORDS = [
   "official Burning Man partnership",
@@ -115,7 +116,7 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
       async execute(input, ctx) {
         const item = await repository.getAgentKnowledgeItem(input.item_id);
         if (!item) {
-          return { error: "Item not found or inaccessible" };
+          throw makeToolError("knowledge_item_not_found", `Knowledge item ${input.item_id} was not found or is inaccessible.`);
         }
         return {
           item,
