@@ -57,6 +57,10 @@ export const MCP_ENABLED_TOOL_NAMES = new Set<string>([
   "save_agent_match",
   "generate_application_readiness_report",
   "get_agent_context_brief",
+  "list_agent_knowledge_items",
+  "get_agent_knowledge_item",
+  "get_grant_decision_brief",
+  "get_application_prep_context",
 ]);
 
 const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonRecord }> = {
@@ -79,7 +83,6 @@ const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonR
   list_projects: { schemaSummary: "{ limit?: number (default 25, max 200) }", exampleInput: {} },
   get_project: { schemaSummary: "{ projectId: string }", exampleInput: { projectId: "project-1" } },
   list_proof_items: { schemaSummary: "{ projectId?: string, limit?: number (default 50, max 200) }", exampleInput: { projectId: "project-1" } },
-  get_proof_items_for_project: { schemaSummary: "{ projectId: string }", exampleInput: { projectId: "project-1" } },
   // Applications
   list_applications: { schemaSummary: "{ limit?: number, grantId?: string }", exampleInput: {} },
   get_application: { schemaSummary: "{ applicationId: string }", exampleInput: { applicationId: "app-1" } },
@@ -114,11 +117,12 @@ const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonR
   generate_grant_match: { schemaSummary: "{ grantId: string, projectId: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", dryRun: true } },
   save_agent_match: { schemaSummary: "{ grantId, projectId, fitScore 1-10, urgencyScore 1-10, effortScore 1-10, strategicValueScore 1-10, recommendation, summary, whyItFits, whyItMightNotFit, bestProjectAngle, strongestApplicationStory, risks[], missingInfo[], evidenceNeeded[], recommendedNextStep, dryRun? }" },
   generate_application_readiness_report: { schemaSummary: "{ grantId: string, projectId: string }" },
-  // Knowledge
-  list_agent_knowledge_items: { schemaSummary: "{ knowledge_type?: string, category?: string, priority?: string, limit?: number (default 25), includeContent?: boolean }", exampleInput: {} },
-  get_agent_knowledge_item: { schemaSummary: "{ item_id: string }", exampleInput: { item_id: "item-1" } },
-  list_agent_knowledge_proposals: { schemaSummary: "{ status?: string, limit?: number (default 25), includeContent?: boolean }", exampleInput: {} },
-  propose_agent_knowledge_update: { schemaSummary: "{ proposal_type, title, category, proposed_content, rationale?, risk_level?, dryRun? }", exampleInput: { proposal_type: "add", title: "New rule", category: "Test", proposed_content: "Always do X.", dryRun: true } },
+  // Knowledge (compact/read-only — content omitted by default)
+  list_agent_knowledge_items: { schemaSummary: "{ knowledge_type?: string, category?: string, priority?: string, limit?: number (default 25, max 100), includeContent?: boolean (default false) }", exampleInput: {} },
+  get_agent_knowledge_item: { schemaSummary: "{ item_id: string, includeContent?: boolean (default false), maxContentChars?: number (default 2000) }", exampleInput: { item_id: "item-1" } },
+  // Composite tools
+  get_grant_decision_brief: { schemaSummary: "{ grantId: string, projectId?: string, projectIds?: string[], maxProjects?: number (max 5) }", exampleInput: { grantId: "grant-1" } },
+  get_application_prep_context: { schemaSummary: "{ applicationId: string, includeSuggestedTasks?: boolean (default false) }", exampleInput: { applicationId: "app-1" } },
 };
 
 export function buildMcpToolManifest(tools: ToolMetadata[]): McpToolManifestEntry[] {

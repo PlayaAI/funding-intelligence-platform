@@ -20,8 +20,8 @@ export const HOSTED_AGENT_READ_TOOLS = [
   "list_grants",
   "search_grants",
   "get_grant",
-  "get_grant_documents",
-  "get_grant_applications",
+  // "get_grant_documents" removed — use get_documents_for_grant
+  // "get_grant_applications" removed — use list_applications with grantId
   "export_grant_packet",
   "list_funders",
   "get_funder",
@@ -34,11 +34,11 @@ export const HOSTED_AGENT_READ_TOOLS = [
   "list_projects",
   "get_project",
   "list_proof_items",
-  "get_proof_items_for_project",
+  // "get_proof_items_for_project" removed — use list_proof_items with projectId
   "list_applications",
   "get_application",
-  "get_application_tasks",
-  "get_application_documents",
+  // "get_application_tasks" removed — use list_tasks with relatedApplicationId
+  // "get_application_documents" removed — use get_documents_for_application
   "export_application_packet",
   "list_tasks",
   "get_task",
@@ -52,6 +52,10 @@ export const HOSTED_AGENT_READ_TOOLS = [
   "get_data_quality_report",
   "generate_application_readiness_report",
   "get_agent_context_brief",
+  "list_agent_knowledge_items",
+  "get_agent_knowledge_item",
+  "get_grant_decision_brief",
+  "get_application_prep_context",
 ] as const;
 
 export type HostedAgentReadTool = (typeof HOSTED_AGENT_READ_TOOLS)[number];

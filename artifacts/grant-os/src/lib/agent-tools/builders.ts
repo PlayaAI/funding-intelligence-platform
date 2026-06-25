@@ -463,3 +463,359 @@ export function filterTasks(tasks: TaskRow[], filters: {
     return true;
   });
 }
+
+// ─── Urgency helpers ─────────────────────────────────────────────────────────
+
+function computeUrgency(deadline: string | null | undefined): {
+  deadline: string | null;
+  daysRemaining: number | null;
+  status: "overdue" | "urgent" | "soon" | "future" | "rolling" | "unknown";
+} {
+  if (!deadline) return { deadline: null, daysRemaining: null, status: "unknown" };
+  const parsed = new Date(`${deadline}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return { deadline, daysRemaining: null, status: "unknown" };
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const target = Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
+  const days = Math.ceil((target - today) / 86_400_000);
+  const status: "overdue" | "urgent" | "soon" | "future" =
+    days < 0 ? "overdue" :
+    days <= 7 ? "urgent" :
+    days <= 30 ? "soon" : "future";
+  return { deadline, daysRemaining: days, status };
+}
+
+// ─── Composite: get_grant_decision_brief ─────────────────────────────────────
+
+const MAX_CANDIDATE_PROJECTS = 5;
+const MAX_BRIEF_PROOF_IDS = 10;
+
+export async function buildGrantDecisionBrief(
+  repository: GrantOsRepository,
+  grantId: string,
+  opts: { projectId?: string; projectIds?: string[]; maxProjects?: number } = {}
+) {
+  const cap = Math.min(opts.maxProjects ?? MAX_CANDIDATE_PROJECTS, MAX_CANDIDATE_PROJECTS);
+
+  // Parallel fetch of core records
+  const [grant, allProjects, allApplications, allMatches] = await Promise.all([
+    repository.getGrant(grantId),
+    repository.listProjects(),
+    repository.listApplications(),
+    repository.listGrantMatches({ grantId }),
+  ]);
+
+  if (!grant) throw new Error(`Grant ${grantId} not found.`);
+
+  // Funder (conditional)
+  const funder = grant.funder_id ? await repository.getFunder(grant.funder_id) : null;
+
+  // Determine candidate project set
+  const requestedIds = new Set<string>([
+    ...(opts.projectId ? [opts.projectId] : []),
+    ...(opts.projectIds ?? []),
+  ]);
+  const candidateProjects = requestedIds.size > 0
+    ? allProjects.filter((p) => requestedIds.has(p.id))
+    : allProjects;
+  const capped = candidateProjects.slice(0, cap);
+  const truncated = candidateProjects.length > cap;
+
+  // Existing matches and applications for this grant
+  const existingMatches = allMatches;
+  const grantApplications = allApplications.filter((a) => a.grant_id === grantId);
+
+  // Build candidate project stubs (use existing match data for fit scoring)
+  const candidateStubs = capped.map((project) => {
+    const match = existingMatches.find((m) => m.project_id === project.id);
+    return {
+      id: project.id,
+      name: project.name,
+      slug: project.slug ?? null,
+      fitScore: match ? Math.round((match.match_score ?? 0) / 10) : null,
+      topReason: (match?.fit_reasons as string[] | null | undefined)?.[0] ?? null,
+      topRisk: (match?.risks as string[] | null | undefined)?.[0] ?? null,
+    };
+  });
+
+  // Pick best project: highest fitScore, then first candidate
+  const sorted = [...candidateStubs].sort((a, b) => (b.fitScore ?? -1) - (a.fitScore ?? -1));
+  const bestProject = sorted[0] ?? null;
+
+  // Existing application for best project
+  const existingApplication = bestProject
+    ? grantApplications.find((a) => a.project_id === bestProject.id) ?? null
+    : grantApplications[0] ?? null;
+
+  // Existing match record for best project
+  const existingMatch = bestProject
+    ? existingMatches.find((m) => m.project_id === bestProject.id) ?? null
+    : existingMatches[0] ?? null;
+
+  // Proof items for best project (IDs only for source tracking)
+  const proofItems = bestProject
+    ? await repository.listProofItems(bestProject.id)
+    : [];
+
+  // Urgency
+  const rawDeadline = grant.deadline ?? grant.next_deadline ?? null;
+  const urgency = computeUrgency(rawDeadline);
+
+  // Build heuristic signals
+  const missingInfo: string[] = [];
+  const topReasons: string[] = [];
+  const topRisks: string[] = [];
+
+  if (!grant.eligibility) missingInfo.push("Grant eligibility not captured.");
+  if (!grant.deadline && !grant.next_deadline) missingInfo.push("Deadline unknown.");
+  if (!grant.application_url && !grant.source_url) missingInfo.push("Application URL missing.");
+  if (capped.length === 0) missingInfo.push("No projects to evaluate against.");
+  if (proofItems.length === 0 && bestProject) missingInfo.push("No proof items linked to best project.");
+
+  if (existingMatch) {
+    topReasons.push(...((existingMatch.fit_reasons as string[] | null)?.slice(0, 3) ?? []));
+    topRisks.push(...((existingMatch.risks as string[] | null)?.slice(0, 3) ?? []));
+  } else {
+    if (bestProject?.topReason) topReasons.push(bestProject.topReason);
+    if (bestProject?.topRisk) topRisks.push(bestProject.topRisk);
+  }
+
+  const fitScore = existingMatch?.match_score ?? null;
+  const readinessScore = existingMatch?.readiness_score ?? null;
+
+  let recommendation: "apply_now" | "prepare_first" | "monitor" | "skip" | "needs_review";
+  if (missingInfo.length >= 3 || capped.length === 0) {
+    recommendation = "needs_review";
+  } else if (urgency.status === "overdue") {
+    recommendation = "skip";
+  } else if (fitScore !== null && fitScore >= 80 && urgency.status !== "future") {
+    recommendation = "apply_now";
+  } else if (fitScore !== null && fitScore >= 60) {
+    recommendation = "prepare_first";
+  } else if (fitScore !== null && fitScore < 40) {
+    recommendation = "monitor";
+  } else {
+    recommendation = "needs_review";
+  }
+
+  const recommendedNextStep =
+    recommendation === "apply_now" ? "Create or review the application workspace and begin drafting." :
+    recommendation === "prepare_first" ? "Gather missing documents and proof items before applying." :
+    recommendation === "monitor" ? "Monitor for updated guidelines or next cycle." :
+    recommendation === "skip" ? "Deadline has passed — archive or monitor for next cycle." :
+    "Gather missing information and run generate_grant_match for deeper analysis.";
+
+  return {
+    grant: {
+      id: grant.id,
+      title: grant.title,
+      status: grant.status ?? null,
+      deadline: rawDeadline,
+      funder_id: grant.funder_id ?? null,
+      funder_name: grant.funder_name ?? null,
+      url: grant.application_url ?? grant.source_url ?? null,
+    },
+    urgency,
+    funder: funder
+      ? { id: funder.id, name: funder.name, website: funder.website ?? null }
+      : null,
+    bestProject: bestProject
+      ? { id: bestProject.id, name: bestProject.name, slug: bestProject.slug, fitScore: bestProject.fitScore, topReason: bestProject.topReason, topRisk: bestProject.topRisk }
+      : null,
+    candidateProjects: candidateStubs,
+    existingApplication: existingApplication
+      ? { id: existingApplication.id, title: existingApplication.title ?? existingApplication.id, status: existingApplication.status ?? null }
+      : null,
+    existingMatch: existingMatch
+      ? {
+          id: existingMatch.id,
+          project_id: existingMatch.project_id,
+          grant_id: existingMatch.grant_id,
+          match_score: existingMatch.match_score ?? null,
+          decision_label: existingMatch.decision_label ?? null,
+          recommendation: (existingMatch.recommended_actions as string[] | null)?.[0] ?? null,
+        }
+      : null,
+    recommendation,
+    readinessScore: readinessScore !== null ? Math.round(readinessScore / 10) : null,
+    topReasons,
+    topRisks,
+    missingInfo,
+    recommendedNextStep,
+    sourceRecordIds: {
+      grantId: grant.id,
+      funderId: funder?.id ?? null,
+      projectIds: capped.map((p) => p.id),
+      applicationIds: grantApplications.map((a) => a.id),
+      matchIds: existingMatches.map((m) => m.id),
+      proofItemIds: proofItems.slice(0, MAX_BRIEF_PROOF_IDS).map((p) => p.id),
+    },
+    truncated,
+  };
+}
+
+// ─── Composite: get_application_prep_context ─────────────────────────────────
+
+const MAX_OPEN_TASKS = 10;
+const MAX_LINKED_DOCS = 10;
+const MAX_PROOF_STRONGEST = 5;
+
+export async function buildApplicationPrepContext(
+  repository: GrantOsRepository,
+  applicationId: string,
+  opts: { includeSuggestedTasks?: boolean } = {}
+) {
+  const application = await repository.getApplication(applicationId);
+  if (!application) throw new Error(`Application ${applicationId} not found.`);
+
+  // Parallel fetch
+  const [grant, project, tasks, appDocs, requiredDocs, proofItems] = await Promise.all([
+    application.grant_id ? repository.getGrant(application.grant_id) : Promise.resolve(null),
+    application.project_id ? repository.getProject(application.project_id) : Promise.resolve(null),
+    repository.listTasksByApplication(applicationId),
+    repository.listDocuments({ relatedApplicationId: applicationId }),
+    repository.listApplicationRequiredDocuments(applicationId),
+    application.project_id ? repository.listProofItems(application.project_id) : Promise.resolve([]),
+  ]);
+
+  // Grant documents (linked to the grant)
+  const grantDocs = grant ? await repository.listDocuments({ relatedGrantId: grant.id }) : [];
+
+  // Deduplicate + merge documents (compact stubs only — no extracted_text)
+  const seenDocIds = new Set<string>();
+  const allLinkedDocs = [...appDocs, ...grantDocs].filter((d) => {
+    if (seenDocIds.has(d.id)) return false;
+    seenDocIds.add(d.id);
+    return true;
+  });
+
+  // Urgency from grant deadline
+  const rawDeadline = grant?.deadline ?? grant?.next_deadline ?? null;
+  const deadline = computeUrgency(rawDeadline);
+
+  // Open tasks (capped)
+  const allOpenTasks = tasks.filter((t) => t.status !== "Complete" && t.status !== "Archived");
+  const openTasksCapped = allOpenTasks.slice(0, MAX_OPEN_TASKS);
+  const tasksTruncated = allOpenTasks.length > MAX_OPEN_TASKS;
+
+  // Linked document stubs (compact — no extracted_text, no source_metadata)
+  const linkedDocStubs = allLinkedDocs.slice(0, MAX_LINKED_DOCS).map((d) => ({
+    id: d.id,
+    title: d.title,
+    document_type: d.document_type ?? null,
+    source_url: d.source_url ?? d.file_url ?? null,
+    created_at: d.created_at,
+  }));
+  const docsTruncated = allLinkedDocs.length > MAX_LINKED_DOCS;
+
+  // Required documents
+  const requiredDocStubs = requiredDocs.map((r) => ({
+    id: r.id,
+    title: r.title,
+    status: r.status ?? null,
+  }));
+
+  // Missing documents = required but not matched in linked docs
+  const linkedTitlesLower = allLinkedDocs.map((d) => d.title.toLowerCase());
+  const missingDocuments = requiredDocs
+    .filter((r) => {
+      const rl = r.title.toLowerCase();
+      return !linkedTitlesLower.some((t) => t.includes(rl) || rl.includes(t));
+    })
+    .map((r) => r.title);
+
+  // Missing facts
+  const missingFacts: string[] = [];
+  if (!project?.summary) missingFacts.push("Project summary");
+  if (!project?.problem_statement) missingFacts.push("Problem statement");
+  if (!grant?.eligibility) missingFacts.push("Grant eligibility notes");
+  if (!grant?.application_url) missingFacts.push("Application URL");
+  if (!rawDeadline) missingFacts.push("Deadline");
+
+  // Blockers
+  const blockers: string[] = [];
+  if (missingDocuments.length > 0) blockers.push(`${missingDocuments.length} required document(s) missing.`);
+  if (proofItems.length === 0 && application.project_id) blockers.push("No proof items linked to project.");
+  if (tasks.length === 0) blockers.push("No tasks created for this application yet.");
+
+  // Next actions
+  const nextActions: string[] = [];
+  if (missingDocuments.length > 0) nextActions.push(`Collect: ${missingDocuments.slice(0, 3).join(", ")}`);
+  if (missingFacts.length > 0) nextActions.push(`Fill in: ${missingFacts.slice(0, 3).join(", ")}`);
+  if (openTasksCapped.length > 0) nextActions.push(`Complete ${allOpenTasks.length} open task(s).`);
+  if (nextActions.length === 0) nextActions.push("Review application with a human and prepare for submission.");
+
+  // Proof summary (type counts only — no content)
+  const proofTypes = [...new Set(proofItems.map((p) => p.type).filter(Boolean))] as string[];
+  const strongest = proofItems.slice(0, MAX_PROOF_STRONGEST).map((p) => ({
+    id: p.id,
+    title: p.title,
+    proof_type: p.type ?? null,
+  }));
+
+  // Suggested tasks (only if requested)
+  const suggestedTasks: Array<{ title: string; priority: string; source: string }> = [];
+  if (opts.includeSuggestedTasks) {
+    for (const doc of missingDocuments.slice(0, 3)) {
+      suggestedTasks.push({ title: `Collect ${doc}`, priority: "High", source: "required_document" });
+    }
+    for (const fact of missingFacts.slice(0, 3)) {
+      suggestedTasks.push({ title: `Fill in ${fact}`, priority: "Medium", source: "missing_fact" });
+    }
+  }
+
+  const openTaskStubs = openTasksCapped.map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status ?? null,
+    due_date: t.due_date ?? null,
+    owner_name: t.owner_name ?? null,
+  }));
+
+  return {
+    application: {
+      id: application.id,
+      title: application.title ?? application.id,
+      status: application.status ?? null,
+      project_id: application.project_id ?? null,
+      grant_id: application.grant_id ?? null,
+    },
+    grant: grant
+      ? {
+          id: grant.id,
+          title: grant.title,
+          status: grant.status ?? null,
+          deadline: rawDeadline,
+          funder_id: grant.funder_id ?? null,
+          funder_name: grant.funder_name ?? null,
+          url: grant.application_url ?? grant.source_url ?? null,
+        }
+      : null,
+    project: project
+      ? { id: project.id, name: project.name, slug: project.slug ?? null }
+      : null,
+    deadline,
+    openTasks: openTaskStubs,
+    linkedDocuments: linkedDocStubs,
+    requiredDocuments: requiredDocStubs,
+    proofItemsSummary: {
+      count: proofItems.length,
+      types: proofTypes,
+      strongest,
+    },
+    missingDocuments,
+    missingFacts,
+    blockers,
+    nextActions,
+    ...(opts.includeSuggestedTasks ? { suggestedTasks } : {}),
+    sourceRecordIds: {
+      applicationId: application.id,
+      grantId: application.grant_id ?? null,
+      projectId: application.project_id ?? null,
+      taskIds: tasks.map((t) => t.id),
+      documentIds: allLinkedDocs.map((d) => d.id),
+      proofItemIds: proofItems.map((p) => p.id),
+    },
+    truncated: tasksTruncated || docsTruncated,
+  };
+}

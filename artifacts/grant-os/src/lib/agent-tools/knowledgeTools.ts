@@ -103,7 +103,7 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
 
     {
       name: "get_agent_knowledge_item",
-      description: "Fetch one knowledge item by ID for detail.",
+      description: "Fetch one knowledge item by ID. Content and example are omitted by default; set includeContent: true to include them (truncated to maxContentChars).",
       permissionLevel: "read",
       dryRunSupported: false,
       auditAction: "data_reviewed",
@@ -112,15 +112,55 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
       touchesRealDb: true,
       inputSchema: z.object({
         item_id: z.string(),
+        includeContent: z.boolean().optional().default(false),
+        maxContentChars: z.number().int().min(1).max(10000).optional().default(2000),
       }),
       async execute(input, ctx) {
         const item = await repository.getAgentKnowledgeItem(input.item_id);
         if (!item) {
           throw makeToolError("knowledge_item_not_found", `Knowledge item ${input.item_id} was not found or is inaccessible.`);
         }
+
+        const maxChars = input.maxContentChars ?? 2000;
+        const includeContent = input.includeContent ?? false;
+
+        // Always return compact base — never full row blobs
+        const base = {
+          id: item.id,
+          title: item.title,
+          category: item.category,
+          knowledge_type: item.knowledge_type,
+          priority: item.priority,
+          confidence_status: item.confidence_status,
+          status: item.status,
+          applies_to: item.applies_to,
+          source_label: item.source_label,
+          updated_at: item.updated_at,
+        };
+
+        if (!includeContent) {
+          return {
+            item: base,
+            content_included: false,
+            safety_note: `This item has confidence status: ${item.confidence_status}. Request with includeContent: true to see content (capped at ${maxChars} chars).`,
+          };
+        }
+
+        const rawContent = item.content ?? "";
+        const rawExample = item.example ?? null;
+        const contentTruncated = rawContent.length > maxChars;
+        const exampleTruncated = rawExample !== null && rawExample.length > maxChars;
+
         return {
-          item,
-          safety_note: `This item has confidence status: ${item.confidence_status}.`
+          item: {
+            ...base,
+            content: contentTruncated ? rawContent.slice(0, maxChars) : rawContent,
+            example: exampleTruncated ? rawExample.slice(0, maxChars) : rawExample,
+          },
+          content_included: true,
+          content_truncated: contentTruncated || exampleTruncated,
+          content_char_count: rawContent.length,
+          safety_note: `This item has confidence status: ${item.confidence_status}.`,
         };
       },
     },

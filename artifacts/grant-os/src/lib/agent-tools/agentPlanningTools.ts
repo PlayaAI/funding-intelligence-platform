@@ -7,6 +7,7 @@ import type {
   MatchTierDb,
 } from "../../types/database";
 import { buildDryRunPlan } from "./dryRun";
+import { buildGrantDecisionBrief, buildApplicationPrepContext } from "./builders";
 import type { GrantOsRepository } from "./repository";
 import { makeToolError } from "./safety";
 import type { ToolDefinition } from "./types";
@@ -305,6 +306,52 @@ export function createAgentPlanningTools(repository: GrantOsRepository): Array<T
           },
           mutationPerformed: false,
         };
+      },
+    },
+    {
+      name: "get_grant_decision_brief",
+      description: "Compact single-call decision brief for a grant: urgency, fit, funder, candidate projects, existing match/application, recommendation, risks, missing info, and next step. Replaces get_grant + get_funder + list_projects + list_proof_items + list_applications + generate_grant_match for initial triage.",
+      permissionLevel: "read",
+      inputSchema: z.object({
+        grantId: z.string().min(1),
+        projectId: z.string().optional(),
+        projectIds: z.array(z.string()).optional(),
+        maxProjects: z.number().int().min(1).max(5).optional(),
+      }),
+      dryRunSupported: false,
+      auditAction: "data_reviewed",
+      risks: ["Brief may surface internal fit scores and prioritization reasoning."],
+      relatedTables: ["grants", "funders", "projects", "grant_matches", "applications", "proof_items"],
+      touchesRealDb: true,
+      async execute(input) {
+        const grant = await repository.getGrant(input.grantId);
+        if (!grant) throw makeToolError("grant_not_found", `Grant ${input.grantId} was not found.`);
+        return buildGrantDecisionBrief(repository, input.grantId, {
+          projectId: input.projectId,
+          projectIds: input.projectIds,
+          maxProjects: input.maxProjects,
+        });
+      },
+    },
+    {
+      name: "get_application_prep_context",
+      description: "Compact single-call prep context for an application: open tasks, linked documents, required docs, proof items, missing info, blockers, and next actions. Replaces get_application + get_documents_for_application + list_tasks + list_proof_items + generate_application_readiness_report for prep triage.",
+      permissionLevel: "read",
+      inputSchema: z.object({
+        applicationId: z.string().min(1),
+        includeSuggestedTasks: z.boolean().optional().default(false),
+      }),
+      dryRunSupported: false,
+      auditAction: "data_reviewed",
+      risks: ["Context may reveal internal application gaps and blockers."],
+      relatedTables: ["applications", "grants", "projects", "tasks", "documents", "proof_items"],
+      touchesRealDb: true,
+      async execute(input) {
+        const application = await repository.getApplication(input.applicationId);
+        if (!application) throw makeToolError("application_not_found", `Application ${input.applicationId} was not found.`);
+        return buildApplicationPrepContext(repository, input.applicationId, {
+          includeSuggestedTasks: input.includeSuggestedTasks,
+        });
       },
     },
   ];

@@ -231,8 +231,8 @@ export function createMatchTools(repository: GrantOsRepository): Array<ToolDefin
         return {
           dryRun: false,
           mutationPerformed: false,
-          persistence: "not_implemented_persistence",
-          message: "generate_grant_match does not persist records directly. Use save_grant_match for explicit persistence.",
+          message: "generate_grant_match produces a match preview only — it does not persist records. To save this result, call save_agent_match with the reasoning fields below.",
+          next_step: "save_agent_match",
           ...structured,
         };
       },

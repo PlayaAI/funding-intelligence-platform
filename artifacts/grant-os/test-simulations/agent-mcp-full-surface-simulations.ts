@@ -276,6 +276,201 @@ async function run() {
         assert(JSON.stringify(result.body).includes("service_role_rejected"), "expected service-role rejection");
       },
     },
+
+    // ── V2.11C: generate_grant_match persistence fix ──────────────────────────
+    {
+      name: "V2.11C: generate_grant_match does not reference save_grant_match",
+      fn: async () => {
+        const dryResult = await adapter.handleCall(authHeaders(), {
+          name: "generate_grant_match",
+          arguments: { grantId: "grant-1", projectId: "project-1" },
+        });
+        const liveResult = await adapter.handleCall(authHeaders(), {
+          name: "generate_grant_match",
+          arguments: { grantId: "grant-1", projectId: "project-1", dryRun: false },
+        });
+        assert(dryResult.status === 200, "expected dry-run success");
+        assert(liveResult.status === 200, "expected live-run success");
+        assert(!JSON.stringify(dryResult.body).includes("save_grant_match"), "dry-run must not reference save_grant_match");
+        assert(!JSON.stringify(liveResult.body).includes("save_grant_match"), "non-dry-run must not reference save_grant_match");
+        assert(!JSON.stringify(liveResult.body).includes("not_implemented_persistence"), "must not include not_implemented_persistence");
+        assert(JSON.stringify(liveResult.body).includes("save_agent_match"), "non-dry-run must reference save_agent_match");
+      },
+    },
+
+    // ── V2.11C: Knowledge tools ───────────────────────────────────────────────
+    {
+      name: "V2.11C: knowledge list and detail appear in MCP manifest",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        assert(result.status === 200, "expected success");
+        const tools = (result.body.tools ?? []) as Array<{ name?: string; permissionLevel?: string }>;
+        assert(tools.some((t) => t.name === "list_agent_knowledge_items" && t.permissionLevel === "read"), "expected list_agent_knowledge_items read tool in MCP");
+        assert(tools.some((t) => t.name === "get_agent_knowledge_item" && t.permissionLevel === "read"), "expected get_agent_knowledge_item read tool in MCP");
+      },
+    },
+    {
+      name: "V2.11C: knowledge proposal/write tools NOT in MCP manifest",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        assert(result.status === 200, "expected success");
+        const tools = (result.body.tools ?? []) as Array<{ name?: string }>;
+        assert(!tools.some((t) => t.name === "propose_agent_knowledge_update"), "propose_agent_knowledge_update must not be in MCP");
+        assert(!tools.some((t) => t.name === "list_agent_knowledge_proposals"), "list_agent_knowledge_proposals must not be in MCP");
+      },
+    },
+    {
+      name: "V2.11C: knowledge list omits content by default",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), { name: "list_agent_knowledge_items", arguments: {} });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        const items = data.items as Array<JsonRecord> | undefined;
+        assert(Array.isArray(items), "expected items array");
+        if (items && items.length > 0) {
+          assert(!("content" in items[0]), "knowledge list must not include content by default");
+          assert(!("example" in items[0]), "knowledge list must not include example by default");
+        }
+        assert(data.includeContent === false, "expected includeContent false by default");
+      },
+    },
+    {
+      name: "V2.11C: get_agent_knowledge_item compact by default",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), { name: "get_agent_knowledge_item", arguments: { item_id: "item-1" } });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        assert(data.content_included === false, "expected content_included false by default");
+        const item = data.item as JsonRecord | undefined;
+        assert(item && typeof item.id === "string", "expected item stub with id");
+        assert(!item || !("content" in item), "item must not include content by default");
+      },
+    },
+    {
+      name: "V2.11C: get_agent_knowledge_item truncates at maxContentChars",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), {
+          name: "get_agent_knowledge_item",
+          arguments: { item_id: "item-1", includeContent: true, maxContentChars: 5 },
+        });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        assert(data.content_included === true, "expected content_included true");
+        const item = data.item as JsonRecord | undefined;
+        if (item && typeof item.content === "string") {
+          assert((item.content as string).length <= 5, "content must be capped at maxContentChars=5");
+        }
+      },
+    },
+
+    // ── V2.11C: Composite tools ───────────────────────────────────────────────
+    {
+      name: "V2.11C: composite tools appear in MCP manifest",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        assert(result.status === 200, "expected success");
+        const tools = (result.body.tools ?? []) as Array<{ name?: string; permissionLevel?: string }>;
+        assert(tools.some((t) => t.name === "get_grant_decision_brief" && t.permissionLevel === "read"), "expected get_grant_decision_brief read tool in MCP");
+        assert(tools.some((t) => t.name === "get_application_prep_context" && t.permissionLevel === "read"), "expected get_application_prep_context read tool in MCP");
+      },
+    },
+    {
+      name: "V2.11C: get_grant_decision_brief output under 5KB",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), { name: "get_grant_decision_brief", arguments: { grantId: "grant-1" } });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        const size = JSON.stringify(data).length;
+        assert(size < 5 * 1024, `get_grant_decision_brief output exceeds 5KB: ${size} bytes`);
+      },
+    },
+    {
+      name: "V2.11C: get_grant_decision_brief shape, source IDs, no extracted_text",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), { name: "get_grant_decision_brief", arguments: { grantId: "grant-1", projectId: "project-1" } });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        const bodyStr = JSON.stringify(data);
+        assert(typeof (data.grant as JsonRecord)?.id === "string", "expected grant.id");
+        assert(typeof (data.urgency as JsonRecord)?.status === "string", "expected urgency.status");
+        assert(typeof data.recommendation === "string", "expected recommendation");
+        assert(Array.isArray(data.topReasons), "expected topReasons array");
+        assert(Array.isArray(data.topRisks), "expected topRisks array");
+        assert(Array.isArray(data.missingInfo), "expected missingInfo array");
+        assert(typeof data.recommendedNextStep === "string", "expected recommendedNextStep");
+        assert(typeof (data.sourceRecordIds as JsonRecord)?.grantId === "string", "expected sourceRecordIds.grantId");
+        assert(Array.isArray((data.sourceRecordIds as JsonRecord)?.projectIds), "expected sourceRecordIds.projectIds");
+        assert(!bodyStr.includes("extracted_text"), "must not include extracted_text");
+        assert(!bodyStr.includes("source_metadata"), "must not include source_metadata");
+      },
+    },
+    {
+      name: "V2.11C: get_grant_decision_brief handles missing funder/match",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), { name: "get_grant_decision_brief", arguments: { grantId: "grant-2" } });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        assert(typeof data.recommendation === "string", "expected recommendation with missing funder/match");
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context output under 8KB",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), { name: "get_application_prep_context", arguments: { applicationId: "app-1" } });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        const size = JSON.stringify(data).length;
+        assert(size < 8 * 1024, `get_application_prep_context output exceeds 8KB: ${size} bytes`);
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context shape, source IDs, no extracted_text",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), { name: "get_application_prep_context", arguments: { applicationId: "app-1" } });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        const bodyStr = JSON.stringify(data);
+        assert(typeof (data.application as JsonRecord)?.id === "string", "expected application.id");
+        assert(typeof (data.deadline as JsonRecord)?.status === "string", "expected deadline.status");
+        assert(Array.isArray(data.openTasks), "expected openTasks array");
+        assert(Array.isArray(data.linkedDocuments), "expected linkedDocuments array");
+        assert(Array.isArray(data.missingDocuments), "expected missingDocuments array");
+        assert(Array.isArray(data.blockers), "expected blockers array");
+        assert(Array.isArray(data.nextActions), "expected nextActions array");
+        assert(typeof (data.sourceRecordIds as JsonRecord)?.applicationId === "string", "expected sourceRecordIds.applicationId");
+        assert(!bodyStr.includes("extracted_text"), "must not include extracted_text");
+        assert(!bodyStr.includes("source_metadata"), "must not include source_metadata");
+        const docs = data.linkedDocuments as Array<JsonRecord>;
+        if (docs && docs.length > 0) {
+          assert(!("extraction_status" in docs[0]), "linkedDocuments must not be full DB rows");
+        }
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context open tasks capped at 10",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), { name: "get_application_prep_context", arguments: { applicationId: "app-1" } });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        const tasks = data.openTasks as Array<JsonRecord>;
+        assert(Array.isArray(tasks) && tasks.length <= 10, "openTasks must be capped at 10");
+        if (tasks.length > 0) {
+          assert(!("description" in tasks[0]), "task stubs must not include description (full row)");
+        }
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context includeSuggestedTasks",
+      fn: async () => {
+        const result = await adapter.handleCall(authHeaders(), {
+          name: "get_application_prep_context",
+          arguments: { applicationId: "app-1", includeSuggestedTasks: true },
+        });
+        assert(result.status === 200, "expected success");
+        const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
+        assert(Array.isArray(data.suggestedTasks), "expected suggestedTasks when includeSuggestedTasks true");
+      },
+    },
   ];
 
   const results: TestResult[] = [];
