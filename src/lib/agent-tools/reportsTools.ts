@@ -25,7 +25,7 @@ export function createReportTools(repository: GrantOsRepository): Array<ToolDefi
     },
     {
       name: "get_deadline_report",
-      description: "Return grants grouped by deadline windows.",
+      description: "Return all grants grouped by deadline windows (7, 14, 30, 60+ days). HIGH COST — reads the full grants table. Do NOT use for narrow grant-ranking or fit questions. For narrow tasks (e.g. 'which grant should we apply for first?'), prefer get_grant_decision_brief or list_grant_matches instead. Use this only when the user explicitly asks for a full deadline overview.",
       permissionLevel: "read",
       inputSchema: z.object({}),
       dryRunSupported: false,
@@ -61,7 +61,7 @@ export function createReportTools(repository: GrantOsRepository): Array<ToolDefi
     },
     {
       name: "get_agent_context_brief",
-      description: "Return a lightweight, serialized JSON payload of the workspace context for agent startup.",
+      description: "Return a lightweight workspace context snapshot for agent startup — grant/application counts, upcoming deadlines, and top knowledge items. LOW COST. Use this as the first call when orienting to the workspace. Do not use get_deadline_report or broad list calls for orientation.",
       permissionLevel: "read",
       inputSchema: z.object({}),
       dryRunSupported: false,

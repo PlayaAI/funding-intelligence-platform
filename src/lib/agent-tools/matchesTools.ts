@@ -157,7 +157,7 @@ export function createMatchTools(repository: GrantOsRepository): Array<ToolDefin
   return [
     {
       name: "list_grant_matches",
-      description: "List saved or generated grant matches for the dashboard.",
+      description: "List saved grant matches as compact stubs (id, titles, score, decision label). LOW COST. PREFERRED first step for narrow match queries. Returns compact stubs by default — no full documents, no extracted text. Use includeDetails:true only if the user needs full match detail.",
       permissionLevel: "read",
       inputSchema: z.object({
         grantId: z.string().optional(),
@@ -211,7 +211,7 @@ export function createMatchTools(repository: GrantOsRepository): Array<ToolDefin
     },
     {
       name: "get_grant_match",
-      description: "Fetch a single grant match by match id.",
+      description: "Fetch a single saved grant match by ID. Use after list_grant_matches to drill into a specific match. For narrative fit/decision summaries prefer get_grant_decision_brief.",
       permissionLevel: "read",
       inputSchema: z.object({ matchId: z.string().min(1) }),
       dryRunSupported: false,
