@@ -56,6 +56,8 @@ export const HOSTED_AGENT_READ_TOOLS = [
   "get_agent_knowledge_item",
   "get_grant_decision_brief",
   "get_application_prep_context",
+  "list_grant_matches",
+  "get_grant_match",
 ] as const;
 
 export type HostedAgentReadTool = (typeof HOSTED_AGENT_READ_TOOLS)[number];

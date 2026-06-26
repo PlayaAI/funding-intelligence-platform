@@ -56,6 +56,11 @@ Examples:
 - `get_data_quality_report`
 - `list_grant_matches`
 - `get_grant_match`
+- `get_agent_context_brief`
+- `list_agent_knowledge_items`
+- `get_agent_knowledge_item`
+- `get_grant_decision_brief`
+- `get_application_prep_context`
 
 ### Write-safe tools
 
