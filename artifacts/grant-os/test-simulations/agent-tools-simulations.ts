@@ -383,6 +383,42 @@ async function run() {
       },
     },
     {
+      name: "V2.11D: list_grant_matches default output is compact and contains titles",
+      fn: async () => {
+        const result = await registry.execute("list_grant_matches", {});
+        assert(result.ok, "list_grant_matches should succeed");
+        const items = result.data.items as any[];
+        if (items.length > 0) {
+          const first = items[0];
+          assert(typeof first.grant_title === "string", "stub should have grant_title");
+          assert(typeof first.project_name === "string", "stub should have project_name");
+          assert(!("project" in first), "stub should not include full project row");
+          assert(!("grant" in first), "stub should not include full grant row");
+          assert(!("funder" in first), "stub should not include full funder row");
+        }
+      },
+    },
+    {
+      name: "V2.11D: list_grant_matches includeDetails mode omits large fields from relations",
+      fn: async () => {
+        const result = await registry.execute("list_grant_matches", { includeDetails: true });
+        assert(result.ok, "list_grant_matches with includeDetails should succeed");
+        const items = result.data.items as any[];
+        if (items.length > 0) {
+          const first = items[0];
+          assert("project" in first, "detailed match should include project relation");
+          if (first.project) {
+            assert(!("mission_statement" in first.project), "project relation should omit mission_statement");
+            assert(!("impact_metrics" in first.project), "project relation should omit impact_metrics");
+          }
+          if (first.grant) {
+            assert(!("description" in first.grant), "grant relation should omit description");
+            assert(!("eligibility" in first.grant), "grant relation should omit eligibility");
+          }
+        }
+      },
+    },
+    {
       name: "V2.10A: get_deadline_report returns stubs not full GrantRows",
       fn: async () => {
         const result = await registry.execute("get_deadline_report", {});
@@ -660,6 +696,166 @@ async function run() {
         const result = await registry.execute("get_agent_knowledge_item", { item_id: "nonexistent-item-xyz" });
         assert(!result.ok, "not-found knowledge item should return a structured failure, not ok:true with an error field");
         assert(result.error.code === "knowledge_item_not_found", `expected knowledge_item_not_found, got ${result.error.code}`);
+      },
+    },
+
+    // ── V2.11C: Knowledge tool compact behavior ────────────────────────────
+    {
+      name: "V2.11C: get_agent_knowledge_item compact by default (no content field)",
+      fn: async () => {
+        const result = await registry.execute("get_agent_knowledge_item", { item_id: "item-1" });
+        assert(result.ok, "get_agent_knowledge_item should succeed");
+        assert(result.data.content_included === false, "expected content_included false by default");
+        const item = result.data.item as Record<string, unknown>;
+        assert(typeof item.id === "string", "expected item.id");
+        assert(!("content" in item), "item must not have content field by default");
+        assert(!("example" in item), "item must not have example field by default");
+      },
+    },
+    {
+      name: "V2.11C: get_agent_knowledge_item with includeContent returns truncated content",
+      fn: async () => {
+        const result = await registry.execute("get_agent_knowledge_item", { item_id: "item-1", includeContent: true, maxContentChars: 3 });
+        assert(result.ok, "get_agent_knowledge_item with includeContent should succeed");
+        assert(result.data.content_included === true, "expected content_included true");
+        const item = result.data.item as Record<string, unknown>;
+        assert("content" in item, "item must have content field when includeContent true");
+        assert(typeof item.content === "string" && (item.content as string).length <= 3, "content must be capped at maxContentChars=3");
+        assert(result.data.content_char_count === 11, `expected original content length 11 (Always test), got ${result.data.content_char_count}`);
+      },
+    },
+    {
+      name: "V2.11C: generate_grant_match non-dry-run references save_agent_match",
+      fn: async () => {
+        const result = await registry.execute("generate_grant_match", { grantId: "grant-1", projectId: "project-1", dryRun: false });
+        assert(result.ok, "generate_grant_match should succeed");
+        const str = JSON.stringify(result.data);
+        assert(!str.includes("save_grant_match"), "must not reference save_grant_match");
+        assert(!str.includes("not_implemented_persistence"), "must not include not_implemented_persistence");
+        assert(str.includes("save_agent_match"), "must reference save_agent_match");
+      },
+    },
+
+    // ── V2.11C: Composite tools (unit level) ────────────────────────────────
+    {
+      name: "V2.11C: get_grant_decision_brief succeeds and returns correct shape",
+      fn: async () => {
+        const result = await registry.execute("get_grant_decision_brief", { grantId: "grant-1", projectId: "project-1" });
+        assert(result.ok, `get_grant_decision_brief should succeed: ${result.ok ? "" : JSON.stringify((result as any).error)}`);
+        const data = result.data as Record<string, unknown>;
+        assert(typeof (data.grant as Record<string, unknown>)?.id === "string", "expected grant.id");
+        assert(typeof (data.urgency as Record<string, unknown>)?.status === "string", "expected urgency.status");
+        assert(typeof data.recommendation === "string", "expected recommendation");
+        assert(Array.isArray(data.topReasons), "expected topReasons array");
+        assert(Array.isArray(data.topRisks), "expected topRisks array");
+        assert(Array.isArray(data.missingInfo), "expected missingInfo array");
+        assert(typeof data.recommendedNextStep === "string", "expected recommendedNextStep");
+        assert(typeof (data.sourceRecordIds as Record<string, unknown>)?.grantId === "string", "expected sourceRecordIds.grantId");
+      },
+    },
+    {
+      name: "V2.11C: get_grant_decision_brief output under 5KB and no extracted_text",
+      fn: async () => {
+        const result = await registry.execute("get_grant_decision_brief", { grantId: "grant-1" });
+        assert(result.ok, "get_grant_decision_brief should succeed");
+        const str = JSON.stringify(result.data);
+        assert(str.length < 5 * 1024, `output exceeds 5KB: ${str.length} bytes`);
+        assert(!str.includes("extracted_text"), "must not include extracted_text");
+        assert(!str.includes("source_metadata"), "must not include source_metadata");
+      },
+    },
+    {
+      name: "V2.11C: get_grant_decision_brief does not mutate repository",
+      fn: async () => {
+        const before = repo.snapshot();
+        const result = await registry.execute("get_grant_decision_brief", { grantId: "grant-1", projectId: "project-1" });
+        const after = repo.snapshot();
+        assert(result.ok, "get_grant_decision_brief should succeed");
+        assert(
+          JSON.stringify({ ...before, audits: [] }) === JSON.stringify({ ...after, audits: [] }),
+          "get_grant_decision_brief must not mutate repository state"
+        );
+      },
+    },
+    {
+      name: "V2.11C: get_grant_decision_brief unknown grant returns error",
+      fn: async () => {
+        const result = await registry.execute("get_grant_decision_brief", { grantId: "nonexistent-grant-xyz" });
+        assert(!result.ok, "expected failure for unknown grant");
+        assert(result.error.code === "grant_not_found", `expected grant_not_found, got ${result.error.code}`);
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context succeeds and returns correct shape",
+      fn: async () => {
+        const result = await registry.execute("get_application_prep_context", { applicationId: "app-1" });
+        assert(result.ok, `get_application_prep_context should succeed: ${result.ok ? "" : JSON.stringify((result as any).error)}`);
+        const data = result.data as Record<string, unknown>;
+        assert(typeof (data.application as Record<string, unknown>)?.id === "string", "expected application.id");
+        assert(typeof (data.deadline as Record<string, unknown>)?.status === "string", "expected deadline.status");
+        assert(Array.isArray(data.openTasks), "expected openTasks array");
+        assert(Array.isArray(data.linkedDocuments), "expected linkedDocuments array");
+        assert(Array.isArray(data.requiredDocuments), "expected requiredDocuments array");
+        assert(Array.isArray(data.missingDocuments), "expected missingDocuments array");
+        assert(Array.isArray(data.missingFacts), "expected missingFacts array");
+        assert(Array.isArray(data.blockers), "expected blockers array");
+        assert(Array.isArray(data.nextActions), "expected nextActions array");
+        assert(typeof (data.sourceRecordIds as Record<string, unknown>)?.applicationId === "string", "expected sourceRecordIds.applicationId");
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context output under 8KB and no extracted_text",
+      fn: async () => {
+        const result = await registry.execute("get_application_prep_context", { applicationId: "app-1" });
+        assert(result.ok, "get_application_prep_context should succeed");
+        const str = JSON.stringify(result.data);
+        assert(str.length < 8 * 1024, `output exceeds 8KB: ${str.length} bytes`);
+        assert(!str.includes("extracted_text"), "must not include extracted_text");
+        assert(!str.includes("source_metadata"), "must not include source_metadata");
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context docs are compact stubs",
+      fn: async () => {
+        const result = await registry.execute("get_application_prep_context", { applicationId: "app-1" });
+        assert(result.ok, "get_application_prep_context should succeed");
+        const data = result.data as Record<string, unknown>;
+        const docs = data.linkedDocuments as Array<Record<string, unknown>>;
+        if (docs && docs.length > 0) {
+          assert(!("extraction_status" in docs[0]), "docs must not include extraction_status (full DB row field)");
+          assert(!("extracted_text" in docs[0]), "docs must not include extracted_text");
+          assert("id" in docs[0] && "title" in docs[0], "doc stubs must include id and title");
+        }
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context does not mutate repository",
+      fn: async () => {
+        const before = repo.snapshot();
+        const result = await registry.execute("get_application_prep_context", { applicationId: "app-1" });
+        const after = repo.snapshot();
+        assert(result.ok, "get_application_prep_context should succeed");
+        assert(
+          JSON.stringify({ ...before, audits: [] }) === JSON.stringify({ ...after, audits: [] }),
+          "get_application_prep_context must not mutate repository state"
+        );
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context includeSuggestedTasks produces suggestions",
+      fn: async () => {
+        const result = await registry.execute("get_application_prep_context", { applicationId: "app-1", includeSuggestedTasks: true });
+        assert(result.ok, "get_application_prep_context with includeSuggestedTasks should succeed");
+        const data = result.data as Record<string, unknown>;
+        assert(Array.isArray(data.suggestedTasks), "expected suggestedTasks when includeSuggestedTasks true");
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context unknown application returns error",
+      fn: async () => {
+        const result = await registry.execute("get_application_prep_context", { applicationId: "nonexistent-app-xyz" });
+        assert(!result.ok, "expected failure for unknown application");
+        assert(result.error.code === "application_not_found", `expected application_not_found, got ${result.error.code}`);
       },
     },
   ];

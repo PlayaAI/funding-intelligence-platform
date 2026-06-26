@@ -14,6 +14,7 @@ type SupabaseResult<T> = { data: T; error: null } | { data: null; error: { messa
 
 export type ListTasksOptions = {
   includeSoftArchived?: boolean;
+  relatedIds?: string[];
 };
 
 export async function listTasks(opts?: ListTasksOptions, client?: GrantOsSupabaseClient): Promise<TaskRow[]> {
@@ -22,6 +23,10 @@ export async function listTasks(opts?: ListTasksOptions, client?: GrantOsSupabas
   let query = db.from("tasks").select("*").order("due_date", { ascending: true, nullsFirst: false });
   if (!opts?.includeSoftArchived) {
     query = query.is("archived_at", null);
+  }
+  if (opts?.relatedIds && opts.relatedIds.length > 0) {
+    const filters = opts.relatedIds.map((id) => `related_project_id.eq.${id},related_grant_id.eq.${id},related_application_id.eq.${id}`).join(",");
+    query = query.or(filters);
   }
   const result: SupabaseResult<TaskRow[]> = await query;
   if (result.error) throw new Error(result.error.message);

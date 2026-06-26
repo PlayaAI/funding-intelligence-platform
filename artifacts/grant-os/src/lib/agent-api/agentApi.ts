@@ -216,7 +216,8 @@ export function createAgentApi(dependencies: CreateAgentApiDependencies = {}) {
       let readError: string | null = null;
 
       try {
-        grants = await repository.listGrants();
+        const allGrants = await repository.listGrants();
+        grants = allGrants.slice(0, 10);
       } catch (error) {
         readError = error instanceof Error ? error.message : String(error);
       }

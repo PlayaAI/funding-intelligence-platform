@@ -42,6 +42,20 @@ export async function getProjectBySlug(slug: string, client?: GrantOsSupabaseCli
   return result.data;
 }
 
+export async function getProjectById(id: string, client?: GrantOsSupabaseClient): Promise<ProjectRow | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (client ?? supabase) as any;
+  const result: SupabaseResult<ProjectRow | null> = await db
+    .from("projects")
+    .select("*")
+    .eq("id", id)
+    .is("archived_at", null)
+    .maybeSingle();
+
+  if (result.error) throw new Error(result.error.message);
+  return result.data;
+}
+
 export async function createProject(
   input: Omit<ProjectInsert, "id" | "created_at" | "updated_at">
 , client?: GrantOsSupabaseClient): Promise<ProjectRow> {

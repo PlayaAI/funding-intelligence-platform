@@ -197,7 +197,40 @@ export function createInMemoryGrantOsRepository() {
     async listAgentNotes(filters) { return state.agentNotes.filter((note) => !filters?.relatedGrantId || note.related_grant_id === filters.relatedGrantId).filter((note) => !filters?.relatedFunderId || note.related_funder_id === filters.relatedFunderId).filter((note) => !filters?.relatedApplicationId || note.related_application_id === filters.relatedApplicationId).filter((note) => !filters?.relatedProjectId || note.related_project_id === filters.relatedProjectId); },
     async listAgentReports(filters) { return state.agentReports.filter((report) => !filters?.relatedGrantId || report.related_grant_id === filters.relatedGrantId).filter((report) => !filters?.relatedApplicationId || report.related_application_id === filters.relatedApplicationId).filter((report) => !filters?.relatedProjectId || report.related_project_id === filters.relatedProjectId); },
     async listGrantMatches(filters) { return state.grantMatches.filter((match) => !filters?.grantId || match.grant_id === filters.grantId).filter((match) => !filters?.projectId || match.project_id === filters.projectId); },
-    async getGrantMatch(id) { return state.grantMatches.find((match) => match.id === id) ?? null; },
+    async getGrantMatch(id) {
+      const match = state.grantMatches.find((match) => match.id === id);
+      if (!match) return null;
+      const copy = { ...match } as any;
+      
+      const projectRow = state.projects.find(p => p.id === copy.project_id) ?? null;
+      if (projectRow) {
+        copy.project = { ...projectRow };
+        delete (copy.project as any).mission_statement;
+        delete (copy.project as any).impact_metrics;
+      } else {
+        copy.project = null;
+      }
+
+      const grantRow = state.grants.find(g => g.id === copy.grant_id) ?? null;
+      if (grantRow) {
+        copy.grant = { ...grantRow };
+        delete (copy.grant as any).description;
+        delete (copy.grant as any).eligibility;
+      } else {
+        copy.grant = null;
+      }
+
+      const funderRow = copy.funder_id ? state.funders.find(f => f.id === copy.funder_id) ?? null : null;
+      if (funderRow) {
+        copy.funder = { ...funderRow };
+        delete (copy.funder as any).description;
+        delete (copy.funder as any).key_people;
+      } else {
+        copy.funder = null;
+      }
+
+      return copy as GrantMatchWithRelations;
+    },
     async upsertGrantMatch(input) {
       const existingIndex = state.grantMatches.findIndex((match) => match.project_id === input.project_id && match.grant_id === input.grant_id);
       const timestamp = now();
