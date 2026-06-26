@@ -103,9 +103,19 @@ async function run() {
       fn: async () => {
         const result = await adapter.handleTools({ authorization: "Bearer not-a-jwt" });
         assert(result.status === 401, "expected 401 status");
-        assert(JSON.stringify(result.body).includes("malformed_authorization"), "expected malformed auth error");
+        // V2.11F: malformed token on handleTools now returns agent-friendly auth_required shape
+        const body = result.body as Record<string, unknown>;
+        assert(body.ok === false, "expected ok false");
+        assert(body.do_not_retry === true, "expected do_not_retry true");
+        // Must indicate auth issue (either via error string or error object code)
+        const errorStr = JSON.stringify(body);
+        assert(
+          errorStr.includes("auth_required") || errorStr.includes("malformed_authorization"),
+          "expected auth error indicator"
+        );
       },
     },
+
     {
       name: "service-role-looking auth rejected",
       fn: async () => {

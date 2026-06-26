@@ -585,6 +585,13 @@ async function handleApi(request: IncomingMessage, response: ServerResponse): Pr
   if (url.pathname.startsWith("/api/agent-knowledge/")) return handleAgentKnowledge(request, response);
   if (!url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/mcp/")) return false;
 
+  // Public guide — no auth required
+  if (url.pathname === "/api/agent/guide" && request.method === "GET") {
+    const result = mcpAdapter.handleGuide();
+    sendJson(response, result.status, result.body);
+    return true;
+  }
+
   try {
     if (url.pathname === "/api/agent/doctor" && request.method === "GET") {
       const result = await agentApi.handleDoctor(request.headers);

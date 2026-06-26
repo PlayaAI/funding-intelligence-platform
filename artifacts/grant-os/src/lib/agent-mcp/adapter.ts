@@ -48,6 +48,21 @@ function authError(code: string, message: string): McpAdapterResponse {
   };
 }
 
+function authRequiredForTools(): McpAdapterResponse {
+  return {
+    status: 401,
+    body: {
+      ok: false,
+      error: "auth_required",
+      message: "Log in first, then retry /api/mcp/tools with the authenticated session. This is an auth error, not a missing-tools error.",
+      login_url: "/login",
+      agent_guide_url: "/api/agent/guide",
+      do_not_treat_as_missing_tools: true,
+      do_not_retry: true,
+    },
+  };
+}
+
 function getHeader(headers: McpAdapterHeaders, name: string): string | null {
   const lowerName = name.toLowerCase();
   const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === lowerName);
@@ -206,7 +221,18 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
   return {
     async handleTools(headers: McpAdapterHeaders): Promise<McpAdapterResponse> {
       const authContext = authenticate(headers);
-      if ("status" in authContext) return authContext;
+      if ("status" in authContext) {
+        // If auth failed specifically because no token was supplied or it was malformed,
+        // return the agent-friendly auth_required shape instead of the generic 401.
+        const body = authContext.body as Record<string, unknown>;
+        const errorCode = typeof body.error === "object" && body.error !== null
+          ? (body.error as Record<string, unknown>).code
+          : body.error;
+        if (errorCode === "missing_authorization" || errorCode === "malformed_authorization") {
+          return authRequiredForTools();
+        }
+        return authContext;
+      }
 
       const registry = createRegistryForRequest(authContext, createRepository, registryFactory);
       return {
@@ -310,6 +336,46 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
       const authContext = authenticate(headers);
       if ("status" in authContext) return authContext;
       return upstreamClient.doctor(headers);
+    },
+
+    handleGuide(): McpAdapterResponse {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          app: "Grant OS",
+          version: "V2.11F",
+          auth_required: true,
+          auth_note: "Log in via the app, then call /api/mcp/tools or /api/mcp/call with the same authenticated browser session or user bearer token.",
+          login_url: "/login",
+          mcp_tools_url: "/api/mcp/tools",
+          mcp_call_url: "/api/mcp/call",
+          preferred_tools: {
+            grant_recommendation: [
+              "get_grant_decision_brief",
+              "list_grant_matches",
+            ],
+            application_preparation: [
+              "get_application_prep_context",
+            ],
+            knowledge: [
+              "list_agent_knowledge_items",
+              "get_agent_knowledge_item",
+            ],
+            workspace_orientation: [
+              "get_agent_context_brief",
+            ],
+          },
+          rules: [
+            "Use MCP tools before inspecting raw data or running exports.",
+            "Do not treat 401 from /api/mcp/tools as missing tools — it means auth is required.",
+            "Use broad reports (get_deadline_report) or exports only when explicitly requested by the user.",
+            "Return top 3 results maximum for grant recommendations unless the user asks for more.",
+            "Prefer get_grant_decision_brief for any grant-ranking or fit question.",
+            "Prefer get_application_prep_context for any application readiness question.",
+          ],
+        },
+      };
     },
   };
 }

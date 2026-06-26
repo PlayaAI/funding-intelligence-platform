@@ -1,4 +1,15 @@
-# Grant OS V2.3A — Full Agent Tool Surface for MCP
+# Grant OS V2.11F — Full Agent Tool Surface for MCP
+
+## Agent quick start
+
+1. **Log in** via the app (`/login`) to get a session bearer token.
+2. **Call `/api/agent/guide`** (no auth needed) for a public summary of preferred tools and rules.
+3. **Call `GET /api/mcp/tools`** with the same authenticated browser session or `Authorization: Bearer <token>` to get the full tool list.
+4. **For grant recommendations:** call `get_grant_decision_brief` first. Use `list_grant_matches` for an overview.
+5. **For application prep:** call `get_application_prep_context` first.
+6. **If you get a 401 from `/api/mcp/tools`:** auth is missing — this does not mean tools are missing.
+7. Do not inspect raw database data directly. Use MCP tools.
+8. Return top 3 results maximum unless the user asks for more.
 
 ## API base URL
 
@@ -10,9 +21,11 @@ https://88e0d65f-0f25-4b2e-b46e-297427a97943-00-1da2fnqdwmks3.sisko.replit.dev
 
 MCP-style routes:
 
+- `GET /api/agent/guide` ← public, no auth, returns preferred tools and rules
 - `GET /api/mcp/doctor`
 - `GET /api/mcp/tools`
 - `POST /api/mcp/call`
+
 
 ## Auth model
 
