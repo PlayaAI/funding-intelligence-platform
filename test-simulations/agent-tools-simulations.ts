@@ -383,6 +383,42 @@ async function run() {
       },
     },
     {
+      name: "V2.11D: list_grant_matches default output is compact and contains titles",
+      fn: async () => {
+        const result = await registry.execute("list_grant_matches", {});
+        assert(result.ok, "list_grant_matches should succeed");
+        const items = result.data.items as any[];
+        if (items.length > 0) {
+          const first = items[0];
+          assert(typeof first.grant_title === "string", "stub should have grant_title");
+          assert(typeof first.project_name === "string", "stub should have project_name");
+          assert(!("project" in first), "stub should not include full project row");
+          assert(!("grant" in first), "stub should not include full grant row");
+          assert(!("funder" in first), "stub should not include full funder row");
+        }
+      },
+    },
+    {
+      name: "V2.11D: list_grant_matches includeDetails mode omits large fields from relations",
+      fn: async () => {
+        const result = await registry.execute("list_grant_matches", { includeDetails: true });
+        assert(result.ok, "list_grant_matches with includeDetails should succeed");
+        const items = result.data.items as any[];
+        if (items.length > 0) {
+          const first = items[0];
+          assert("project" in first, "detailed match should include project relation");
+          if (first.project) {
+            assert(!("mission_statement" in first.project), "project relation should omit mission_statement");
+            assert(!("impact_metrics" in first.project), "project relation should omit impact_metrics");
+          }
+          if (first.grant) {
+            assert(!("description" in first.grant), "grant relation should omit description");
+            assert(!("eligibility" in first.grant), "grant relation should omit eligibility");
+          }
+        }
+      },
+    },
+    {
       name: "V2.10A: get_deadline_report returns stubs not full GrantRows",
       fn: async () => {
         const result = await registry.execute("get_deadline_report", {});

@@ -28,7 +28,7 @@ import {
   createPeerFundingRecord,
   createPeerOrganization,
 } from "../peersService";
-import { getProjectBySlug, listProjects } from "../projectsService";
+import { getProjectById, getProjectBySlug, listProjects } from "../projectsService";
 import { listProofItems } from "../proofItemsService";
 import {
   upsertGrantShortlistItem,
@@ -93,7 +93,7 @@ export type GrantOsRepository = {
   listApplicationQuestions(applicationId: string): Promise<ApplicationQuestionRow[]>;
   listApplicationRequiredDocuments(applicationId: string): Promise<ApplicationRequiredDocumentRow[]>;
   createApplication(input: Omit<ApplicationInsert, "id" | "created_at" | "updated_at">): Promise<ApplicationRow>;
-  listTasks(): Promise<TaskRow[]>;
+  listTasks(opts?: { includeSoftArchived?: boolean; relatedIds?: string[] }): Promise<TaskRow[]>;
   getTask(id: string): Promise<TaskRow | null>;
   listTasksByApplication(applicationId: string): Promise<TaskRow[]>;
   createTask(input: Omit<TaskRow, "id" | "created_at" | "updated_at">): Promise<TaskRow>;
@@ -176,15 +176,34 @@ export function createLiveGrantOsRepository(
 
   async function hydrateGrantMatch(match: GrantMatchRow): Promise<GrantMatchWithRelations> {
     const [project, grant, funder] = await Promise.all([
-      listProjects().then((items) => items.find((item) => item.id === match.project_id) ?? null),
+      getProjectById(match.project_id, agentSupabase),
       getGrantById(match.grant_id, agentSupabase),
       match.funder_id ? getFunderByIdOrLegacy(match.funder_id) : Promise.resolve(null),
     ]);
+
+    const safeProject = project ? { ...project } : null;
+    if (safeProject) {
+      delete (safeProject as any).mission_statement;
+      delete (safeProject as any).impact_metrics;
+    }
+
+    const safeGrant = grant ? { ...grant } : null;
+    if (safeGrant) {
+      delete (safeGrant as any).description;
+      delete (safeGrant as any).eligibility;
+    }
+
+    const safeFunder = funder ? { ...funder } : null;
+    if (safeFunder) {
+      delete (safeFunder as any).description;
+      delete (safeFunder as any).key_people;
+    }
+
     return {
       ...match,
-      project,
-      grant,
-      funder,
+      project: safeProject,
+      grant: safeGrant,
+      funder: safeFunder,
     };
   }
 
@@ -216,8 +235,7 @@ export function createLiveGrantOsRepository(
     async getProject(idOrSlug) {
       const bySlug = await getProjectBySlug(idOrSlug, agentSupabase);
       if (bySlug) return bySlug;
-      const projects = await listProjects(agentSupabase);
-      return projects.find((project) => project.id === idOrSlug) ?? null;
+      return await getProjectById(idOrSlug, agentSupabase);
     },
     listProofItems: (projectId) => listProofItems(projectId, agentSupabase),
     listApplications: () => listApplications(undefined, agentSupabase),
@@ -226,7 +244,7 @@ export function createLiveGrantOsRepository(
     listApplicationQuestions: (applicationId) => listApplicationQuestions(applicationId, agentSupabase),
     listApplicationRequiredDocuments: (applicationId) => listApplicationRequiredDocuments(applicationId, agentSupabase),
     createApplication: (input) => createApplication(input, agentSupabase),
-    listTasks: () => listTasks(undefined, agentSupabase),
+    listTasks: (opts) => listTasks(opts, agentSupabase),
     getTask: (id) => getTaskById(id, agentSupabase),
     listTasksByApplication: (applicationId) => listTasksByApplication(applicationId, agentSupabase),
     createTask: (input) => createTask(input, agentSupabase),

@@ -34,13 +34,11 @@ function summarizeMatch(strengths: string[], risks: string[], recommendedNextSte
 }
 
 async function buildMatchContext(repository: GrantOsRepository, grantId: string, projectId: string) {
-  const [grant, project, projects, grantApplications, projectProofItems, allTasks, projectNotes, projectReports] = await Promise.all([
+  const [grant, project, grantApplications, projectProofItems, projectNotes, projectReports] = await Promise.all([
     repository.getGrant(grantId),
     repository.getProject(projectId),
-    repository.listProjects(),
     repository.listApplicationsByGrant(grantId),
     repository.listProofItems(projectId),
-    repository.listTasks(),
     repository.listAgentNotes({ relatedProjectId: projectId, relatedGrantId: grantId }),
     repository.listAgentReports({ relatedProjectId: projectId, relatedGrantId: grantId }),
   ]);
@@ -48,17 +46,20 @@ async function buildMatchContext(repository: GrantOsRepository, grantId: string,
   if (!grant) throw makeToolError("grant_not_found", `Grant ${grantId} was not found.`);
   if (!project) throw makeToolError("project_not_found", `Project ${projectId} was not found.`);
 
-  const funder = grant.funder_id ? await repository.getFunder(grant.funder_id) : null;
-  const projectDocuments = await repository.listDocuments({ relatedProjectId: project.id });
-  const grantDocuments = await repository.listDocuments({ relatedGrantId: grant.id });
-  const funderDocuments = funder?.id ? await repository.listDocuments({ relatedFunderId: funder.id }) : [];
   const projectApplications = grantApplications.filter((application) => application.project_id === project.id);
-  const relatedTasks = allTasks.filter((task) =>
-    task.related_project_id === project.id ||
-    task.related_grant_id === grant.id ||
-    task.related_application_id === projectApplications[0]?.id
-  );
-  const existingMatch = (await repository.listGrantMatches({ grantId: grant.id, projectId: project.id }))[0] ?? null;
+  
+  const relatedIds = [project.id, grant.id];
+  if (projectApplications[0]?.id) relatedIds.push(projectApplications[0].id);
+
+  const [funder, relatedTasks, projectDocuments, grantDocuments, existingMatchRes] = await Promise.all([
+    grant.funder_id ? repository.getFunder(grant.funder_id) : Promise.resolve(null),
+    repository.listTasks({ relatedIds }),
+    repository.listDocuments({ relatedProjectId: project.id }),
+    repository.listDocuments({ relatedGrantId: grant.id }),
+    repository.listGrantMatches({ grantId: grant.id, projectId: project.id })
+  ]);
+  const funderDocuments = funder?.id ? await repository.listDocuments({ relatedFunderId: funder.id }) : [];
+  const existingMatch = existingMatchRes[0] ?? null;
 
   return {
     grant,
@@ -71,7 +72,6 @@ async function buildMatchContext(repository: GrantOsRepository, grantId: string,
     projectReports,
     documents: [...projectDocuments, ...grantDocuments, ...funderDocuments],
     existingMatch,
-    siblingProjects: projects.filter((item) => item.id !== project.id),
   };
 }
 
@@ -163,17 +163,50 @@ export function createMatchTools(repository: GrantOsRepository): Array<ToolDefin
         grantId: z.string().optional(),
         projectId: z.string().optional(),
         limit: z.number().int().positive().max(100).optional(),
+        includeDetails: z.boolean().default(false),
       }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
       risks: ["Grant match records may reveal internal prioritization logic and strategy."],
       relatedTables: ["grant_matches", "grants", "projects", "funders"],
       touchesRealDb: false,
-      async execute({ grantId, projectId, limit }) {
+      async execute({ grantId, projectId, limit, includeDetails }) {
         const DEFAULT_LIMIT = 20;
         const cap = Math.min(limit ?? DEFAULT_LIMIT, 100);
         const matches = await repository.listGrantMatches({ grantId, projectId });
-        return { items: matches.slice(0, cap), total: matches.length, limit: cap };
+        const sliced = matches.slice(0, cap);
+
+        if (includeDetails) {
+          const hydrated = await Promise.all(sliced.map(m => repository.getGrantMatch(m.id)));
+          return { items: hydrated.filter(Boolean), total: matches.length, limit: cap };
+        }
+
+        // Compact stubs by default: fetch names to make the stub useful, but do not return full rows
+        const uniqueGrantIds = Array.from(new Set(sliced.map((m) => m.grant_id)));
+        const uniqueProjectIds = Array.from(new Set(sliced.map((m) => m.project_id)));
+        
+        const [grants, projects] = await Promise.all([
+          Promise.all(uniqueGrantIds.map((id) => repository.getGrant(id))),
+          Promise.all(uniqueProjectIds.map((id) => repository.getProject(id))),
+        ]);
+
+        const grantMap = new Map(grants.filter(Boolean).map((g) => [g!.id, g!.title]));
+        const projectMap = new Map(projects.filter(Boolean).map((p) => [p!.id, p!.name]));
+
+        const stubs = sliced.map((m) => ({
+          id: m.id,
+          grant_id: m.grant_id,
+          grant_title: grantMap.get(m.grant_id) ?? "Unknown Grant",
+          project_id: m.project_id,
+          project_name: projectMap.get(m.project_id) ?? "Unknown Project",
+          match_score: m.match_score,
+          decision_label: m.decision_label,
+          short_summary: (m.fit_reasons as string[] | null)?.[0] ?? null,
+          created_at: m.created_at,
+          updated_at: m.updated_at,
+        }));
+
+        return { items: stubs, total: matches.length, limit: cap };
       },
     },
     {
