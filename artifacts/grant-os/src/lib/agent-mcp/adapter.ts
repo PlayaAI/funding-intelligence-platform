@@ -214,6 +214,33 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
         body: {
           ok: true,
           tools: buildMcpToolManifest(registry.listTools()),
+          routing_policy: {
+            version: "V2.11E",
+            narrow_task_protocol: [
+              "1. For narrow grant-ranking or fit questions (e.g. 'which grant should we apply for?', 'best fit', 'nearest deadline + best match'): call get_grant_decision_brief first. At most one follow-up targeted call.",
+              "2. For application-prep questions: call get_application_prep_context first.",
+              "3. For existing match overview: call list_grant_matches (compact stubs, no includeDetails).",
+              "4. Do NOT call get_deadline_report for narrow ranking tasks — it reads the full grants table.",
+              "5. Do NOT load broad exports (export_grant_packet, export_application_packet) unless the user explicitly asks for a packet or full context.",
+              "6. Do NOT call list_projects, list_tasks, or list_documents system-wide unless a broad overview is explicitly requested.",
+              "7. Return top 3 results maximum unless the user asks for more.",
+              "8. Keep replies short. One compact composite call is enough for most narrow tasks.",
+            ],
+            preferred_tools_for_narrow_tasks: [
+              "get_grant_decision_brief",
+              "get_application_prep_context",
+              "list_grant_matches",
+              "get_agent_context_brief",
+            ],
+            avoid_for_narrow_tasks: [
+              "get_deadline_report",
+              "export_grant_packet",
+              "export_application_packet",
+              "list_projects (system-wide)",
+              "list_tasks (system-wide)",
+              "list_documents (system-wide)",
+            ],
+          },
         },
       };
     },

@@ -97,10 +97,10 @@ const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonR
   export_peer_packet: { schemaSummary: "{ peerId: string, compact?: boolean (default true) }", exampleInput: { peerId: "peer-1" } },
   // Reports
   get_dashboard_summary: { schemaSummary: "{}", exampleInput: {} },
-  get_deadline_report: { schemaSummary: "{}", exampleInput: {} },
-  get_application_workload_report: { schemaSummary: "{}", exampleInput: {} },
-  get_data_quality_report: { schemaSummary: "{}", exampleInput: {} },
-  get_agent_context_brief: { schemaSummary: "{}", exampleInput: {} },
+  get_deadline_report: { schemaSummary: "{} — HIGH COST: full grants table read. Use only for explicit full deadline overview requests; not for narrow ranking tasks." },
+  get_application_workload_report: { schemaSummary: "{}" },
+  get_data_quality_report: { schemaSummary: "{}" },
+  get_agent_context_brief: { schemaSummary: "{} — LOW COST: preferred for workspace orientation at session start." },
   // Mutations (write_safe, all default dryRun: true)
   create_application_from_grant: { schemaSummary: "{ grantId: string, projectId: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", dryRun: true } },
   generate_application_checklist: { schemaSummary: "{ applicationId: string, dryRun?: boolean }", exampleInput: { applicationId: "app-1", dryRun: true } },
@@ -112,7 +112,7 @@ const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonR
   mark_grant_status: { schemaSummary: "{ grantId: string, status: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", status: "Applying", dryRun: true } },
   save_grant_to_shortlist: { schemaSummary: "{ grantId: string, projectId?: string, status?: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", dryRun: true } },
   // Grant matches
-  list_grant_matches: { schemaSummary: "{ grantId?: string, projectId?: string, limit?: number (default 20) }" },
+  list_grant_matches: { schemaSummary: "{ grantId?: string, projectId?: string, limit?: number (default 20), includeDetails?: boolean (default false) } — PREFERRED first step for match queries. Compact stubs by default; pass includeDetails:true only when full match detail is needed." },
   get_grant_match: { schemaSummary: "{ matchId: string }", exampleInput: { matchId: "match-1" } },
   generate_grant_match: { schemaSummary: "{ grantId: string, projectId: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", dryRun: true } },
   save_agent_match: { schemaSummary: "{ grantId, projectId, fitScore 1-10, urgencyScore 1-10, effortScore 1-10, strategicValueScore 1-10, recommendation, summary, whyItFits, whyItMightNotFit, bestProjectAngle, strongestApplicationStory, risks[], missingInfo[], evidenceNeeded[], recommendedNextStep, dryRun? }" },
@@ -120,9 +120,9 @@ const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonR
   // Knowledge (compact/read-only — content omitted by default)
   list_agent_knowledge_items: { schemaSummary: "{ knowledge_type?: string, category?: string, priority?: string, limit?: number (default 25, max 100), includeContent?: boolean (default false) }", exampleInput: {} },
   get_agent_knowledge_item: { schemaSummary: "{ item_id: string, includeContent?: boolean (default false), maxContentChars?: number (default 2000) }", exampleInput: { item_id: "item-1" } },
-  // Composite tools
-  get_grant_decision_brief: { schemaSummary: "{ grantId: string, projectId?: string, projectIds?: string[], maxProjects?: number (max 5) }", exampleInput: { grantId: "grant-1" } },
-  get_application_prep_context: { schemaSummary: "{ applicationId: string, includeSuggestedTasks?: boolean (default false) }", exampleInput: { applicationId: "app-1" } },
+  // Composite tools — PREFERRED for narrow tasks
+  get_grant_decision_brief: { schemaSummary: "{ grantId: string, projectId?: string, projectIds?: string[], maxProjects?: number (max 5) } — PREFERRED for grant-ranking/fit/deadline decisions. Use before any report or export.", exampleInput: { grantId: "grant-1" } },
+  get_application_prep_context: { schemaSummary: "{ applicationId: string, includeSuggestedTasks?: boolean (default false) } — PREFERRED for application-prep tasks. Use before any report or export.", exampleInput: { applicationId: "app-1" } },
 };
 
 export function buildMcpToolManifest(tools: ToolMetadata[]): McpToolManifestEntry[] {

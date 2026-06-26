@@ -310,7 +310,7 @@ export function createAgentPlanningTools(repository: GrantOsRepository): Array<T
     },
     {
       name: "get_grant_decision_brief",
-      description: "Compact single-call decision brief for a grant: urgency, fit, funder, candidate projects, existing match/application, recommendation, risks, missing info, and next step. Replaces get_grant + get_funder + list_projects + list_proof_items + list_applications + generate_grant_match for initial triage.",
+      description: "PREFERRED for narrow grant-ranking tasks. Compact single-call decision brief for a grant: urgency, fit, funder, candidate projects, existing match/application, recommendation, risks, missing info, and next step. Replaces get_grant + get_funder + list_projects + list_proof_items + list_applications + generate_grant_match for initial triage. Use this before any broader report or export.",
       permissionLevel: "read",
       inputSchema: z.object({
         grantId: z.string().min(1),
@@ -335,7 +335,7 @@ export function createAgentPlanningTools(repository: GrantOsRepository): Array<T
     },
     {
       name: "get_application_prep_context",
-      description: "Compact single-call prep context for an application: open tasks, linked documents, required docs, proof items, missing info, blockers, and next actions. Replaces get_application + get_documents_for_application + list_tasks + list_proof_items + generate_application_readiness_report for prep triage.",
+      description: "PREFERRED for application-prep tasks. Compact single-call prep context for an application: open tasks, linked documents, required docs, proof items, missing info, blockers, and next actions. Replaces get_application + get_documents_for_application + list_tasks + list_proof_items + generate_application_readiness_report for prep triage. Use this before any broader report or export.",
       permissionLevel: "read",
       inputSchema: z.object({
         applicationId: z.string().min(1),

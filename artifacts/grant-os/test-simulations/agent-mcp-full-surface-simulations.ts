@@ -471,6 +471,88 @@ async function run() {
         assert(Array.isArray(data.suggestedTasks), "expected suggestedTasks when includeSuggestedTasks true");
       },
     },
+    {
+      name: "V2.11E: handleTools response includes routing_policy block",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        assert(result.status === 200, "expected success");
+        assert("routing_policy" in result.body, "expected routing_policy in manifest response");
+        const policy = result.body.routing_policy as JsonRecord;
+        assert(policy.version === "V2.11E", "expected routing_policy.version V2.11E");
+        assert(Array.isArray(policy.narrow_task_protocol), "expected narrow_task_protocol array");
+        assert(Array.isArray(policy.preferred_tools_for_narrow_tasks), "expected preferred_tools_for_narrow_tasks array");
+        assert(Array.isArray(policy.avoid_for_narrow_tasks), "expected avoid_for_narrow_tasks array");
+      },
+    },
+    {
+      name: "V2.11E: routing_policy preferred tools include composite and compact tools",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        const policy = result.body.routing_policy as JsonRecord;
+        const preferred = policy.preferred_tools_for_narrow_tasks as string[];
+        assert(preferred.includes("get_grant_decision_brief"), "expected get_grant_decision_brief in preferred");
+        assert(preferred.includes("get_application_prep_context"), "expected get_application_prep_context in preferred");
+        assert(preferred.includes("list_grant_matches"), "expected list_grant_matches in preferred");
+        assert(preferred.includes("get_agent_context_brief"), "expected get_agent_context_brief in preferred");
+      },
+    },
+    {
+      name: "V2.11E: routing_policy avoid list includes get_deadline_report",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        const policy = result.body.routing_policy as JsonRecord;
+        const avoid = policy.avoid_for_narrow_tasks as string[];
+        assert(avoid.some((t) => t.includes("get_deadline_report")), "expected get_deadline_report in avoid_for_narrow_tasks");
+      },
+    },
+    {
+      name: "V2.11E: get_deadline_report description warns against narrow use",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        const tools = (result.body.tools ?? []) as Array<{ name?: string; description?: string }>;
+        const deadlineReport = tools.find((t) => t.name === "get_deadline_report");
+        assert(deadlineReport !== undefined, "expected get_deadline_report in manifest");
+        const desc = deadlineReport.description ?? "";
+        assert(desc.toUpperCase().includes("NOT") || desc.toUpperCase().includes("COST") || desc.toLowerCase().includes("prefer"), "expected get_deadline_report description to contain routing guidance against narrow use");
+      },
+    },
+    {
+      name: "V2.11E: get_grant_decision_brief and get_application_prep_context descriptions indicate PREFERRED",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        const tools = (result.body.tools ?? []) as Array<{ name?: string; description?: string }>;
+        const brief = tools.find((t) => t.name === "get_grant_decision_brief");
+        const prep = tools.find((t) => t.name === "get_application_prep_context");
+        assert(brief !== undefined, "expected get_grant_decision_brief in manifest");
+        assert(prep !== undefined, "expected get_application_prep_context in manifest");
+        assert((brief.description ?? "").includes("PREFERRED"), "get_grant_decision_brief description must include PREFERRED");
+        assert((prep.description ?? "").includes("PREFERRED"), "get_application_prep_context description must include PREFERRED");
+      },
+    },
+    {
+      name: "V2.11E: list_grant_matches description indicates LOW COST / compact first",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        const tools = (result.body.tools ?? []) as Array<{ name?: string; description?: string }>;
+        const matchList = tools.find((t) => t.name === "list_grant_matches");
+        assert(matchList !== undefined, "expected list_grant_matches in manifest");
+        const desc = matchList.description ?? "";
+        assert(desc.toUpperCase().includes("PREFERRED") || desc.toLowerCase().includes("compact") || desc.toLowerCase().includes("low cost"), "list_grant_matches description must indicate compact-first routing");
+      },
+    },
+    {
+      name: "V2.11E: V2.11C tools remain fully exposed (backward compatibility)",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        const tools = (result.body.tools ?? []) as Array<{ name?: string }>;
+        const names = tools.map((t) => t.name ?? "");
+        assert(names.includes("get_grant_decision_brief"), "get_grant_decision_brief must still be exposed");
+        assert(names.includes("get_application_prep_context"), "get_application_prep_context must still be exposed");
+        assert(names.includes("list_agent_knowledge_items"), "list_agent_knowledge_items must still be exposed");
+        assert(names.includes("get_agent_knowledge_item"), "get_agent_knowledge_item must still be exposed");
+        assert(!names.includes("propose_agent_knowledge_update"), "write knowledge tools must not be exposed");
+      },
+    },
   ];
 
   const results: TestResult[] = [];
