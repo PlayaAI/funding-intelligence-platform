@@ -350,6 +350,20 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
           login_url: "/login",
           mcp_tools_url: "/api/mcp/tools",
           mcp_call_url: "/api/mcp/call",
+          mcp_call_example: {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <token>"
+            },
+            body: {
+              name: "list_grant_matches",
+              arguments: {
+                limit: 3,
+                includeDetails: false
+              }
+            }
+          },
           preferred_tools: {
             grant_recommendation: [
               "get_grant_decision_brief",

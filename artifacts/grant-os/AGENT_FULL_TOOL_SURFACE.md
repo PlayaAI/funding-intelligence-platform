@@ -11,6 +11,23 @@
 7. Do not inspect raw database data directly. Use MCP tools.
 8. Return top 3 results maximum unless the user asks for more.
 
+### Calling Tools (HTTP)
+
+To invoke any tool listed below, use the `/api/mcp/call` endpoint:
+
+```http
+POST /api/mcp/call
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "list_grant_matches",
+  "arguments": {
+    "limit": 3,
+    "includeDetails": false
+  }
+}
+```
 ## API base URL
 
 Preview base URL:
