@@ -41,6 +41,7 @@ import {
   listTasksByApplication,
   updateTask,
 } from "../tasksService";
+import { createClient } from "@supabase/supabase-js";
 import { createSupabaseClientForAgent, supabase } from "../supabase";
 import type { AgentKnowledgeItem, AgentKnowledgeUpdate } from "../agentKnowledgeService";
 import type { AgentAuthContext } from "./authContext";
@@ -165,14 +166,47 @@ export type GrantOsRepository = {
 
 export type CreateLiveGrantOsRepositoryOptions = {
   authContext?: AgentAuthContext;
+  /**
+   * Service-role key — only supplied for agent-token MCP paths (V2.11H).
+   * When present AND authContext.source === "agent-token", a service-role
+   * Supabase client is used for tool DB queries instead of the user JWT client.
+   * This key is NEVER returned to agents, logged, or used outside the MCP
+   * adapter / repository path after all auth + scope checks have passed.
+   */
+  serviceRoleKey?: string | null;
 };
 
 export function createLiveGrantOsRepository(
   options: CreateLiveGrantOsRepositoryOptions = {}
 ): GrantOsRepository {
-  const agentSupabase = options.authContext
-    ? createSupabaseClientForAgent(options.authContext)
-    : undefined;
+  // Determine which Supabase client to use for DB queries.
+  // For agent-token MCP paths, use the service-role client (tightly wrapped).
+  // For all other paths, use the user JWT client (RLS applies).
+  const useServiceRole =
+    options.serviceRoleKey != null &&
+    options.authContext?.source === "agent-token";
+
+  let agentSupabase: ReturnType<typeof createSupabaseClientForAgent> | undefined;
+
+  if (useServiceRole) {
+    // Service-role client — only reachable after token validation + scope check
+    // in the MCP adapter. The actorType and userId are still set from the token
+    // record so audit trail is preserved.
+    const supabaseUrl = (
+      process.env.VITE_SUPABASE_URL ??
+      process.env.NEXT_PUBLIC_SUPABASE_URL ??
+      ""
+    ).trim();
+    agentSupabase = createClient(
+      supabaseUrl || "https://placeholder.supabase.co",
+      options.serviceRoleKey!, // safe: useServiceRole guard above ensures non-null
+      { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+    ) as unknown as ReturnType<typeof createSupabaseClientForAgent>;
+  } else {
+    agentSupabase = options.authContext
+      ? createSupabaseClientForAgent(options.authContext)
+      : undefined;
+  }
 
   async function hydrateGrantMatch(match: GrantMatchRow): Promise<GrantMatchWithRelations> {
     const [project, grant, funder] = await Promise.all([

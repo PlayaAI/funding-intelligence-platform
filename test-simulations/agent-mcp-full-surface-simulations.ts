@@ -553,6 +553,92 @@ async function run() {
         assert(!names.includes("propose_agent_knowledge_update"), "write knowledge tools must not be exposed");
       },
     },
+    {
+      name: "V2.11H: /api/agent/guide returns expected structure",
+      fn: async () => {
+        const result = adapter.handleGuide();
+        assert(result.status === 200, "expected 200");
+        const body = result.body as JsonRecord;
+        assert(body.ok === true, "expected ok true");
+        assert(typeof body.app === "string" && body.app.length > 0, "expected app name");
+        assert(body.auth_required === true, "expected auth_required true");
+        // V2.11H: auth_note replaced by preferred_auth_for_external_agents
+        assert(
+          typeof body.preferred_auth_for_external_agents === "string" ||
+          typeof body.auth_note === "string",
+          "expected preferred_auth_for_external_agents or auth_note"
+        );
+        assert(typeof body.login_url === "string", "expected login_url");
+        assert(typeof body.mcp_tools_url === "string", "expected mcp_tools_url");
+        assert(typeof body.mcp_call_url === "string", "expected mcp_call_url");
+        assert(Array.isArray(body.rules), "expected rules array");
+        assert(typeof body.preferred_tools === "object" && body.preferred_tools !== null, "expected preferred_tools object");
+      },
+    },
+    {
+      name: "V2.11F: /api/agent/guide does not expose private data",
+      fn: async () => {
+        const result = adapter.handleGuide();
+        const bodyStr = JSON.stringify(result.body);
+        const forbiddenFields = ["grant_id", "project_id", "application_id", "user_id", "supabase", "token", "grants", "projects", "applications", "extracted_text"];
+        for (const field of forbiddenFields) {
+          assert(!bodyStr.toLowerCase().includes(`"${field}"`), `guide must not include "${field}"`);
+        }
+      },
+    },
+    {
+      name: "V2.11F: /api/agent/guide preferred tools include grant_recommendation and application_preparation",
+      fn: async () => {
+        const result = adapter.handleGuide();
+        const preferred = (result.body as JsonRecord).preferred_tools as JsonRecord;
+        const grantRec = preferred.grant_recommendation as string[];
+        const appPrep = preferred.application_preparation as string[];
+        assert(Array.isArray(grantRec), "expected grant_recommendation array");
+        assert(grantRec.includes("get_grant_decision_brief"), "expected get_grant_decision_brief in grant_recommendation");
+        assert(grantRec.includes("list_grant_matches"), "expected list_grant_matches in grant_recommendation");
+        assert(Array.isArray(appPrep), "expected application_preparation array");
+        assert(appPrep.includes("get_application_prep_context"), "expected get_application_prep_context in application_preparation");
+      },
+    },
+    {
+      name: "V2.11F: /api/agent/guide rules warn against treating 401 as missing tools",
+      fn: async () => {
+        const result = adapter.handleGuide();
+        const rules = (result.body as JsonRecord).rules as string[];
+        assert(rules.some((r) => r.toLowerCase().includes("401")), "expected a rule mentioning 401");
+        assert(rules.some((r) => r.toLowerCase().includes("missing tools") || r.toLowerCase().includes("missing-tools")), "expected rule warning about missing tools confusion");
+      },
+    },
+    {
+      name: "V2.11F: unauthenticated /api/mcp/tools returns agent-friendly auth_required JSON",
+      fn: async () => {
+        const result = await adapter.handleTools({});
+        assert(result.status === 401, "expected 401");
+        const body = result.body as JsonRecord;
+        assert(body.error === "auth_required", `expected error=auth_required, got: ${JSON.stringify(body.error)}`);
+        assert(typeof body.message === "string", "expected message");
+        assert(typeof body.login_url === "string", "expected login_url");
+        assert(typeof body.agent_guide_url === "string", "expected agent_guide_url");
+        assert(body.do_not_treat_as_missing_tools === true, "expected do_not_treat_as_missing_tools true");
+        assert(body.do_not_retry === true, "expected do_not_retry true");
+      },
+    },
+    {
+      name: "V2.11F: V2.11C/D/E tools remain exposed after auth (backward compatibility)",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        assert(result.status === 200, "expected 200 with valid auth");
+        const tools = (result.body.tools ?? []) as Array<{ name?: string }>;
+        const names = tools.map((t) => t.name ?? "");
+        assert(names.includes("get_grant_decision_brief"), "get_grant_decision_brief must still be exposed");
+        assert(names.includes("list_grant_matches"), "list_grant_matches must still be exposed");
+        assert(names.includes("get_application_prep_context"), "get_application_prep_context must still be exposed");
+        assert(names.includes("list_agent_knowledge_items"), "list_agent_knowledge_items must still be exposed");
+        assert(names.includes("get_agent_knowledge_item"), "get_agent_knowledge_item must still be exposed");
+        const routingPolicy = result.body.routing_policy as JsonRecord;
+        assert(routingPolicy?.version === "V2.11E", "routing_policy must still be present");
+      },
+    },
   ];
 
   const results: TestResult[] = [];
