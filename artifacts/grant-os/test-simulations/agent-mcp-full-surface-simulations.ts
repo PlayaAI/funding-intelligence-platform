@@ -554,7 +554,7 @@ async function run() {
       },
     },
     {
-      name: "V2.11F: /api/agent/guide returns expected structure",
+      name: "V2.11H: /api/agent/guide returns expected structure",
       fn: async () => {
         const result = adapter.handleGuide();
         assert(result.status === 200, "expected 200");
@@ -562,7 +562,12 @@ async function run() {
         assert(body.ok === true, "expected ok true");
         assert(typeof body.app === "string" && body.app.length > 0, "expected app name");
         assert(body.auth_required === true, "expected auth_required true");
-        assert(typeof body.auth_note === "string", "expected auth_note");
+        // V2.11H: auth_note replaced by preferred_auth_for_external_agents
+        assert(
+          typeof body.preferred_auth_for_external_agents === "string" ||
+          typeof body.auth_note === "string",
+          "expected preferred_auth_for_external_agents or auth_note"
+        );
         assert(typeof body.login_url === "string", "expected login_url");
         assert(typeof body.mcp_tools_url === "string", "expected mcp_tools_url");
         assert(typeof body.mcp_call_url === "string", "expected mcp_call_url");

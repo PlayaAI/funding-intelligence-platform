@@ -1,15 +1,16 @@
-# Grant OS V2.11F — Full Agent Tool Surface for MCP
+# Grant OS V2.11H — Full Agent Tool Surface for MCP
 
 ## Agent quick start
 
-1. **Log in** via the app (`/login`) to get a session bearer token.
+1. **Get an agent token** via `POST /api/agent/tokens` using a logged-in user session. The plaintext token is shown **once only**.
 2. **Call `/api/agent/guide`** (no auth needed) for a public summary of preferred tools and rules.
-3. **Call `GET /api/mcp/tools`** with the same authenticated browser session or `Authorization: Bearer <token>` to get the full tool list.
+3. **Call `GET /api/mcp/tools`** with `Authorization: Bearer gos_mcp_<your_token>` to get the full tool list.
 4. **For grant recommendations:** call `get_grant_decision_brief` first. Use `list_grant_matches` for an overview.
 5. **For application prep:** call `get_application_prep_context` first.
 6. **If you get a 401 from `/api/mcp/tools`:** auth is missing — this does not mean tools are missing.
 7. Do not inspect raw database data directly. Use MCP tools.
 8. Return top 3 results maximum unless the user asks for more.
+9. **If token expires or is revoked:** create a new one. Do NOT store user email/password.
 
 ### Calling Tools (HTTP)
 
@@ -17,7 +18,7 @@ To invoke any tool listed below, use the `/api/mcp/call` endpoint:
 
 ```http
 POST /api/mcp/call
-Authorization: Bearer <token>
+Authorization: Bearer gos_mcp_<your_agent_token>
 Content-Type: application/json
 
 {
@@ -43,22 +44,51 @@ MCP-style routes:
 - `GET /api/mcp/tools`
 - `POST /api/mcp/call`
 
+Token management routes (require normal user JWT, **not** agent token):
+
+- `POST /api/agent/tokens` ← create agent token (plaintext shown once)
+- `GET /api/agent/tokens` ← list your tokens (metadata only, no hashes)
+- `DELETE /api/agent/tokens/:id` ← revoke a token
 
 ## Auth model
 
-All MCP routes require a normal Supabase **user access token**:
+### Preferred: Agent Access Token (V2.11H — for external agents)
 
-```bash
-Authorization: Bearer <user-access-token>
+```
+Authorization: Bearer gos_mcp_<your_token>
 ```
 
-Rules:
+- Create via `POST /api/agent/tokens` (requires logged-in user session, shows plaintext **once only**).
+- Valid **only** on MCP routes: `GET /api/mcp/tools`, `POST /api/mcp/call`.
+- Scopes: `mcp:read` (default, read-only) or `mcp:write_safe_dry_run` (write_safe tools, dryRun always forced true).
+- Revocable via `DELETE /api/agent/tokens/:id`. Supports optional expiry.
+- If expired or revoked → create a new token. Do NOT store user email/password.
 
-- No service-role tokens
-- No service-role logic
-- RLS must remain in control for any real write
-- Do not store tokens in files
-- Do not paste production tokens into chat logs
+#### Token error codes
+
+| Code | Meaning |
+|---|---|
+| `agent_token_invalid` | Token not recognised — obtain a new token |
+| `agent_token_expired` | Token past `expires_at` — create a new token |
+| `agent_token_revoked` | Token revoked — create a new token |
+| `agent_token_not_allowed` | Agent token used on a non-MCP route — use a user session |
+| `scope_insufficient` | Token scope does not permit this tool |
+
+### Alternative: Supabase User JWT
+
+```bash
+Authorization: Bearer <supabase-user-access-token>
+```
+
+Required for admin, team, knowledge management, and token management routes.
+
+### Security rules
+
+- No service-role tokens exposed to agents
+- Agent token dryRun always forced true for write_safe tools
+- Blocked/approval-required tools remain blocked regardless of token scope
+- Token plaintext shown once only — not stored, not returned in list
+- Do not store tokens in files or chat logs
 
 ## Tool categories
 

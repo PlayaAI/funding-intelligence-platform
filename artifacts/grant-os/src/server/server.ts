@@ -5,6 +5,12 @@ import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { createAgentApi } from "../lib/agent-api/agentApi";
 import { createMcpAdapter } from "../lib/agent-mcp/adapter";
+import {
+  generateAgentToken,
+  hashAgentToken,
+  normaliseScopes,
+  type AgentTokenRecord,
+} from "../lib/agent-mcp/agentTokenService";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
@@ -12,8 +18,6 @@ const distPublic = path.resolve(root, "dist/public");
 const rawPort = process.env.PORT ?? "5173";
 const port = Number(rawPort);
 const isProduction = process.env.NODE_ENV === "production";
-const agentApi = createAgentApi();
-const mcpAdapter = createMcpAdapter();
 const supabaseUrl = (
   process.env.VITE_SUPABASE_URL ??
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
@@ -26,9 +30,47 @@ const supabaseAnonKey = (
 ).trim();
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
 
+const agentApi = createAgentApi();
+
+// ── MCP Adapter (V2.11H): wire real DB resolvers for agent tokens ─────────
+// These closures are defined at startup. resolveAgentToken and updateAgentTokenLastUsed
+// use the service-role client to look up / update token records — the ONLY use
+// of the service-role key on this path, gated behind all auth + scope checks.
+async function resolveAgentToken(hash: string): Promise<AgentTokenRecord | null> {
+  if (!supabaseServiceRoleKey || !supabaseUrl) return null;
+  const srClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  const { data, error } = await srClient
+    .from("agent_mcp_tokens")
+    .select("id,user_id,scopes,expires_at,revoked_at,label,token_prefix")
+    .eq("token_hash", hash)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as AgentTokenRecord;
+}
+
+async function updateAgentTokenLastUsed(id: string): Promise<void> {
+  if (!supabaseServiceRoleKey || !supabaseUrl) return;
+  const srClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  await srClient
+    .from("agent_mcp_tokens")
+    .update({ last_used_at: new Date().toISOString() })
+    .eq("id", id);
+}
+
+const mcpAdapter = createMcpAdapter({
+  resolveAgentToken,
+  updateAgentTokenLastUsed,
+  serviceRoleKey: supabaseServiceRoleKey || null,
+});
+
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -68,6 +110,16 @@ function bearerTokenFrom(request: IncomingMessage): string | null {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
+
+/**
+ * V2.11H: Returns true if the request carries a gos_mcp_* agent token.
+ * Used to short-circuit non-MCP routes before they reach getAuthenticatedProfile().
+ */
+function requestHasAgentToken(request: IncomingMessage): boolean {
+  const token = bearerTokenFrom(request);
+  return token?.startsWith("gos_mcp_") ?? false;
+}
+
 
 async function getAuthenticatedProfile(request: IncomingMessage, useServiceRole: boolean) {
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -578,11 +630,194 @@ async function handleAgentKnowledge(request: IncomingMessage, response: ServerRe
   return sendJson(response, 404, { ok: false, error: { message: "Route not found" } }), true;
 }
 
+// ── V2.11H: Agent token management routes ────────────────────────────────
+// All three endpoints require a normal Supabase user JWT.
+// A gos_mcp_* agent token CANNOT call these endpoints.
+async function handleAgentTokens(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  if (!url.pathname.startsWith("/api/agent/tokens")) return false;
+
+  // Reject agent tokens immediately — they cannot manage other tokens
+  if (requestHasAgentToken(request)) {
+    sendJson(response, 401, {
+      ok: false,
+      error: {
+        code: "agent_token_not_allowed",
+        message: "Agent tokens cannot access token management endpoints. Use a normal user session.",
+      },
+      do_not_retry: true,
+    });
+    return true;
+  }
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    sendJson(response, 500, { ok: false, error: { code: "supabase_not_configured", message: "Supabase is not configured." } });
+    return true;
+  }
+
+  // Auth: requires a valid Supabase user JWT
+  const authResult = await getAuthenticatedProfile(request, Boolean(supabaseServiceRoleKey));
+  if (!authResult.body.ok || !("profile" in authResult.body)) {
+    sendJson(response, authResult.status, authResult.body);
+    return true;
+  }
+  const user = (authResult.body as Record<string, unknown>).user as { id: string } | undefined;
+  if (!user?.id) {
+    sendJson(response, 401, { ok: false, error: { code: "missing_user", message: "User identity could not be resolved." } });
+    return true;
+  }
+  const userId = user.id;
+
+  // Use service-role client for token table reads/writes (bypasses RLS for management)
+  const hasServiceRole = Boolean(supabaseServiceRoleKey);
+  const dbClient = hasServiceRole
+    ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      })
+    : createClient(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        global: { headers: { Authorization: `Bearer ${bearerTokenFrom(request)}` } },
+      });
+
+  const pathParts = url.pathname.split("/").filter(Boolean); // ["api", "agent", "tokens", ":id"]
+  const tokenId = pathParts[3]; // present for DELETE /api/agent/tokens/:id
+
+  // GET /api/agent/tokens — list user's own tokens (metadata only)
+  if (request.method === "GET" && !tokenId) {
+    const { data, error } = await dbClient
+      .from("agent_mcp_tokens")
+      .select("id,label,token_prefix,scopes,expires_at,revoked_at,created_at,last_used_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      sendJson(response, 500, { ok: false, error: { code: "fetch_error", message: error.message } });
+      return true;
+    }
+    sendJson(response, 200, { ok: true, tokens: data });
+    return true;
+  }
+
+  // POST /api/agent/tokens — create a new token
+  if (request.method === "POST" && !tokenId) {
+    const body = await readJsonBody(request);
+    if (!isRecord(body)) {
+      sendJson(response, 400, { ok: false, error: { code: "invalid_body", message: "Request body must be a JSON object." } });
+      return true;
+    }
+
+    const label = typeof body.label === "string" ? body.label.trim() : "";
+    const expiryDays = typeof body.expiryDays === "number" && body.expiryDays > 0 ? body.expiryDays : null;
+    const rawScopes = Array.isArray(body.scopes) ? (body.scopes as unknown[]).filter((s): s is string => typeof s === "string") : ["mcp:read"];
+    const scopes = normaliseScopes(rawScopes);
+
+    const expiresAt = expiryDays ? new Date(Date.now() + expiryDays * 86400 * 1000).toISOString() : null;
+
+    const { plaintext, hash, prefix } = generateAgentToken();
+
+    const { data: inserted, error: insertError } = await dbClient
+      .from("agent_mcp_tokens")
+      .insert([{
+        user_id: userId,
+        label,
+        token_hash: hash,
+        token_prefix: prefix,
+        scopes,
+        expires_at: expiresAt,
+      }])
+      .select("id,label,token_prefix,scopes,expires_at,created_at")
+      .single();
+
+    if (insertError || !inserted) {
+      sendJson(response, 500, { ok: false, error: { code: "create_failed", message: insertError?.message ?? "Token creation failed." } });
+      return true;
+    }
+
+    // Plaintext returned ONCE ONLY — never stored, never in subsequent list responses
+    sendJson(response, 200, {
+      ok: true,
+      token: plaintext,                  // show once
+      id: inserted.id,
+      label: inserted.label,
+      token_prefix: inserted.token_prefix,
+      scopes: inserted.scopes,
+      expires_at: inserted.expires_at,
+      created_at: inserted.created_at,
+      warning: "Store this token securely. It will not be shown again.",
+    });
+    return true;
+  }
+
+  // DELETE /api/agent/tokens/:id — revoke a token
+  if (request.method === "DELETE" && tokenId) {
+    // Verify the token belongs to the requesting user before revoking
+    const { data: existing, error: fetchError } = await dbClient
+      .from("agent_mcp_tokens")
+      .select("id,user_id,revoked_at")
+      .eq("id", tokenId)
+      .maybeSingle();
+
+    if (fetchError || !existing) {
+      sendJson(response, 404, { ok: false, error: { code: "token_not_found", message: "Token not found." } });
+      return true;
+    }
+    if (existing.user_id !== userId) {
+      sendJson(response, 403, { ok: false, error: { code: "forbidden", message: "You do not own this token." } });
+      return true;
+    }
+    if (existing.revoked_at) {
+      sendJson(response, 200, { ok: true, message: "Token was already revoked.", revoked_at: existing.revoked_at });
+      return true;
+    }
+
+    const revokedAt = new Date().toISOString();
+    const { error: updateError } = await dbClient
+      .from("agent_mcp_tokens")
+      .update({ revoked_at: revokedAt })
+      .eq("id", tokenId);
+
+    if (updateError) {
+      sendJson(response, 500, { ok: false, error: { code: "revoke_failed", message: updateError.message } });
+      return true;
+    }
+
+    sendJson(response, 200, { ok: true, message: "Token revoked.", revoked_at: revokedAt });
+    return true;
+  }
+
+  sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Method not allowed." } });
+  return true;
+}
+
 async function handleApi(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+
+  // V2.11H: Reject agent tokens (gos_mcp_*) on all non-MCP routes early,
+  // before they reach getAuthenticatedProfile() which would give confusing errors.
+  const isMcpRoute =
+    url.pathname === "/api/mcp/tools" ||
+    url.pathname === "/api/mcp/call" ||
+    url.pathname === "/api/mcp/doctor" ||
+    url.pathname === "/api/agent/guide";
+
+  if (requestHasAgentToken(request) && !isMcpRoute) {
+    if (!url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/mcp/")) {
+      return false; // not an API route, don't handle
+    }
+    sendJson(response, 401, {
+      ok: false,
+      error: {
+        code: "agent_token_not_allowed",
+        message: "Agent tokens (gos_mcp_*) are only valid for GET /api/mcp/tools and POST /api/mcp/call. Use a normal user session for this route.",
+      },
+      do_not_retry: true,
+    });
+    return true;
+  }
+
   if (url.pathname.startsWith("/api/admin/users")) return handleAdminUsers(request, response);
   if (url.pathname.startsWith("/api/team/")) return handleTeamInvite(request, response);
   if (url.pathname.startsWith("/api/agent-knowledge/")) return handleAgentKnowledge(request, response);
+  if (url.pathname.startsWith("/api/agent/tokens")) return handleAgentTokens(request, response);
   if (!url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/mcp/")) return false;
 
   // Public guide — no auth required
