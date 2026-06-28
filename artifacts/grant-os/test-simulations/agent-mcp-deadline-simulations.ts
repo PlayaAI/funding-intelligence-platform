@@ -1,5 +1,5 @@
 /**
- * agent-mcp-deadline-simulations.ts — V2.11I (patched)
+ * agent-mcp-deadline-simulations.ts — V2.11I (patched, ISO fix)
  *
  * Tests for Deadline-Aware Recommendation Consistency in Grant OS MCP.
  * Mode: in-memory repository.
@@ -63,8 +63,29 @@ async function run() {
     ],
   }, ["grants", "grantMatches"]);
 
+  // ── ISO timestamp repo — mirrors live DB shape with time-of-day deadlines ──
+  // These are real timestamp formats returned by the live Supabase DB.
+  // The previous bug: "2026-06-16T23:59:00.000ZT00:00:00Z" → invalid date → unknown.
+  const isoRepo = createInMemoryGrantOsRepository({
+    grants: [
+      // Past ISO timestamp — must be expired
+      { id: "grant-iso-expired", title: "ISO Expired Grant", deadline: "2026-06-16T23:59:00.000Z", application_url: "http://example.com", eligibility: "open" } as any,
+      // Future ISO timestamp — must be upcoming
+      { id: "grant-iso-upcoming", title: "ISO Upcoming Grant", deadline: "2026-07-16T06:59:00.000Z", application_url: "http://example.com", eligibility: "open" } as any,
+    ],
+    projects: [{ id: "proj-iso", name: "ISO Project" } as any],
+    proofItems: [{ id: "proof-iso", project_id: "proj-iso" } as any],
+    grantMatches: [
+      // Live-shaped match: expired ISO deadline but decision_label was prepare_next (bug state)
+      { id: "m-iso-1", grant_id: "grant-iso-expired", project_id: "proj-iso", match_score: 80, decision_label: "prepare_next", fit_reasons: ["relevant"] } as any,
+      // Upcoming ISO deadline
+      { id: "m-iso-2", grant_id: "grant-iso-upcoming", project_id: "proj-iso", match_score: 85, decision_label: "apply_now", fit_reasons: ["strong fit"] } as any,
+    ],
+  }, ["grants", "grantMatches"]);
+
   const mcp = createMcpAdapter({ createRepository: () => repository, createRegistry: createToolRegistry });
   const mcpExpiredOnly = createMcpAdapter({ createRepository: () => expiredOnlyRepo, createRegistry: createToolRegistry });
+  const mcpIso = createMcpAdapter({ createRepository: () => isoRepo, createRegistry: createToolRegistry });
 
   const authHdr = { authorization: `Bearer ${adminJwt}`, "x-forwarded-for": "127.0.0.1" };
 
@@ -209,6 +230,87 @@ async function run() {
           matchTool.schemaSummary?.includes("deadlineFilter"),
           `schemaSummary must include deadlineFilter, got: ${matchTool.schemaSummary}`
         );
+      },
+    },
+
+    // ── 11. ISO expired timestamp → computeUrgency returns expired ───────────
+    {
+      name: "V2.11I ISO: computeUrgency correctly classifies past ISO timestamp as expired",
+      fn: async () => {
+        // "2026-06-16T23:59:00.000Z" — in the past relative to 2026-06-28 — must be expired
+        const result = await callMcp("list_grant_matches", { grantId: "grant-iso-expired" }, mcpIso);
+        assert(result.status === 200, `expected 200, got ${result.status}`);
+        const json = result.body.content[0].json.data;
+        // When deadlineFilter=active (default), a fallback note appears if only expired remain
+        const item = json.items.find((i: any) => i.grant_id === "grant-iso-expired");
+        assert(item !== undefined, "ISO expired match must appear (fallback or in active results)");
+        assert(item.deadline_status === "expired", `ISO expired grant must have status expired, got: ${item.deadline_status}`);
+        assert(item.days_until_deadline !== null, "days_until_deadline must not be null for a parseable ISO timestamp");
+        assert((item.days_until_deadline as number) < 0, `days_until_deadline must be negative for past date, got: ${item.days_until_deadline}`);
+        assert(item.decision_label === "missed_deadline", `ISO expired match must be missed_deadline, got: ${item.decision_label}`);
+        assert(item.original_decision_label === "prepare_next", `original label must be preserved, got: ${item.original_decision_label}`);
+      },
+    },
+
+    // ── 12. ISO upcoming timestamp → computeUrgency returns upcoming ──────────
+    {
+      name: "V2.11I ISO: computeUrgency correctly classifies future ISO timestamp as upcoming",
+      fn: async () => {
+        // "2026-07-16T06:59:00.000Z" — in the future — must be upcoming
+        const result = await callMcp("list_grant_matches", { grantId: "grant-iso-upcoming" }, mcpIso);
+        assert(result.status === 200, `expected 200, got ${result.status}`);
+        const json = result.body.content[0].json.data;
+        const item = json.items.find((i: any) => i.grant_id === "grant-iso-upcoming");
+        assert(item !== undefined, "ISO upcoming match must appear");
+        assert(item.deadline_status === "upcoming", `ISO upcoming grant must have status upcoming, got: ${item.deadline_status}`);
+        assert(item.days_until_deadline !== null && (item.days_until_deadline as number) > 0,
+          `days_until_deadline must be positive for future ISO date, got: ${item.days_until_deadline}`);
+        assert(item.decision_label !== "missed_deadline", `upcoming grant must not be missed_deadline, got: ${item.decision_label}`);
+      },
+    },
+
+    // ── 13. ISO deadlineFilter=active excludes ISO expired ────────────────────
+    {
+      name: "V2.11I ISO: deadlineFilter=active excludes ISO-timestamped expired grants",
+      fn: async () => {
+        // mcpIso has one expired (iso) and one upcoming; active filter must exclude the expired one
+        const result = await callMcp("list_grant_matches", { projectId: "proj-iso", deadlineFilter: "active" }, mcpIso);
+        const json = result.body.content[0].json.data;
+        const expiredItems = json.items.filter((i: any) => i.deadline_status === "expired");
+        assert(expiredItems.length === 0,
+          `deadlineFilter=active must exclude ISO expired grants, found ${expiredItems.length}: ${JSON.stringify(expiredItems.map((i: any) => i.grant_id))}`);
+        const upcomingItem = json.items.find((i: any) => i.grant_id === "grant-iso-upcoming");
+        assert(upcomingItem !== undefined, "upcoming ISO grant must appear in active results");
+      },
+    },
+
+    // ── 14. get_grant_decision_brief: ISO expired → missed_deadline ───────────
+    {
+      name: "V2.11I ISO: get_grant_decision_brief with ISO expired deadline returns missed_deadline",
+      fn: async () => {
+        const result = await callMcp("get_grant_decision_brief", { grantId: "grant-iso-expired", projectId: "proj-iso" }, mcpIso);
+        assert(result.status === 200, `expected 200, got ${result.status}`);
+        const json = result.body.content[0].json.data;
+        assert(json.urgency.deadline_status === "expired",
+          `get_grant_decision_brief: ISO expired grant must have status expired, got: ${json.urgency.deadline_status}`);
+        assert(json.urgency.days_until_deadline !== null && (json.urgency.days_until_deadline as number) < 0,
+          `days_until_deadline must be negative, got: ${json.urgency.days_until_deadline}`);
+        assert(json.recommendation === "missed_deadline",
+          `ISO expired grant must return missed_deadline, got: ${json.recommendation}`);
+      },
+    },
+
+    // ── 15. get_grant_decision_brief: ISO upcoming → active recommendation ────
+    {
+      name: "V2.11I ISO: get_grant_decision_brief with ISO upcoming deadline returns active recommendation",
+      fn: async () => {
+        const result = await callMcp("get_grant_decision_brief", { grantId: "grant-iso-upcoming", projectId: "proj-iso" }, mcpIso);
+        assert(result.status === 200, `expected 200, got ${result.status}`);
+        const json = result.body.content[0].json.data;
+        assert(json.urgency.deadline_status === "upcoming",
+          `ISO upcoming grant must be upcoming, got: ${json.urgency.deadline_status}`);
+        assert(json.recommendation !== "missed_deadline",
+          `ISO upcoming grant must not be missed_deadline, got: ${json.recommendation}`);
       },
     },
   ];
