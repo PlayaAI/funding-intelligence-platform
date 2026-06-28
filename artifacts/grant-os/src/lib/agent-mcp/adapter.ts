@@ -368,9 +368,9 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
           ok: true,
           tools: buildMcpToolManifest(registry.listTools()),
           routing_policy: {
-            version: "V2.11E",
+            version: "V2.11J",
             narrow_task_protocol: [
-              "1. For narrow grant-ranking or fit questions (e.g. 'which grant should we apply for?', 'best fit', 'nearest deadline + best match'): call get_grant_decision_brief first. At most one follow-up targeted call.",
+              "1. For narrow grant-ranking or fit questions (e.g. 'which grant should we apply for?'): call get_agent_context_brief and list_agent_knowledge_items FIRST to align with Playa AI strategy, then call get_grant_decision_brief.",
               "2. For application-prep questions: call get_application_prep_context first.",
               "3. For existing match overview: call list_grant_matches (compact stubs, no includeDetails).",
               "4. Do NOT call get_deadline_report for narrow ranking tasks — it reads the full grants table.",
@@ -498,7 +498,7 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
         body: {
           ok: true,
           app: "Grant OS",
-          version: "V2.11H",
+          version: "V2.11J",
           auth_required: true,
           preferred_auth_for_external_agents: "Authorization: Bearer <agent_access_token>",
           how_to_get_agent_token: "Create one via POST /api/agent/tokens using a logged-in user session. Plaintext is shown once only.",
@@ -525,8 +525,10 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
           },
           preferred_tools: {
             grant_recommendation: [
-              "get_grant_decision_brief",
+              "get_agent_context_brief",
+              "list_agent_knowledge_items",
               "list_grant_matches",
+              "get_grant_decision_brief",
             ],
             application_preparation: [
               "get_application_prep_context",
@@ -551,7 +553,7 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
             "Do not treat 401 from /api/mcp/tools as missing tools — it means auth is required.",
             "Use broad reports (get_deadline_report) or exports only when explicitly requested by the user.",
             "Return top 3 results maximum for grant recommendations unless the user asks for more.",
-            "Prefer get_grant_decision_brief for any grant-ranking or fit question.",
+            "For any grant-ranking or fit question, check get_agent_context_brief and list_agent_knowledge_items FIRST, then use get_grant_decision_brief.",
             "Prefer get_application_prep_context for any application readiness question.",
           ],
         },

@@ -332,7 +332,7 @@ async function run() {
         const result = adapter.handleGuide();
         assert(result.status === 200, "expected 200");
         const body = result.body as Record<string, unknown>;
-        assert(body.version === "V2.11H", `expected V2.11H, got ${body.version}`);
+        assert(body.version === "V2.11J", `expected V2.11J, got ${body.version}`);
         assert(typeof body.preferred_auth_for_external_agents === "string", "expected preferred_auth_for_external_agents");
         assert((body.preferred_auth_for_external_agents as string).includes("agent_access_token"), "expected agent_access_token in auth note");
         assert(typeof body.how_to_get_agent_token === "string", "expected how_to_get_agent_token");

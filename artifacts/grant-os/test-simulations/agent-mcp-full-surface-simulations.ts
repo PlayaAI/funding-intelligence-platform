@@ -472,20 +472,20 @@ async function run() {
       },
     },
     {
-      name: "V2.11E: handleTools response includes routing_policy block",
+      name: "V2.11J: handleTools response includes routing_policy block",
       fn: async () => {
         const result = await adapter.handleTools(authHeaders());
         assert(result.status === 200, "expected success");
         assert("routing_policy" in result.body, "expected routing_policy in manifest response");
         const policy = result.body.routing_policy as JsonRecord;
-        assert(policy.version === "V2.11E", "expected routing_policy.version V2.11E");
+        assert(policy.version === "V2.11J", "expected routing_policy.version V2.11J");
         assert(Array.isArray(policy.narrow_task_protocol), "expected narrow_task_protocol array");
         assert(Array.isArray(policy.preferred_tools_for_narrow_tasks), "expected preferred_tools_for_narrow_tasks array");
         assert(Array.isArray(policy.avoid_for_narrow_tasks), "expected avoid_for_narrow_tasks array");
       },
     },
     {
-      name: "V2.11E: routing_policy preferred tools include composite and compact tools",
+      name: "V2.11J: routing_policy preferred tools include composite and compact tools",
       fn: async () => {
         const result = await adapter.handleTools(authHeaders());
         const policy = result.body.routing_policy as JsonRecord;
@@ -497,7 +497,7 @@ async function run() {
       },
     },
     {
-      name: "V2.11E: routing_policy avoid list includes get_deadline_report",
+      name: "V2.11J: routing_policy avoid list includes get_deadline_report",
       fn: async () => {
         const result = await adapter.handleTools(authHeaders());
         const policy = result.body.routing_policy as JsonRecord;
@@ -506,7 +506,7 @@ async function run() {
       },
     },
     {
-      name: "V2.11E: get_deadline_report description warns against narrow use",
+      name: "V2.11J: get_deadline_report description warns against narrow use",
       fn: async () => {
         const result = await adapter.handleTools(authHeaders());
         const tools = (result.body.tools ?? []) as Array<{ name?: string; description?: string }>;
@@ -517,7 +517,7 @@ async function run() {
       },
     },
     {
-      name: "V2.11E: get_grant_decision_brief and get_application_prep_context descriptions indicate PREFERRED",
+      name: "V2.11J: get_grant_decision_brief and get_application_prep_context descriptions indicate PREFERRED",
       fn: async () => {
         const result = await adapter.handleTools(authHeaders());
         const tools = (result.body.tools ?? []) as Array<{ name?: string; description?: string }>;
@@ -530,7 +530,7 @@ async function run() {
       },
     },
     {
-      name: "V2.11E: list_grant_matches description indicates LOW COST / compact first",
+      name: "V2.11J: list_grant_matches description indicates LOW COST / compact first",
       fn: async () => {
         const result = await adapter.handleTools(authHeaders());
         const tools = (result.body.tools ?? []) as Array<{ name?: string; description?: string }>;
@@ -541,7 +541,7 @@ async function run() {
       },
     },
     {
-      name: "V2.11E: V2.11C tools remain fully exposed (backward compatibility)",
+      name: "V2.11J: V2.11C tools remain fully exposed (backward compatibility)",
       fn: async () => {
         const result = await adapter.handleTools(authHeaders());
         const tools = (result.body.tools ?? []) as Array<{ name?: string }>;
@@ -636,7 +636,16 @@ async function run() {
         assert(names.includes("list_agent_knowledge_items"), "list_agent_knowledge_items must still be exposed");
         assert(names.includes("get_agent_knowledge_item"), "get_agent_knowledge_item must still be exposed");
         const routingPolicy = result.body.routing_policy as JsonRecord;
-        assert(routingPolicy?.version === "V2.11E", "routing_policy must still be present");
+        assert(routingPolicy?.version === "V2.11J", "routing_policy must still be present");
+      },
+    },
+    {
+      name: "V2.11J: routing_policy dictates knowledge-first grant recommendation",
+      fn: async () => {
+        const result = await adapter.handleTools(authHeaders());
+        const policy = result.body.routing_policy as JsonRecord;
+        const protocol = policy.narrow_task_protocol as string[];
+        assert(protocol.some(p => p.includes("get_agent_context_brief") && p.includes("list_agent_knowledge_items") && p.includes("FIRST")), "expected narrow_task_protocol to prioritize knowledge");
       },
     },
   ];
