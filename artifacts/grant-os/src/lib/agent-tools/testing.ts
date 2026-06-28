@@ -139,12 +139,14 @@ function seed(): SeedState {
   };
 }
 
-export function createInMemoryGrantOsRepository(overrides?: Partial<SeedState>) {
+export function createInMemoryGrantOsRepository(overrides?: Partial<SeedState>, replaceCollections?: Array<keyof SeedState>) {
   const state = seed();
   if (overrides) {
-    if (overrides.grants) state.grants.push(...overrides.grants);
-    if (overrides.projects) state.projects.push(...overrides.projects);
-    if (overrides.grantMatches) state.grantMatches.push(...overrides.grantMatches);
+    const toReplace = new Set(replaceCollections ?? []);
+    if (overrides.grants) { if (toReplace.has("grants")) state.grants = [...overrides.grants]; else state.grants.push(...overrides.grants); }
+    if (overrides.projects) { if (toReplace.has("projects")) state.projects = [...overrides.projects]; else state.projects.push(...overrides.projects); }
+    if (overrides.grantMatches) { if (toReplace.has("grantMatches")) state.grantMatches = [...overrides.grantMatches]; else state.grantMatches.push(...overrides.grantMatches); }
+    if (overrides.proofItems) { if (toReplace.has("proofItems")) state.proofItems = [...overrides.proofItems]; else state.proofItems.push(...overrides.proofItems); }
   }
   let idCounter = 20;
 

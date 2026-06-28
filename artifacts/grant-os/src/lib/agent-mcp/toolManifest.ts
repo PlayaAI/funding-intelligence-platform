@@ -112,7 +112,7 @@ const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonR
   mark_grant_status: { schemaSummary: "{ grantId: string, status: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", status: "Applying", dryRun: true } },
   save_grant_to_shortlist: { schemaSummary: "{ grantId: string, projectId?: string, status?: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", dryRun: true } },
   // Grant matches
-  list_grant_matches: { schemaSummary: "{ grantId?: string, projectId?: string, limit?: number (default 20), includeDetails?: boolean (default false) } — PREFERRED first step for match queries. Compact stubs by default; pass includeDetails:true only when full match detail is needed." },
+  list_grant_matches: { schemaSummary: "{ grantId?: string, projectId?: string, limit?: number (default 20), includeDetails?: boolean (default false), deadlineFilter?: 'active'|'expired'|'all' (default 'active') } — PREFERRED first step for match queries. Compact stubs by default. deadlineFilter='active' excludes expired grants. Expired stubs always show decision_label: missed_deadline." },
   get_grant_match: { schemaSummary: "{ matchId: string }", exampleInput: { matchId: "match-1" } },
   generate_grant_match: { schemaSummary: "{ grantId: string, projectId: string, dryRun?: boolean }", exampleInput: { grantId: "grant-1", projectId: "project-1", dryRun: true } },
   save_agent_match: { schemaSummary: "{ grantId, projectId, fitScore 1-10, urgencyScore 1-10, effortScore 1-10, strategicValueScore 1-10, recommendation, summary, whyItFits, whyItMightNotFit, bestProjectAngle, strongestApplicationStory, risks[], missingInfo[], evidenceNeeded[], recommendedNextStep, dryRun? }" },

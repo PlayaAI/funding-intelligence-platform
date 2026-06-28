@@ -564,10 +564,13 @@ export async function buildGrantDecisionBrief(
   const readinessScore = existingMatch?.readiness_score ?? null;
 
   let recommendation: "apply_now" | "prepare_first" | "monitor" | "skip" | "needs_review" | "missed_deadline";
-  if (missingInfo.length >= 3 || capped.length === 0) {
-    recommendation = "needs_review";
-  } else if (urgency.deadline_status === "expired") {
+  // Expired deadline always wins — no matter how many missing fields
+  if (urgency.deadline_status === "expired") {
     recommendation = "missed_deadline";
+  } else if (capped.length === 0) {
+    recommendation = "needs_review";
+  } else if (missingInfo.length >= 3) {
+    recommendation = "needs_review";
   } else if (fitScore !== null && fitScore >= 80 && urgency.deadline_status !== "unknown") {
     recommendation = "apply_now";
   } else if (fitScore !== null && fitScore >= 60) {
