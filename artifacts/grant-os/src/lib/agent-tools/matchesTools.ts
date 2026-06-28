@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { calculateGrantMatch } from "../matching/matchingEngine";
+import { computeUrgency } from "./deadlineUtils";
 import type { GrantMatchDecisionLabelDb, GrantMatchInsert, MatchTierDb } from "../../types/database";
 import type { GrantOsRepository } from "./repository";
 import { buildDryRunPlan } from "./dryRun";
@@ -164,49 +165,93 @@ export function createMatchTools(repository: GrantOsRepository): Array<ToolDefin
         projectId: z.string().optional(),
         limit: z.number().int().positive().max(100).optional(),
         includeDetails: z.boolean().default(false),
+        deadlineFilter: z.enum(["active", "expired", "all"]).default("active"),
       }),
       dryRunSupported: false,
       auditAction: "data_reviewed",
       risks: ["Grant match records may reveal internal prioritization logic and strategy."],
       relatedTables: ["grant_matches", "grants", "projects", "funders"],
       touchesRealDb: false,
-      async execute({ grantId, projectId, limit, includeDetails }) {
+      async execute({ grantId, projectId, limit, includeDetails, deadlineFilter }) {
         const DEFAULT_LIMIT = 20;
         const cap = Math.min(limit ?? DEFAULT_LIMIT, 100);
         const matches = await repository.listGrantMatches({ grantId, projectId });
-        const sliced = matches.slice(0, cap);
 
-        if (includeDetails) {
-          const hydrated = await Promise.all(sliced.map(m => repository.getGrantMatch(m.id)));
-          return { items: hydrated.filter(Boolean), total: matches.length, limit: cap };
+        // Fetch all unique grants for all matches to compute urgency
+        const uniqueGrantIds = Array.from(new Set(matches.map((m) => m.grant_id)));
+        const grants = await Promise.all(uniqueGrantIds.map((id) => repository.getGrant(id)));
+        const grantMap = new Map(grants.filter(Boolean).map((g) => [g!.id, g!]));
+
+        // Compute urgency for each match
+        const matchesWithUrgency = matches.map(m => {
+          const grant = grantMap.get(m.grant_id);
+          const urgency = computeUrgency(grant?.deadline ?? grant?.next_deadline);
+          return { match: m, grant, urgency };
+        });
+
+        // Filter by deadline
+        let filtered = matchesWithUrgency;
+        let note: string | undefined;
+
+        if (deadlineFilter === "active") {
+          filtered = matchesWithUrgency.filter(x => x.urgency.deadline_status !== "expired");
+          if (filtered.length === 0 && matchesWithUrgency.length > 0) {
+            filtered = matchesWithUrgency;
+            note = "No active matches found; showing expired matches for reference.";
+          }
+        } else if (deadlineFilter === "expired") {
+          filtered = matchesWithUrgency.filter(x => x.urgency.deadline_status === "expired");
         }
 
-        // Compact stubs by default: fetch names to make the stub useful, but do not return full rows
-        const uniqueGrantIds = Array.from(new Set(sliced.map((m) => m.grant_id)));
-        const uniqueProjectIds = Array.from(new Set(sliced.map((m) => m.project_id)));
-        
-        const [grants, projects] = await Promise.all([
-          Promise.all(uniqueGrantIds.map((id) => repository.getGrant(id))),
-          Promise.all(uniqueProjectIds.map((id) => repository.getProject(id))),
-        ]);
+        // Sort: active/upcoming first, then by match_score desc
+        filtered.sort((a, b) => {
+          const aIsActive = a.urgency.deadline_status !== "expired" ? 1 : 0;
+          const bIsActive = b.urgency.deadline_status !== "expired" ? 1 : 0;
+          if (aIsActive !== bIsActive) return bIsActive - aIsActive;
+          return (b.match.match_score ?? 0) - (a.match.match_score ?? 0);
+        });
 
-        const grantMap = new Map(grants.filter(Boolean).map((g) => [g!.id, g!.title]));
+        const sliced = filtered.slice(0, cap);
+
+        if (includeDetails) {
+          const hydrated = await Promise.all(sliced.map(x => repository.getGrantMatch(x.match.id)));
+          const items = hydrated.filter(Boolean).map(h => {
+             const m = sliced.find(x => x.match.id === h!.id)!;
+             return {
+               ...h!,
+               deadline: m.urgency.deadline,
+               deadline_status: m.urgency.deadline_status,
+               days_until_deadline: m.urgency.days_until_deadline,
+               original_decision_label: h!.decision_label,
+               decision_label: m.urgency.deadline_status === "expired" ? "missed_deadline" : h!.decision_label,
+             };
+          });
+          return { items, total: filtered.length, limit: cap, ...(note ? { note } : {}) };
+        }
+
+        // Compact stubs by default
+        const uniqueProjectIds = Array.from(new Set(sliced.map((x) => x.match.project_id)));
+        const projects = await Promise.all(uniqueProjectIds.map((id) => repository.getProject(id)));
         const projectMap = new Map(projects.filter(Boolean).map((p) => [p!.id, p!.name]));
 
-        const stubs = sliced.map((m) => ({
+        const stubs = sliced.map(({ match: m, grant, urgency }) => ({
           id: m.id,
           grant_id: m.grant_id,
-          grant_title: grantMap.get(m.grant_id) ?? "Unknown Grant",
+          grant_title: grant?.title ?? "Unknown Grant",
           project_id: m.project_id,
           project_name: projectMap.get(m.project_id) ?? "Unknown Project",
           match_score: m.match_score,
-          decision_label: m.decision_label,
+          original_decision_label: m.decision_label,
+          decision_label: urgency.deadline_status === "expired" ? "missed_deadline" : m.decision_label,
+          deadline: urgency.deadline,
+          deadline_status: urgency.deadline_status,
+          days_until_deadline: urgency.days_until_deadline,
           short_summary: (m.fit_reasons as string[] | null)?.[0] ?? null,
           created_at: m.created_at,
           updated_at: m.updated_at,
         }));
 
-        return { items: stubs, total: matches.length, limit: cap };
+        return { items: stubs, total: filtered.length, limit: cap, ...(note ? { note } : {}) };
       },
     },
     {

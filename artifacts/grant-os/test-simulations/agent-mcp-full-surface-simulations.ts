@@ -392,7 +392,7 @@ async function run() {
         const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
         const bodyStr = JSON.stringify(data);
         assert(typeof (data.grant as JsonRecord)?.id === "string", "expected grant.id");
-        assert(typeof (data.urgency as JsonRecord)?.status === "string", "expected urgency.status");
+        assert(typeof (data.urgency as JsonRecord)?.deadline_status === "string", "expected urgency.deadline_status");
         assert(typeof data.recommendation === "string", "expected recommendation");
         assert(Array.isArray(data.topReasons), "expected topReasons array");
         assert(Array.isArray(data.topRisks), "expected topRisks array");
@@ -431,7 +431,7 @@ async function run() {
         const data = ((result.body.content ?? []) as Array<{ json?: { data?: JsonRecord } }>)[0]?.json?.data ?? {};
         const bodyStr = JSON.stringify(data);
         assert(typeof (data.application as JsonRecord)?.id === "string", "expected application.id");
-        assert(typeof (data.deadline as JsonRecord)?.status === "string", "expected deadline.status");
+        assert(typeof (data.deadline as JsonRecord)?.deadline_status === "string", "expected deadline.deadline_status");
         assert(Array.isArray(data.openTasks), "expected openTasks array");
         assert(Array.isArray(data.linkedDocuments), "expected linkedDocuments array");
         assert(Array.isArray(data.missingDocuments), "expected missingDocuments array");

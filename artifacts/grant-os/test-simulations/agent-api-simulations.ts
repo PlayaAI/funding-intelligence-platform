@@ -165,6 +165,100 @@ async function run() {
         assert(createTaskCalls === 0, "blocked hosted tool called createTask");
       },
     },
+
+    // ── V2.11C: Hosted duplicate cleanup ─────────────────────────────────
+    {
+      name: "V2.11C: get_grant_documents blocked from hosted API",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "get_grant_documents", input: { grantId: "grant-1" } });
+        assert(result.status === 403, "expected forbidden status for removed legacy tool");
+        assert(JSON.stringify(result.body).includes("tool_not_allowed"), "expected allowlist error for get_grant_documents");
+      },
+    },
+    {
+      name: "V2.11C: get_grant_applications blocked from hosted API",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "get_grant_applications", input: { grantId: "grant-1" } });
+        assert(result.status === 403, "expected forbidden status for removed legacy tool");
+        assert(JSON.stringify(result.body).includes("tool_not_allowed"), "expected allowlist error for get_grant_applications");
+      },
+    },
+    {
+      name: "V2.11C: get_application_tasks blocked from hosted API",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "get_application_tasks", input: { applicationId: "app-1" } });
+        assert(result.status === 403, "expected forbidden status for removed legacy tool");
+        assert(JSON.stringify(result.body).includes("tool_not_allowed"), "expected allowlist error for get_application_tasks");
+      },
+    },
+    {
+      name: "V2.11C: get_application_documents blocked from hosted API",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "get_application_documents", input: { applicationId: "app-1" } });
+        assert(result.status === 403, "expected forbidden status for removed legacy tool");
+        assert(JSON.stringify(result.body).includes("tool_not_allowed"), "expected allowlist error for get_application_documents");
+      },
+    },
+    {
+      name: "V2.11C: get_proof_items_for_project blocked from hosted API",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "get_proof_items_for_project", input: { projectId: "project-1" } });
+        assert(result.status === 403, "expected forbidden status for removed legacy tool");
+        assert(JSON.stringify(result.body).includes("tool_not_allowed"), "expected allowlist error for get_proof_items_for_project");
+      },
+    },
+    {
+      name: "V2.11C: canonical list_applications with grantId is allowed",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "list_applications", input: { grantId: "grant-1" } });
+        assert(result.status === 200, "expected success for canonical list_applications with grantId filter");
+        assert(result.body.ok === true, "expected ok response");
+      },
+    },
+    {
+      name: "V2.11C: canonical list_proof_items with projectId is allowed",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "list_proof_items", input: { projectId: "project-1" } });
+        assert(result.status === 200, "expected success for canonical list_proof_items with projectId");
+        assert(result.body.ok === true, "expected ok response");
+      },
+    },
+    {
+      name: "V2.11C: get_grant_decision_brief accessible via hosted API",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "get_grant_decision_brief", input: { grantId: "grant-1" } });
+        assert(result.status === 200, "expected success for get_grant_decision_brief via hosted API");
+        assert(result.body.ok === true, "expected ok response");
+        const data = result.body.data as Record<string, unknown>;
+        assert(typeof (data.grant as Record<string, unknown>)?.id === "string", "expected grant.id in brief");
+        assert(typeof data.recommendation === "string", "expected recommendation in brief");
+      },
+    },
+    {
+      name: "V2.11C: get_application_prep_context accessible via hosted API",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "get_application_prep_context", input: { applicationId: "app-1" } });
+        assert(result.status === 200, "expected success for get_application_prep_context via hosted API");
+        assert(result.body.ok === true, "expected ok response");
+        const data = result.body.data as Record<string, unknown>;
+        assert(typeof (data.application as Record<string, unknown>)?.id === "string", "expected application.id in prep context");
+        assert(Array.isArray(data.nextActions), "expected nextActions array in prep context");
+      },
+    },
+    {
+      name: "V2.11C: list_agent_knowledge_items accessible via hosted API",
+      fn: async () => {
+        const result = await api.handleTool(authHeaders(), { tool: "list_agent_knowledge_items", input: {} });
+        assert(result.status === 200, "expected success for list_agent_knowledge_items via hosted API");
+        assert(result.body.ok === true, "expected ok response");
+        const data = result.body.data as Record<string, unknown>;
+        assert(Array.isArray(data.items), "expected items array in knowledge list");
+        const items = data.items as Array<Record<string, unknown>>;
+        if (items.length > 0) {
+          assert(!("content" in items[0]), "knowledge list must not include content by default");
+        }
+      },
+    },
   ];
 
   const results: TestResult[] = [];

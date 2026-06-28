@@ -744,7 +744,7 @@ async function run() {
         assert(result.ok, `get_grant_decision_brief should succeed: ${result.ok ? "" : JSON.stringify((result as any).error)}`);
         const data = result.data as Record<string, unknown>;
         assert(typeof (data.grant as Record<string, unknown>)?.id === "string", "expected grant.id");
-        assert(typeof (data.urgency as Record<string, unknown>)?.status === "string", "expected urgency.status");
+        assert(typeof (data.urgency as Record<string, unknown>)?.deadline_status === "string", "expected urgency.deadline_status");
         assert(typeof data.recommendation === "string", "expected recommendation");
         assert(Array.isArray(data.topReasons), "expected topReasons array");
         assert(Array.isArray(data.topRisks), "expected topRisks array");
@@ -792,7 +792,7 @@ async function run() {
         assert(result.ok, `get_application_prep_context should succeed: ${result.ok ? "" : JSON.stringify((result as any).error)}`);
         const data = result.data as Record<string, unknown>;
         assert(typeof (data.application as Record<string, unknown>)?.id === "string", "expected application.id");
-        assert(typeof (data.deadline as Record<string, unknown>)?.status === "string", "expected deadline.status");
+        assert(typeof (data.deadline as Record<string, unknown>)?.deadline_status === "string", "expected deadline.deadline_status");
         assert(Array.isArray(data.openTasks), "expected openTasks array");
         assert(Array.isArray(data.linkedDocuments), "expected linkedDocuments array");
         assert(Array.isArray(data.requiredDocuments), "expected requiredDocuments array");

@@ -9,6 +9,7 @@ import type {
   ProofItemRow,
   TaskRow,
 } from "../../types/database";
+import { computeUrgency } from "./deadlineUtils";
 import type {
   ApplicationExportPacket,
   ApplicationWorkloadReport,
@@ -464,27 +465,6 @@ export function filterTasks(tasks: TaskRow[], filters: {
   });
 }
 
-// ─── Urgency helpers ─────────────────────────────────────────────────────────
-
-function computeUrgency(deadline: string | null | undefined): {
-  deadline: string | null;
-  daysRemaining: number | null;
-  status: "overdue" | "urgent" | "soon" | "future" | "rolling" | "unknown";
-} {
-  if (!deadline) return { deadline: null, daysRemaining: null, status: "unknown" };
-  const parsed = new Date(`${deadline}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return { deadline, daysRemaining: null, status: "unknown" };
-  const now = new Date();
-  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const target = Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
-  const days = Math.ceil((target - today) / 86_400_000);
-  const status: "overdue" | "urgent" | "soon" | "future" =
-    days < 0 ? "overdue" :
-    days <= 7 ? "urgent" :
-    days <= 30 ? "soon" : "future";
-  return { deadline, daysRemaining: days, status };
-}
-
 // ─── Composite: get_grant_decision_brief ─────────────────────────────────────
 
 const MAX_CANDIDATE_PROJECTS = 5;
@@ -583,12 +563,12 @@ export async function buildGrantDecisionBrief(
   const fitScore = existingMatch?.match_score ?? null;
   const readinessScore = existingMatch?.readiness_score ?? null;
 
-  let recommendation: "apply_now" | "prepare_first" | "monitor" | "skip" | "needs_review";
+  let recommendation: "apply_now" | "prepare_first" | "monitor" | "skip" | "needs_review" | "missed_deadline";
   if (missingInfo.length >= 3 || capped.length === 0) {
     recommendation = "needs_review";
-  } else if (urgency.status === "overdue") {
-    recommendation = "skip";
-  } else if (fitScore !== null && fitScore >= 80 && urgency.status !== "future") {
+  } else if (urgency.deadline_status === "expired") {
+    recommendation = "missed_deadline";
+  } else if (fitScore !== null && fitScore >= 80 && urgency.deadline_status !== "unknown") {
     recommendation = "apply_now";
   } else if (fitScore !== null && fitScore >= 60) {
     recommendation = "prepare_first";
@@ -602,7 +582,7 @@ export async function buildGrantDecisionBrief(
     recommendation === "apply_now" ? "Create or review the application workspace and begin drafting." :
     recommendation === "prepare_first" ? "Gather missing documents and proof items before applying." :
     recommendation === "monitor" ? "Monitor for updated guidelines or next cycle." :
-    recommendation === "skip" ? "Deadline has passed — archive or monitor for next cycle." :
+    recommendation === "missed_deadline" ? "Deadline has passed — archive or monitor for next cycle." :
     "Gather missing information and run generate_grant_match for deeper analysis.";
 
   return {

@@ -139,8 +139,13 @@ function seed(): SeedState {
   };
 }
 
-export function createInMemoryGrantOsRepository() {
+export function createInMemoryGrantOsRepository(overrides?: Partial<SeedState>) {
   const state = seed();
+  if (overrides) {
+    if (overrides.grants) state.grants.push(...overrides.grants);
+    if (overrides.projects) state.projects.push(...overrides.projects);
+    if (overrides.grantMatches) state.grantMatches.push(...overrides.grantMatches);
+  }
   let idCounter = 20;
 
   const repository: GrantOsRepository & { snapshot(): SeedState; auditTrail(): ToolAuditPayload[] } = {
