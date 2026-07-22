@@ -46,9 +46,22 @@ export default function DashboardHomePage() {
   const { data: applications = [] } = useApplications();
   const { data: allTasks = [] } = useTasks();
 
-  const top3 = grants.filter((g) => g.isTop3);
+  const staleTop3 = grants.filter((g) =>
+    g.isTop3 &&
+    (daysUntil(g.deadline) <= 0 || !Number.isFinite(daysUntil(g.deadline)) || ["Awarded", "Declined", "Archived", "Submitted"].includes(g.status))
+  );
+  const top3 = grants.filter((g) =>
+    g.isTop3 &&
+    daysUntil(g.deadline) > 0 &&
+    Number.isFinite(daysUntil(g.deadline)) &&
+    !["Awarded", "Declined", "Archived", "Submitted"].includes(g.status)
+  );
   const upcoming = grants
-    .filter((g) => !["Awarded", "Declined", "Archived"].includes(g.status) && Number.isFinite(daysUntil(g.deadline)))
+    .filter((g) =>
+      !["Awarded", "Declined", "Archived", "Submitted"].includes(g.status) &&
+      daysUntil(g.deadline) > 0 &&
+      Number.isFinite(daysUntil(g.deadline))
+    )
     .sort((a, b) => daysUntil(a.deadline) - daysUntil(b.deadline))
     .slice(0, 5);
   const activeApps = applications.filter((a) => !["Submitted", "Awarded", "Declined", "Archived"].includes(a.status));
@@ -136,6 +149,21 @@ export default function DashboardHomePage() {
           </CardContent>
         </Card>
       </div>
+
+      {staleTop3.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/70">
+          <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2 text-sm text-amber-900">
+              <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold">{staleTop3.length} stale Top 3 {staleTop3.length === 1 ? "grant needs" : "grants need"} review</div>
+                <div className="text-xs text-amber-800">Expired, closed, submitted, or unverified-deadline grants are excluded from active priorities.</div>
+              </div>
+            </div>
+            <Link href="/dashboard/grants"><Button size="sm" variant="outline" className="border-amber-300 bg-white text-xs">Review grants</Button></Link>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-xl p-4">
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Quick Actions</div>

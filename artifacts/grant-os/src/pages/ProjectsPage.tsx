@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { projects } from "@/data/projects";
 import ProjectCard from "@/components/public/ProjectCard";
 import PageHeader from "@/components/public/PageHeader";
 import { usePublicProjects } from "@/hooks/usePublicProjects";
@@ -15,9 +14,7 @@ export default function ProjectsPage() {
   publicProof.forEach((item) => {
     if (item.project_id) proofCountByProject.set(item.project_id, (proofCountByProject.get(item.project_id) ?? 0) + 1);
   });
-  const sourceProjects = publicProjects.length
-    ? publicProjects.map((project) => publicProjectToCard(project, proofCountByProject.get(project.id) ?? 0))
-    : projects.filter((project) => ["connect-app", "ikigai", "bm-packing"].includes(project.slug));
+  const sourceProjects = publicProjects.map((project) => publicProjectToCard(project, proofCountByProject.get(project.id) ?? 0));
   const allCategories = ["All", ...Array.from(new Set(sourceProjects.map((p) => p.category)))];
   const allStatuses = ["All", ...Array.from(new Set(sourceProjects.map((p) => p.status)))];
 
@@ -38,7 +35,7 @@ export default function ProjectsPage() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {isError && (
           <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            Public project data is temporarily unavailable. Showing curated public portfolio items.
+            Public project data is temporarily unavailable. No fallback portfolio claims are being shown.
           </div>
         )}
         {isLoading && (
@@ -110,7 +107,7 @@ export default function ProjectsPage() {
         <div className="mt-12 bg-slate-50 border border-slate-200 rounded-xl p-7">
           <h3 className="font-bold text-foreground mb-2">More in development</h3>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Additional projects — including Democracy 2.0, Decommodified Data Set, and Tech for Human Flourishing — are in early planning or have been explored in workshop settings. This portfolio represents active and documented work.
+            Early concepts and unverified work remain internal until they have an approved public record and appropriate evidence.
           </p>
         </div>
       </div>

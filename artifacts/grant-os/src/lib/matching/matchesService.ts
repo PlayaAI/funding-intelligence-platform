@@ -209,8 +209,7 @@ async function generateMatches(projectId?: string, grantId?: string, client?: Gr
 }
 
 export async function generateMatchesForProject(projectId: string, client?: GrantOsSupabaseClient): Promise<GrantMatchRow[]> {
-  const db = getDb(client);
-  return generateMatches(projectId);
+  return generateMatches(projectId, undefined, client);
 }
 
 export async function generateMatchesForGrant(grantId: string, client?: GrantOsSupabaseClient): Promise<GrantMatchRow[]> {
@@ -219,15 +218,13 @@ export async function generateMatchesForGrant(grantId: string, client?: GrantOsS
 }
 
 export async function generateMatchesForAllProjects(client?: GrantOsSupabaseClient): Promise<GrantMatchRow[]> {
-  const db = getDb(client);
   return generateMatches(undefined, undefined, client);
 }
 
 export async function refreshMatch(matchId: string, client?: GrantOsSupabaseClient): Promise<GrantMatchRow> {
-  const db = getDb(client);
-  const current = await getMatch(matchId);
+  const current = await getMatch(matchId, client);
   if (!current) throw new Error("Match not found");
-  const rows = await generateMatches(current.project_id, current.grant_id);
+  const rows = await generateMatches(current.project_id, current.grant_id, client);
   const refreshed = rows.find((row) => row.id === matchId || (row.project_id === current.project_id && row.grant_id === current.grant_id));
   if (!refreshed) throw new Error("Match refresh did not return a row");
   return refreshed;

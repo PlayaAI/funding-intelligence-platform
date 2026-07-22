@@ -1,31 +1,11 @@
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle2, Users, Layers, BookOpen, Shield } from "lucide-react";
-import { projects } from "@/data/projects";
-import { proofItems } from "@/data/proofItems";
-import { workshops } from "@/data/workshops";
 import { teamMembers } from "@/data/team";
 import ProjectCard from "@/components/public/ProjectCard";
 import ProofItemCard from "@/components/public/ProofItemCard";
 import { usePublicProjects } from "@/hooks/usePublicProjects";
 import { usePublicProofItems } from "@/hooks/usePublicProofItems";
 import { publicProjectToCard, publicProofToCard } from "@/lib/public/publicDataService";
-
-const featuredProjects = projects.filter((p) => p.featured).slice(0, 3);
-const highlightProof = proofItems.slice(0, 3);
-
-const stats = [
-  { value: "6", label: "Projects built", sub: "apps, tools, experiments" },
-  { value: "12+", label: "Community events", sub: "2023–2024" },
-  { value: "4", label: "Workshops delivered", sub: "with published outputs" },
-  { value: "3", label: "Core contributors", sub: "builders, researchers, strategists" },
-];
-
-const credentialChips = [
-  "MIT Solve shortlist candidate",
-  "9 documented proof items",
-  "Field-tested at Burning Man 2024",
-  "Publicly available documentation",
-];
 
 export default function HomePage() {
   const { data: publicProjects = [] } = usePublicProjects();
@@ -34,18 +14,13 @@ export default function HomePage() {
   publicProof.forEach((item) => {
     if (item.project_id) proofCountByProject.set(item.project_id, (proofCountByProject.get(item.project_id) ?? 0) + 1);
   });
-  const displayedProjects = publicProjects.length
-    ? publicProjects.filter((project) => project.featured).slice(0, 3).map((project) => publicProjectToCard(project, proofCountByProject.get(project.id) ?? 0))
-    : featuredProjects;
-  const displayedProof = publicProof.length ? publicProof.slice(0, 3).map(publicProofToCard) : highlightProof;
-  const displayedStats = publicProjects.length || publicProof.length
-    ? [
-        { value: String(publicProjects.length), label: "Public projects", sub: "published portfolio records" },
-        { value: String(publicProof.length), label: "Public proof items", sub: "visible evidence records" },
-        { value: String(publicProof.filter((item) => item.type === "workshop").length), label: "Workshops delivered", sub: "public workshop proof" },
-        stats[3],
-      ]
-    : stats;
+  const displayedProjects = publicProjects.filter((project) => project.featured).slice(0, 3).map((project) => publicProjectToCard(project, proofCountByProject.get(project.id) ?? 0));
+  const displayedProof = publicProof.slice(0, 3).map(publicProofToCard);
+  const displayedStats = [
+    { value: String(publicProjects.length), label: "Public projects", sub: "published portfolio records" },
+    { value: String(publicProof.length), label: "Public proof items", sub: "published evidence records" },
+    { value: String(publicProof.filter((item) => item.type === "workshop").length), label: "Workshop records", sub: "published evidence records" },
+  ];
 
   return (
     <div>
@@ -76,7 +51,7 @@ export default function HomePage() {
               and community flourishing
             </h1>
             <p className="mt-6 text-lg sm:text-xl text-muted-foreground leading-relaxed max-w-2xl">
-              We build tools that help people connect more deeply, discover their purpose, and participate meaningfully in community. Real projects. Real proof. Ready for funding.
+              We build tools that help people connect more deeply, discover their purpose, and participate meaningfully in community. Public records below are limited to items intentionally published through Grant OS.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -95,14 +70,6 @@ export default function HomePage() {
                 View proof
               </Link>
             </div>
-            <div className="mt-8 flex flex-wrap gap-2">
-              {credentialChips.map((chip) => (
-                <div key={chip} className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-full px-3 py-1 shadow-sm">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-                  <span className="text-xs font-medium text-slate-600">{chip}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </section>
@@ -110,7 +77,7 @@ export default function HomePage() {
       {/* Stats strip */}
       <section className="border-b border-border bg-card" aria-label="Impact numbers">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0 divide-border">
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-x divide-y md:divide-y-0 divide-border">
             {displayedStats.map((stat) => (
               <div key={stat.label} className="py-8 px-6 text-center">
                 <div className="text-3xl sm:text-4xl font-bold text-primary">{stat.value}</div>
@@ -220,7 +187,7 @@ export default function HomePage() {
             <div className="flex items-start gap-3">
               <Shield className="w-5 h-5 text-primary mt-0.5 shrink-0" />
               <p className="text-sm text-muted-foreground leading-relaxed">
-                We document everything we do — workshops, demos, documents, metrics. The proof is public and accumulating. Every item below is a real, documented activity with a specific date, location, or output.
+                Published evidence records are shown with their available source context. Publication does not upgrade an unverified claim or replace primary documentation.
               </p>
             </div>
           </div>
@@ -251,20 +218,8 @@ export default function HomePage() {
                 Workshops that produce real outputs
               </h2>
               <p className="text-muted-foreground leading-relaxed mb-6">
-                We run workshops and community events that generate working prototypes, published guides, and documented methodologies — not just conversations.
+                We use workshops and community events to develop prototypes, guides, and methodologies. Specific outcomes should be relied on only when supported by a published evidence record.
               </p>
-              <ul className="space-y-4">
-                {workshops.slice(0, 3).map((w) => (
-                  <li key={w.id} className="flex items-start gap-3 text-sm text-muted-foreground">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-                    <span>
-                      <span className="font-semibold text-foreground">{w.title}</span>
-                      {" — "}
-                      {w.date}, {w.location}
-                    </span>
-                  </li>
-                ))}
-              </ul>
               <div className="mt-7">
                 <Link href="/workshops" className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">
                   See all workshops
@@ -273,14 +228,13 @@ export default function HomePage() {
               </div>
             </div>
             <div className="bg-card border border-border rounded-xl p-7">
-              <p className="text-xs font-semibold text-foreground uppercase tracking-wider mb-5">Recent outputs</p>
+              <p className="text-xs font-semibold text-foreground uppercase tracking-wider mb-5">Evidence publishing rules</p>
               <ul className="space-y-4">
                 {[
-                  "Connect App guided session protocol — documented",
-                  "Biohack Your Burn guide — published",
-                  "Oracle AI demo — live at community event",
-                  "Ikigai facilitation materials — produced",
-                  "12+ community events — hosted across 2023–2024",
+                  "Use primary documentation for legal, partnership, and eligibility claims",
+                  "Keep unverified metrics out of funder-facing language",
+                  "Distinguish prototypes, tests, plans, and completed work",
+                  "Publish only records intentionally marked public",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-2.5 text-sm text-muted-foreground">
                     <CheckCircle2 className="w-4 h-4 text-primary mt-0.5 shrink-0" />
@@ -302,11 +256,9 @@ export default function HomePage() {
                 <div className="w-4 h-px bg-blue-400" />
                 <p className="text-xs font-semibold text-blue-400 uppercase tracking-widest">Grant readiness</p>
               </div>
-              <h2 className="text-3xl sm:text-4xl font-bold leading-tight mb-5">
-                We have proof. We have people. We have projects.
-              </h2>
+              <h2 className="text-3xl sm:text-4xl font-bold leading-tight mb-5">Evidence before claims</h2>
               <p className="text-slate-300 leading-relaxed mb-7">
-                The Connect App is shortlisted as a top candidate for the MIT Solve Global Challenge. We are actively preparing applications and documenting our work. Our proof is public, our team is established, and our methodology is documented.
+                Grant readiness depends on current eligibility, deadlines, and primary evidence. Unverified partnerships, legal status, user counts, and impact claims remain excluded from approved funder-facing language.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link
@@ -325,13 +277,11 @@ export default function HomePage() {
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3">
-              {[
-                { label: "Field sessions conducted", value: "Done", color: "text-emerald-400" },
-                { label: "Protocol documentation", value: "Complete", color: "text-emerald-400" },
-                { label: "Community proof items", value: "9 items", color: "text-blue-400" },
-                { label: "MIT Solve shortlist", value: "Confirmed", color: "text-emerald-400" },
-                { label: "Session count metrics", value: "In progress", color: "text-amber-400" },
-              ].map((row) => (
+                {[
+                  { label: "Primary-source evidence", value: "Required", color: "text-blue-400" },
+                  { label: "Needs Confirmation claims", value: "Restricted", color: "text-amber-400" },
+                  { label: "Legal and partnership claims", value: "Proof required", color: "text-amber-400" },
+                ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between bg-white/5 border border-white/10 rounded-lg px-4 py-3">
                   <span className="text-sm text-slate-300">{row.label}</span>
                   <span className={`text-xs font-semibold ${row.color}`}>{row.value}</span>

@@ -294,6 +294,7 @@ export default function DashboardGrantDetailPage() {
 
   const bestMatch = (grantMatchesQuery.data ?? [])[0];
   const days = daysUntil(grantRow.deadline);
+  const deadlinePassed = days != null && days <= 0;
   const amount = amountRange(grantRow.amount_min, grantRow.amount_max, grantRow.amount_display);
   const displayNotes = cleanNotes(grantRow.notes);
   const sourceRows = sourceFields(grantRow);
@@ -376,10 +377,18 @@ export default function DashboardGrantDetailPage() {
         portal_url: values.portal_url || grantRow.application_url || null,
         notes: values.notes || null,
       });
-      await createDefaultChecklist(created.id, selectedProjectId);
-      toast({ title: "Application created", description: values.title });
       setCreateAppOpen(false);
       setTargetApplicationProjectId(null);
+      try {
+        await createDefaultChecklist(created.id, selectedProjectId);
+        toast({ title: "Application and checklist created", description: `${values.title} is linked to this grant and ready for work.` });
+      } catch (checklistError) {
+        toast({
+          title: "Application created; checklist needs attention",
+          description: checklistError instanceof Error ? checklistError.message : "Open the application and retry checklist generation.",
+          variant: "destructive",
+        });
+      }
       navigate(`/dashboard/applications/${created.id}`);
     } catch (e) {
       toast({ title: "Failed to create application", description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
@@ -471,7 +480,7 @@ export default function DashboardGrantDetailPage() {
         </Link>
         <div className="flex flex-wrap justify-end gap-2">
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleExportGrant}><Download size={12} />Export JSON</Button>
-          {canCreateTable("applications") && <Button size="sm" className="gap-1.5 text-xs" onClick={() => openOrStartApplication()}><Plus size={12} />Start Application</Button>}
+          {canCreateTable("applications") && <Button size="sm" className="gap-1.5 text-xs" disabled={deadlinePassed && relatedApps.length === 0} title={deadlinePassed && relatedApps.length === 0 ? "The deadline has passed. Archive or verify a new cycle before starting an application." : undefined} onClick={() => openOrStartApplication()}><Plus size={12} />{relatedApps.length ? "Open Application" : "Start Application"}</Button>}
         </div>
       </div>
 
@@ -489,6 +498,7 @@ export default function DashboardGrantDetailPage() {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <GrantStatusBadge status={grantRow.status} />
+            {deadlinePassed && <Badge variant="outline" className="border-red-200 bg-red-50 text-xs text-red-700">Past deadline — archive or verify next cycle</Badge>}
             {bestMatch && <Badge variant="outline" className={`text-xs ${DECISION_CLASSES[bestMatch.decision_label] ?? DECISION_CLASSES.needs_review}`}>{DECISION_LABELS[bestMatch.decision_label] ?? "Needs Review"} · {bestMatch.match_score}</Badge>}
             {grantRow.source_url && <a href={grantRow.source_url} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs"><ExternalLink size={12} />Source</Button></a>}
             {grantRow.application_url && <a href={grantRow.application_url} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs"><ExternalLink size={12} />Portal</Button></a>}
@@ -496,7 +506,7 @@ export default function DashboardGrantDetailPage() {
         </div>
         <div className="flex flex-wrap justify-start gap-2 md:justify-end">
           {canWriteTable("grants") && <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEditOpen(true)}><Pencil size={12} />Edit</Button>}
-          {canWriteTable("grants") && <Button size="sm" variant={grantRow.is_top_three ? "default" : "outline"} className="gap-1.5 text-xs" disabled={setTopThree.isPending} onClick={() => setTopThree.mutate({ id: grantRow.id, isTopThree: !grantRow.is_top_three })}>{grantRow.is_top_three ? <StarOff size={12} /> : <Star size={12} />}{grantRow.is_top_three ? "Remove Top 3" : "Top 3"}</Button>}
+          {canWriteTable("grants") && <Button size="sm" variant={grantRow.is_top_three ? "default" : "outline"} className="gap-1.5 text-xs" disabled={setTopThree.isPending || (deadlinePassed && !grantRow.is_top_three)} title={deadlinePassed && !grantRow.is_top_three ? "Past-deadline grants cannot be added to Top 3." : undefined} onClick={() => setTopThree.mutate({ id: grantRow.id, isTopThree: !grantRow.is_top_three })}>{grantRow.is_top_three ? <StarOff size={12} /> : <Star size={12} />}{grantRow.is_top_three ? "Remove Top 3" : "Top 3"}</Button>}
           {canWriteTable("grants") && <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setConfirmArchive(true)}><Archive size={12} />Archive</Button>}
           {canDeleteRecords && <Button size="sm" variant="outline" className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => setConfirmDelete(true)}><Trash2 size={12} />Delete</Button>}
         </div>
@@ -977,7 +987,7 @@ export default function DashboardGrantDetailPage() {
 
       <AlertDialog open={confirmArchive} onOpenChange={setConfirmArchive}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Archive this grant?</AlertDialogTitle><AlertDialogDescription>&quot;{grantRow.title}&quot; will be archived and hidden from the main grants list.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>Archive this grant?</AlertDialogTitle><AlertDialogDescription>&quot;{grantRow.title}&quot; will be soft-archived, removed from Top 3, and hidden from active grant recommendations. No record will be deleted.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={handleArchive}>Archive</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

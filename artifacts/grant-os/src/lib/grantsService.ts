@@ -85,6 +85,7 @@ export async function archiveGrant(id: string): Promise<void> {
     .update({
       archived_at: now,
       status: "Archived",
+      is_top_three: false,
       updated_at: now,
     })
     .eq("id", id);
