@@ -67,6 +67,17 @@ export default function DashboardAgentSettingsPage() {
         </CardContent>
       </Card>
 
+      <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2"><ShieldAlert size={15} />Token capabilities</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-amber-950">
+          <p><strong>Read-only token:</strong> may call read tools only. Write-safe calls return <code>scope_insufficient</code>.</p>
+          <p><strong>Write-safe dry-run token:</strong> may preview write-safe tools, but the server always forces <code>dryRun: true</code>, even if the caller sends false.</p>
+          <p><strong>Real writes:</strong> agent tokens do not support them. An approved user must execute through an authenticated dashboard or user-JWT workflow after reviewing the dry-run result.</p>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="pb-3">
@@ -85,7 +96,7 @@ export default function DashboardAgentSettingsPage() {
             {[
               "Read tools are allowed.",
               "Write-safe tools default to dry-run.",
-              "Real writes require explicit human approval.",
+              "Agent-token writes are preview-only; real writes require an approved user session.",
               "Dangerous tools are blocked.",
               "Never use service-role keys.",
               "Never print or store tokens.",

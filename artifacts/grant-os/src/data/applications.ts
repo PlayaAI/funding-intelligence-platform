@@ -83,8 +83,8 @@ export const applications: Application[] = [
         question: "Describe your proof of concept and any community validation.",
         wordLimit: 400,
         owner: "Aaron Coombs",
-        status: "Draft Ready",
-        draftAnswer: "The Connect App was field tested during Burning Man 2024 in a real-world intentional community setting. Multiple guided connection sessions were completed with positive qualitative feedback from participants.",
+        status: "Not Started",
+        draftAnswer: "",
         finalAnswer: "",
       },
       {
@@ -162,9 +162,9 @@ export const applications: Application[] = [
         question: "Describe your art project or community innovation.",
         wordLimit: 500,
         owner: "Aaron Coombs",
-        status: "Reviewed",
+        status: "Drafting",
         draftAnswer: "Oracle is an interactive AI experience that blends contemplative tradition with experimental AI interaction design. Community members engage with an AI-generated oracle at community events, exploring reflection and meaning.",
-        finalAnswer: "Oracle is an interactive AI experience that blends contemplative tradition with experimental AI interaction design. Community members engage with an AI-generated oracle at community events, exploring reflection and meaning-making in a shared ritual context. The experience has been presented at three community events with over 200 participants.",
+        finalAnswer: "",
       },
     ],
     requiredDocs: [

@@ -134,6 +134,14 @@ export default function DashboardAgentKnowledgePage() {
         <Badge variant="outline" className="w-fit border-blue-200 bg-blue-50 text-blue-700">Operational AI manual</Badge>
       </div>
 
+      <Card className="border-blue-200 bg-blue-50/70 shadow-sm">
+        <CardContent className="space-y-1.5 py-4 text-sm text-blue-950">
+          <div className="font-semibold">Evidence source of truth</div>
+          <p>The Google Drive Grant Knowledge &amp; Evidence Library is the primary evidence repository. Grant OS is the operating index and must preserve the Claim Register status for every funder-facing claim.</p>
+          <p className="text-xs text-blue-800">Needs Confirmation, Background Only, Do Not Use, and outdated items must never be presented as approved. Fiscal sponsorship through Mystic Arts Foundation is distinct from Playa AI having standalone 501(c)(3) status.</p>
+        </CardContent>
+      </Card>
+
       <Tabs defaultValue="briefing" className="space-y-4">
         <TabsList className="h-auto flex flex-wrap justify-start gap-1 bg-slate-100 p-1">
           <TabsTrigger value="briefing" className="text-xs">Briefing</TabsTrigger>

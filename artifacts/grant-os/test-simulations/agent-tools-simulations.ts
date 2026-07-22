@@ -95,6 +95,31 @@ async function run() {
         const second = await registry.execute("generate_application_checklist", { applicationId: "app-1", dryRun: false });
         assert(first.ok && second.ok, "checklist executions should succeed");
         assert(first.data.createdTasks.length === second.data.createdTasks.length, "expected idempotent checklist generation");
+        assert(first.data.createdTasks.every((task: { related_application_id?: string }) => task.related_application_id === "app-1"), "checklist tasks should link to the application");
+        assert(first.data.createdTasks.every((task: { related_grant_id?: string | null }) => task.related_grant_id === "grant-1"), "checklist tasks should link to the grant");
+      },
+    },
+    {
+      name: "mark_grant_status defaults to dry-run and does not mutate",
+      fn: async () => {
+        const before = repo.snapshot().grants.find((grant) => grant.id === "grant-2");
+        const result = await registry.execute("mark_grant_status", { grantId: "grant-2", status: "Archived" });
+        const after = repo.snapshot().grants.find((grant) => grant.id === "grant-2");
+        assert(result.ok, "mark_grant_status dry-run should succeed");
+        assert(result.data.dryRun === true, "mark_grant_status should default to dry-run");
+        assert(result.data.mutationPerformed === false, "dry-run should not mutate the grant");
+        assert(before?.status === after?.status, "dry-run changed grant status");
+      },
+    },
+    {
+      name: "mark_grant_status archives without deleting the grant",
+      fn: async () => {
+        const beforeCount = repo.snapshot().grants.length;
+        const result = await registry.execute("mark_grant_status", { grantId: "grant-2", status: "Archived", dryRun: false });
+        const after = repo.snapshot();
+        assert(result.ok, "mark_grant_status real write should succeed");
+        assert(after.grants.length === beforeCount, "archive status change deleted a grant");
+        assert(after.grants.find((grant) => grant.id === "grant-2")?.status === "Archived", "grant was not marked Archived");
       },
     },
     {

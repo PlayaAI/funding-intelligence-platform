@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ProofItemType, proofItems as fallbackProofItems, proofTypeLabels } from "@/data/proofItems";
+import { ProofItemType, proofTypeLabels } from "@/data/proofItems";
 import ProofItemCard from "@/components/public/ProofItemCard";
 import PageHeader from "@/components/public/PageHeader";
 import { FileText, Presentation, BarChart3, Monitor, Clock } from "lucide-react";
@@ -19,9 +19,7 @@ const typeDescriptions: Record<string, { desc: string; Icon: React.FC<{ classNam
 export default function ProofPage() {
   const [activeType, setActiveType] = useState<"All" | ProofItemType>("All");
   const { data: publicProof = [], isLoading, isError, error } = usePublicProofItems();
-  const proofItems = isError
-    ? fallbackProofItems.filter((item) => item.isPublic)
-    : publicProof.map(publicProofToCard);
+  const proofItems = publicProof.map(publicProofToCard);
 
   const filtered = activeType === "All" ? proofItems : proofItems.filter((p) => p.type === activeType);
 
@@ -39,7 +37,7 @@ export default function ProofPage() {
       <PageHeader
         label="Proof"
         title="Evidence of real work"
-        subtitle="A public record of everything we've built, run, published, and documented. Proof-first, not claim-first."
+        subtitle="Public evidence records intentionally published through Grant OS. Primary documentation remains required for funder-facing claims."
       />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
@@ -73,7 +71,7 @@ export default function ProofPage() {
         )}
         {isError && (
           <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            Public proof data is temporarily unavailable. Showing curated public proof items.
+            Public proof data is temporarily unavailable. No fallback claims are being shown.
             <span className="block text-xs mt-1">{error instanceof Error ? error.message : "Unknown error"}</span>
           </div>
         )}
