@@ -15,24 +15,38 @@ import { createHash, randomBytes } from "node:crypto";
 // ── Scopes ─────────────────────────────────────────────────────────────────
 
 /**
- * Valid scopes for V2.11H agent tokens.
- * mcp:write_safe_execute is intentionally NOT defined here.
- * Any token claiming that scope is downgraded to mcp:write_safe_dry_run.
+ * Valid scopes for permissioned agent tokens. Real-write is recognised so the
+ * adapter can return a precise approval_required response, but token creation
+ * rejects it until an RLS-safe delegated authorization path exists.
  */
 export const VALID_AGENT_TOKEN_SCOPES = [
   "mcp:read",
   "mcp:write_safe_dry_run",
+  "mcp:write_safe_real",
+  "mcp:grants:archive",
+  "mcp:grants:update_status",
+  "mcp:grants:top_three",
+  "mcp:applications:create",
+  "mcp:applications:update",
+  "mcp:tasks:create",
+  "mcp:tasks:update",
+  "mcp:proof:read",
+  "mcp:proof:update",
+  "mcp:knowledge:read",
+  "mcp:knowledge:propose",
+  "mcp:audit:read",
 ] as const;
 
 export type AgentTokenScope = (typeof VALID_AGENT_TOKEN_SCOPES)[number];
 
-/** Normalise an array of raw scope strings, discarding unknowns and downgrading
- *  future/invalid scopes. Never returns mcp:write_safe_execute. */
+/** Normalise raw scopes and discard unknown values. The legacy
+ * mcp:write_safe_execute name is downgraded to preview-only access. */
 export function normaliseScopes(raw: string[]): AgentTokenScope[] {
   const out: AgentTokenScope[] = [];
   for (const s of raw) {
-    if (s === "mcp:read" || s === "mcp:write_safe_dry_run") {
-      if (!out.includes(s)) out.push(s);
+    if ((VALID_AGENT_TOKEN_SCOPES as readonly string[]).includes(s)) {
+      const scope = s as AgentTokenScope;
+      if (!out.includes(scope)) out.push(scope);
     }
     // mcp:write_safe_execute → downgrade silently
     if (s === "mcp:write_safe_execute" && !out.includes("mcp:write_safe_dry_run")) {
@@ -119,8 +133,35 @@ export function validateAgentTokenRecord(
 // ── Scope enforcement (called from handleCall) ─────────────────────────────
 
 export type ScopeCheckResult =
-  | { allowed: true; forceDryRun: boolean }
-  | { allowed: false; code: "scope_insufficient"; message: string };
+  | { allowed: true; forceDryRun: boolean; requiredScope: AgentTokenScope | null }
+  | { allowed: false; code: "scope_insufficient" | "dry_run_required" | "approval_required"; message: string; requiredScope: AgentTokenScope | null };
+
+const TOOL_SCOPES: Record<string, AgentTokenScope> = {
+  archive_grant: "mcp:grants:archive",
+  batch_archive_expired_grants: "mcp:grants:archive",
+  mark_grant_status: "mcp:grants:update_status",
+  update_grant_status: "mcp:grants:update_status",
+  update_grant_notes: "mcp:grants:update_status",
+  set_top_three_grant: "mcp:grants:top_three",
+  remove_top_three_grant: "mcp:grants:top_three",
+  create_application_from_grant: "mcp:applications:create",
+  update_application_status: "mcp:applications:update",
+  add_application_note: "mcp:applications:update",
+  generate_application_checklist: "mcp:tasks:create",
+  bulk_create_tasks_from_checklist: "mcp:tasks:create",
+  create_task: "mcp:tasks:create",
+  update_task_status: "mcp:tasks:update",
+  update_task_due_date: "mcp:tasks:update",
+  create_proof_item: "mcp:proof:update",
+  update_proof_item_status: "mcp:proof:update",
+  link_proof_item_to_grant: "mcp:proof:update",
+  link_proof_item_to_project: "mcp:proof:update",
+  propose_agent_knowledge_update: "mcp:knowledge:propose",
+};
+
+export function requiredScopeForTool(toolName: string): AgentTokenScope | null {
+  return TOOL_SCOPES[toolName] ?? null;
+}
 
 /**
  * Check whether an agent token's scopes allow calling a tool of a given
@@ -134,25 +175,44 @@ export type ScopeCheckResult =
  */
 export function checkAgentTokenScope(
   scopes: string[],
-  permissionLevel: string
+  permissionLevel: string,
+  toolName = "",
+  requestedDryRun = true,
 ): ScopeCheckResult {
   if (permissionLevel === "read") {
     // mcp:read is always present (enforced at normaliseScopes level)
     if (hasScope(scopes, "mcp:read")) {
-      return { allowed: true, forceDryRun: false };
+      return { allowed: true, forceDryRun: false, requiredScope: null };
     }
-    return { allowed: false, code: "scope_insufficient", message: "Token has no valid MCP scope." };
+    return { allowed: false, code: "scope_insufficient", message: "Token has no valid MCP read scope.", requiredScope: "mcp:read" };
   }
 
   if (permissionLevel === "write_safe") {
+    const requiredScope = requiredScopeForTool(toolName);
+    const granularScopes = Object.values(TOOL_SCOPES);
+    const hasAnyGranularScope = scopes.some((scope) => granularScopes.includes(scope as AgentTokenScope));
+    if (requiredScope && hasAnyGranularScope && !scopes.includes(requiredScope)) {
+      return { allowed: false, code: "scope_insufficient", message: `This tool requires ${requiredScope}.`, requiredScope };
+    }
+    if (!requestedDryRun) {
+      if (!hasScope(scopes, "mcp:write_safe_real")) {
+        return { allowed: false, code: "dry_run_required", message: "This token can preview writes only. Retry with dryRun: true.", requiredScope: "mcp:write_safe_real" };
+      }
+      return {
+        allowed: false,
+        code: "approval_required",
+        message: "Real writes from opaque agent tokens are disabled until RLS-safe delegated authorization is configured. Use an authenticated user session for an approved real write.",
+        requiredScope: "mcp:write_safe_real",
+      };
+    }
     if (hasScope(scopes, "mcp:write_safe_dry_run")) {
-      // dryRun is ALWAYS forced true for agent tokens, regardless of caller input
-      return { allowed: true, forceDryRun: true };
+      return { allowed: true, forceDryRun: true, requiredScope };
     }
     return {
       allowed: false,
       code: "scope_insufficient",
       message: "This token only has mcp:read scope and cannot call write_safe tools. Add mcp:write_safe_dry_run scope to a new token.",
+      requiredScope: requiredScope ?? "mcp:write_safe_dry_run",
     };
   }
 
@@ -162,6 +222,7 @@ export function checkAgentTokenScope(
     allowed: false,
     code: "scope_insufficient",
     message: "Agent tokens cannot call this tool.",
+    requiredScope: null,
   };
 }
 
