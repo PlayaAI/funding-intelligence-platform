@@ -218,16 +218,17 @@ function blockedToolResponse(): McpAdapterResponse {
   };
 }
 
-function scopeInsufficientResponse(message: string): McpAdapterResponse {
+function scopeDeniedResponse(code: "scope_insufficient" | "dry_run_required" | "approval_required", message: string, requiredScope: string | null): McpAdapterResponse {
   return {
     status: 403,
     body: {
       ok: false,
       blocked: true,
       error: {
-        code: "scope_insufficient",
+        code,
         message,
       },
+      requiredScope,
       do_not_retry: true,
     },
   };
@@ -291,6 +292,10 @@ function normalizeCallSuccess(tool: ToolMetadata, input: JsonRecord, data: unkno
     : dryRun
       ? "dry_run"
       : "real_write";
+  const resultData = data && typeof data === "object" ? data as JsonRecord : {};
+  const affectedRecordIds = Array.isArray(resultData.affectedRecordIds) ? resultData.affectedRecordIds : [];
+  const plannedMutation = resultData.plannedMutation ?? (resultData.planned_mutation ?? null);
+  const appliedMutation = resultData.appliedMutation ?? null;
 
   return {
     ok: true,
@@ -299,6 +304,10 @@ function normalizeCallSuccess(tool: ToolMetadata, input: JsonRecord, data: unkno
     dryRun,
     mutationPerformed,
     writeDisposition,
+    affectedRecordIds,
+    plannedMutation: dryRun ? plannedMutation : null,
+    appliedMutation: mutationPerformed ? appliedMutation : null,
+    requiredScopeForRealWrite: tool.permissionLevel === "write_safe" ? "mcp:write_safe_real" : null,
     content: [
       {
         type: "json",
@@ -448,9 +457,10 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
 
       if (authContext.source === "agent-token") {
         const scopes = authContext.agentTokenScopes ?? [];
-        const scopeCheck = checkAgentTokenScope(scopes, metadata.permissionLevel);
+        const requestedDryRun = input.dryRun !== false;
+        const scopeCheck = checkAgentTokenScope(scopes, metadata.permissionLevel, request.name, requestedDryRun);
         if (!scopeCheck.allowed) {
-          return scopeInsufficientResponse(scopeCheck.message);
+          return scopeDeniedResponse(scopeCheck.code, scopeCheck.message, scopeCheck.requiredScope);
         }
         // For write_safe tools via agent token: dryRun is ALWAYS forced true,
         // even if the caller explicitly sent dryRun: false.

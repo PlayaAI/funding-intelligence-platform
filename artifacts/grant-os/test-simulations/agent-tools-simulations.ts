@@ -883,6 +883,34 @@ async function run() {
         assert(result.error.code === "application_not_found", `expected application_not_found, got ${result.error.code}`);
       },
     },
+    {
+      name: "V2.12: archive_grant dry-run clears Top 3 in preview without mutation",
+      fn: async () => {
+        const before = repo.snapshot().grants.find((grant) => grant.id === "grant-1");
+        const result = await registry.execute("archive_grant", { grantId: "grant-1", reason: "Deadline passed", dryRun: true });
+        const after = repo.snapshot().grants.find((grant) => grant.id === "grant-1");
+        assert(result.ok, "archive_grant preview should succeed");
+        assert(before?.archived_at === after?.archived_at, "dry run must not archive");
+        assert(JSON.stringify(result.data).includes('"is_top_three":false'), "preview must clear Top 3");
+      },
+    },
+    {
+      name: "V2.12: set_top_three_grant safely mutates an active grant",
+      fn: async () => {
+        const result = await registry.execute("set_top_three_grant", { grantId: "grant-1", dryRun: false });
+        assert(result.ok, "set_top_three_grant should succeed");
+        assert(repo.snapshot().grants.find((grant) => grant.id === "grant-1")?.is_top_three === true, "grant should be Top 3");
+      },
+    },
+    {
+      name: "V2.12: update_application_status previews without mutation",
+      fn: async () => {
+        const before = repo.snapshot().applications.find((application) => application.id === "app-1")?.status;
+        const result = await registry.execute("update_application_status", { applicationId: "app-1", status: "Drafting" });
+        assert(result.ok, "application status preview should succeed");
+        assert(repo.snapshot().applications.find((application) => application.id === "app-1")?.status === before, "preview must not mutate application");
+      },
+    },
   ];
 
 

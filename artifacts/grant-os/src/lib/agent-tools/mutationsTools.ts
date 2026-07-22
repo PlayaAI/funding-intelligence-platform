@@ -313,6 +313,101 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
       },
     },
     {
+      name: "archive_grant",
+      description: "Soft-archive a grant and remove it from Top 3 without deleting it.",
+      permissionLevel: "write_safe",
+      inputSchema: z.object({ grantId: z.string().min(1), reason: z.string().min(3), dryRun: z.boolean().default(true) }),
+      dryRunSupported: true,
+      auditAction: "status_updated",
+      risks: ["Archived grants disappear from active triage views."],
+      relatedTables: ["grants"],
+      touchesRealDb: true,
+      async execute({ grantId, reason, dryRun }) {
+        const grant = await repository.getGrant(grantId);
+        if (!grant) throw makeToolError("grant_not_found", `Grant ${grantId} was not found or is already archived.`);
+        const values = { status: "Archived" as const, archived_at: new Date().toISOString(), is_top_three: false, notes: [grant.notes, `Archive reason: ${reason}`].filter(Boolean).join("\n") };
+        const plannedMutation = { table: "grants", action: "soft_archive", id: grantId, values };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { before: { status: grant.status, is_top_three: grant.is_top_three, archived_at: grant.archived_at } });
+        const updated = await repository.updateGrant(grantId, values);
+        return { dryRun: false, mutationPerformed: true, affectedRecordIds: [grantId], appliedMutation: plannedMutation, before: { status: grant.status, is_top_three: grant.is_top_three }, after: { status: updated.status, is_top_three: updated.is_top_three, archived_at: updated.archived_at } };
+      },
+    },
+    {
+      name: "set_top_three_grant",
+      description: "Set an active, unexpired grant as Top 3.",
+      permissionLevel: "write_safe",
+      inputSchema: z.object({ grantId: z.string().min(1), dryRun: z.boolean().default(true) }),
+      dryRunSupported: true,
+      auditAction: "status_updated",
+      risks: ["Top 3 placement changes operator priorities."],
+      relatedTables: ["grants"],
+      touchesRealDb: true,
+      async execute({ grantId, dryRun }) {
+        const grant = await repository.getGrant(grantId);
+        if (!grant) throw makeToolError("grant_not_found", `Grant ${grantId} was not found.`);
+        const deadline = grant.deadline ?? grant.next_deadline;
+        if (deadline && new Date(`${deadline}T23:59:59Z`).getTime() < Date.now()) throw makeToolError("grant_expired", "Expired grants cannot be added to Top 3.");
+        if (["Archived", "Rejected", "Not Eligible"].includes(grant.status)) throw makeToolError("grant_inactive", `A grant with status ${grant.status} cannot be added to Top 3.`);
+        const plannedMutation = { table: "grants", action: "update", id: grantId, values: { is_top_three: true } };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { previousValue: grant.is_top_three });
+        return { dryRun: false, mutationPerformed: true, affectedRecordIds: [grantId], grant: await repository.updateGrant(grantId, { is_top_three: true }) };
+      },
+    },
+    {
+      name: "remove_top_three_grant",
+      description: "Remove a grant from Top 3 without archiving it.",
+      permissionLevel: "write_safe",
+      inputSchema: z.object({ grantId: z.string().min(1), dryRun: z.boolean().default(true) }),
+      dryRunSupported: true,
+      auditAction: "status_updated",
+      risks: ["Top 3 placement changes operator priorities."],
+      relatedTables: ["grants"],
+      touchesRealDb: true,
+      async execute({ grantId, dryRun }) {
+        const grant = await repository.getGrant(grantId);
+        if (!grant) throw makeToolError("grant_not_found", `Grant ${grantId} was not found.`);
+        const plannedMutation = { table: "grants", action: "update", id: grantId, values: { is_top_three: false } };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { previousValue: grant.is_top_three });
+        return { dryRun: false, mutationPerformed: true, affectedRecordIds: [grantId], grant: await repository.updateGrant(grantId, { is_top_three: false }) };
+      },
+    },
+    {
+      name: "update_application_status",
+      description: "Update an internal application status.",
+      permissionLevel: "write_safe",
+      inputSchema: z.object({ applicationId: z.string().min(1), status: applicationStatusSchema, dryRun: z.boolean().default(true) }),
+      dryRunSupported: true,
+      auditAction: "status_updated",
+      risks: ["Application status changes affect the operating pipeline."],
+      relatedTables: ["applications"],
+      touchesRealDb: true,
+      async execute({ applicationId, status, dryRun }) {
+        const application = await repository.getApplication(applicationId);
+        if (!application) throw makeToolError("application_not_found", `Application ${applicationId} was not found.`);
+        const plannedMutation = { table: "applications", action: "update", id: applicationId, values: { status } };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["applications"], { previousStatus: application.status });
+        return { dryRun: false, mutationPerformed: true, affectedRecordIds: [applicationId], application: await repository.updateApplication(applicationId, { status }) };
+      },
+    },
+    {
+      name: "update_task_due_date",
+      description: "Update or clear a task due date.",
+      permissionLevel: "write_safe",
+      inputSchema: z.object({ taskId: z.string().min(1), dueDate: z.string().date().nullable(), dryRun: z.boolean().default(true) }),
+      dryRunSupported: true,
+      auditAction: "status_updated",
+      risks: ["Due dates affect deadline planning."],
+      relatedTables: ["tasks"],
+      touchesRealDb: true,
+      async execute({ taskId, dueDate, dryRun }) {
+        const task = await repository.getTask(taskId);
+        if (!task) throw makeToolError("task_not_found", `Task ${taskId} was not found.`);
+        const plannedMutation = { table: "tasks", action: "update", id: taskId, values: { due_date: dueDate } };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["tasks"], { previousDueDate: task.due_date });
+        return { dryRun: false, mutationPerformed: true, affectedRecordIds: [taskId], task: await repository.updateTask(taskId, { due_date: dueDate }) };
+      },
+    },
+    {
       name: "save_grant_to_shortlist",
       description: "Save a grant to the shortlist tracker without destructive changes.",
       permissionLevel: "write_safe",

@@ -708,6 +708,18 @@ async function handleAgentTokens(request: IncomingMessage, response: ServerRespo
     const label = typeof body.label === "string" ? body.label.trim() : "";
     const expiryDays = typeof body.expiryDays === "number" && body.expiryDays > 0 ? body.expiryDays : null;
     const rawScopes = Array.isArray(body.scopes) ? (body.scopes as unknown[]).filter((s): s is string => typeof s === "string") : ["mcp:read"];
+    if (!label || label.length > 80) {
+      sendJson(response, 400, { ok: false, error: { code: "invalid_label", message: "Token label must be between 1 and 80 characters." } });
+      return true;
+    }
+    if (expiryDays !== null && (!Number.isInteger(expiryDays) || expiryDays > 365)) {
+      sendJson(response, 400, { ok: false, error: { code: "invalid_expiration", message: "Token expiration must be a whole number from 1 to 365 days." } });
+      return true;
+    }
+    if (rawScopes.includes("mcp:write_safe_real")) {
+      sendJson(response, 403, { ok: false, error: { code: "approval_required", message: "Real-write agent tokens are disabled until RLS-safe delegated authorization is configured." } });
+      return true;
+    }
     const scopes = normaliseScopes(rawScopes);
 
     const expiresAt = expiryDays ? new Date(Date.now() + expiryDays * 86400 * 1000).toISOString() : null;

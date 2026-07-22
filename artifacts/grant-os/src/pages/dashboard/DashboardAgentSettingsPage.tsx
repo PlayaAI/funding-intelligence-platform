@@ -1,6 +1,12 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bot, CheckCircle2, Lock, ShieldAlert, Terminal } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { createAgentToken, listAgentTokens, revokeAgentToken, type AgentTokenMetadata } from "@/lib/agent-mcp/agentTokenClient";
+import { Bot, CheckCircle2, Copy, KeyRound, Lock, ShieldAlert, Terminal } from "lucide-react";
+import { useEffect, useState } from "react";
 
 const baseUrl = "https://grant-os.replit.app";
 
@@ -15,6 +21,21 @@ const endpoints = [
 const readTools = ["list_grants", "search_grants", "get_grant", "get_dashboard_summary", "get_deadline_report", "generate_application_readiness_report"];
 const writeSafeTools = ["create_task", "create_application_from_grant", "generate_application_checklist", "save_agent_match"];
 const blockedTools = ["archive_record", "run_scraping_job", "submission or outreach tools"];
+
+const selectableScopes = [
+  ["mcp:read", "Read compact Grant OS context"],
+  ["mcp:write_safe_dry_run", "Preview safe mutations"],
+  ["mcp:grants:archive", "Preview grant archives"],
+  ["mcp:grants:update_status", "Preview grant status changes"],
+  ["mcp:grants:top_three", "Preview Top 3 changes"],
+  ["mcp:applications:create", "Preview application creation"],
+  ["mcp:applications:update", "Preview application updates"],
+  ["mcp:tasks:create", "Preview task/checklist creation"],
+  ["mcp:tasks:update", "Preview task updates"],
+  ["mcp:proof:read", "Read proof metadata"],
+  ["mcp:knowledge:read", "Read Agent Knowledge"],
+  ["mcp:audit:read", "Read audit metadata"],
+] as const;
 
 const prompt = "Use Grant OS as the source of truth. Read grants, projects, deadlines, tasks, proof items, documents, and reports. Rank opportunities by fit, urgency, deadline, eligibility, funding relevance, effort, and evidence readiness. Use your own AI judgment. Do not mutate data unless I approve. Use dry-run first.";
 
@@ -50,12 +71,76 @@ const curlCommands = [
 ];
 
 export default function DashboardAgentSettingsPage() {
+  const [tokens, setTokens] = useState<AgentTokenMetadata[]>([]);
+  const [label, setLabel] = useState("");
+  const [expiryDays, setExpiryDays] = useState(30);
+  const [scopes, setScopes] = useState<string[]>(["mcp:read"]);
+  const [plaintext, setPlaintext] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshTokens = async () => {
+    try { setTokens(await listAgentTokens()); } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not load tokens."); }
+  };
+  useEffect(() => { void refreshTokens(); }, []);
+
+  const createToken = async () => {
+    setBusy(true); setError(null); setPlaintext(null);
+    try {
+      const result = await createAgentToken({ label, expiryDays, scopes });
+      setPlaintext(result.token); setLabel(""); await refreshTokens();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not create token."); }
+    finally { setBusy(false); }
+  };
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
       <div>
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2"><Bot size={18} />Agent Setup</h1>
         <p className="text-sm text-slate-500 mt-0.5">Connect external AI assistants to Grant OS through authenticated, dry-run-first tools.</p>
       </div>
+
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2"><KeyRound size={15} />Agent access tokens</CardTitle>
+          <CardDescription className="text-xs">Tokens are hashed at rest. The plaintext is displayed once; rotation means create a replacement, update the agent, then revoke the old token.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
+          {plaintext && (
+            <div className="rounded border border-amber-300 bg-amber-50 p-3 space-y-2">
+              <div className="text-sm font-semibold text-amber-950">Copy now — this token will not be shown again.</div>
+              <div className="flex gap-2"><code className="min-w-0 flex-1 overflow-auto rounded bg-slate-950 p-2 text-xs text-white">{plaintext}</code><Button variant="outline" size="sm" onClick={() => void navigator.clipboard.writeText(plaintext)}><Copy size={14} /></Button></div>
+              <Button variant="ghost" size="sm" onClick={() => setPlaintext(null)}>I stored it securely</Button>
+            </div>
+          )}
+          <div className="grid gap-3 sm:grid-cols-[1fr_140px_auto] sm:items-end">
+            <div className="space-y-1"><Label htmlFor="token-label">Token label</Label><Input id="token-label" value={label} maxLength={80} onChange={(event) => setLabel(event.target.value)} placeholder="Alex – grant triage" /></div>
+            <div className="space-y-1"><Label htmlFor="token-expiry">Expires in days</Label><Input id="token-expiry" type="number" min={1} max={365} value={expiryDays} onChange={(event) => setExpiryDays(Number(event.target.value))} /></div>
+            <Button disabled={busy || !label.trim()} onClick={() => void createToken()}>{busy ? "Creating…" : "Create token"}</Button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {selectableScopes.map(([scope, summary]) => (
+              <label key={scope} className="flex items-start gap-2 rounded border border-slate-200 p-2 text-xs">
+                <Checkbox checked={scopes.includes(scope)} disabled={scope === "mcp:read"} onCheckedChange={(checked) => setScopes((current) => checked ? [...new Set([...current, scope])] : current.filter((item) => item !== scope))} />
+                <span><code>{scope}</code><span className="block text-slate-500">{summary}</span></span>
+              </label>
+            ))}
+          </div>
+          <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><strong>Real-write scope is unavailable:</strong> opaque tokens cannot yet write under a human’s RLS identity. Approved real writes must use an authenticated user session.</div>
+          <div className="space-y-2">
+            {tokens.length === 0 && <div className="text-sm text-slate-500">No agent tokens created.</div>}
+            {tokens.map((token) => {
+              const expired = Boolean(token.expires_at && new Date(token.expires_at) <= new Date());
+              const state = token.revoked_at ? "Revoked" : expired ? "Expired" : "Active";
+              return <div key={token.id} className="flex flex-col gap-2 rounded border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0"><div className="font-medium text-sm">{token.label} <Badge variant={state === "Active" ? "outline" : "secondary"}>{state}</Badge></div><div className="text-xs text-slate-500">{token.token_prefix}… · created {new Date(token.created_at).toLocaleDateString()} · expires {token.expires_at ? new Date(token.expires_at).toLocaleDateString() : "never"} · last used {token.last_used_at ? new Date(token.last_used_at).toLocaleString() : "never"}</div><div className="mt-1 flex flex-wrap gap-1">{token.scopes.map((scope) => <Badge key={scope} variant="secondary" className="text-[10px]">{scope}</Badge>)}</div></div>
+                {!token.revoked_at && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { setBusy(true); setError(null); try { await revokeAgentToken(token.id); await refreshTokens(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not revoke token."); } finally { setBusy(false); } }}>Revoke</Button>}
+              </div>;
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-3">

@@ -9,6 +9,7 @@ import {
   listApplications,
   listApplicationsByGrant,
   createApplication,
+  updateApplication,
 } from "../applicationsService";
 import { createAgentActivity } from "../agentActivityService";
 import {
@@ -52,6 +53,7 @@ import type {
   ApplicationQuestionRow,
   ApplicationRequiredDocumentRow,
   ApplicationInsert,
+  ApplicationUpdate,
   ApplicationRow,
   DocumentRow,
   FunderRow,
@@ -59,6 +61,7 @@ import type {
   GrantMatchInsert,
   GrantMatchRow,
   GrantRow,
+  GrantUpdate,
   Json,
   PeerFundingRecordRow,
   PeerOrganizationRow,
@@ -66,6 +69,7 @@ import type {
   ProofItemRow,
   TaskDbStatus,
   TaskRow,
+  TaskUpdate,
 } from "../../types/database";
 import type { GrantMatchWithRelations } from "../matching/matchesService";
 import type { ToolAuditPayload } from "./types";
@@ -74,6 +78,7 @@ export type GrantOsRepository = {
   listGrants(): Promise<GrantRow[]>;
   getGrant(id: string): Promise<GrantRow | null>;
   updateGrantStatus(id: string, status: GrantDbStatus): Promise<GrantRow>;
+  updateGrant(id: string, updates: GrantUpdate): Promise<GrantRow>;
   listFunders(): Promise<FunderRow[]>;
   getFunder(id: string): Promise<FunderRow | null>;
   listDocuments(filters?: {
@@ -94,11 +99,13 @@ export type GrantOsRepository = {
   listApplicationQuestions(applicationId: string): Promise<ApplicationQuestionRow[]>;
   listApplicationRequiredDocuments(applicationId: string): Promise<ApplicationRequiredDocumentRow[]>;
   createApplication(input: Omit<ApplicationInsert, "id" | "created_at" | "updated_at">): Promise<ApplicationRow>;
+  updateApplication(id: string, updates: ApplicationUpdate): Promise<ApplicationRow>;
   listTasks(opts?: { includeSoftArchived?: boolean; relatedIds?: string[] }): Promise<TaskRow[]>;
   getTask(id: string): Promise<TaskRow | null>;
   listTasksByApplication(applicationId: string): Promise<TaskRow[]>;
   createTask(input: Omit<TaskRow, "id" | "created_at" | "updated_at">): Promise<TaskRow>;
   updateTaskStatus(id: string, status: TaskDbStatus): Promise<TaskRow>;
+  updateTask(id: string, updates: TaskUpdate): Promise<TaskRow>;
   listPeers(): Promise<PeerOrganizationRow[]>;
   getPeer(id: string): Promise<PeerOrganizationRow | null>;
   listPeerFundingRecords(peerOrganizationId: string): Promise<PeerFundingRecordRow[]>;
@@ -252,6 +259,7 @@ export function createLiveGrantOsRepository(
     listGrants: () => listGrants(undefined, agentSupabase),
     getGrant: (id) => getGrantById(id, agentSupabase),
     updateGrantStatus: (id, status) => updateGrant(id, { status }, agentSupabase),
+    updateGrant: (id, updates) => updateGrant(id, updates, agentSupabase),
     listFunders: () => listFunders(agentSupabase),
     getFunder: (id) => getFunderByIdOrLegacy(id, agentSupabase),
     listDocuments: (filters) => listDocuments(filters, agentSupabase),
@@ -278,6 +286,7 @@ export function createLiveGrantOsRepository(
     listApplicationQuestions: (applicationId) => listApplicationQuestions(applicationId, agentSupabase),
     listApplicationRequiredDocuments: (applicationId) => listApplicationRequiredDocuments(applicationId, agentSupabase),
     createApplication: (input) => createApplication(input, agentSupabase),
+    updateApplication: (id, updates) => updateApplication(id, updates, agentSupabase),
     listTasks: (opts) => listTasks(opts, agentSupabase),
     getTask: (id) => getTaskById(id, agentSupabase),
     listTasksByApplication: (applicationId) => listTasksByApplication(applicationId, agentSupabase),
@@ -285,6 +294,7 @@ export function createLiveGrantOsRepository(
     async updateTaskStatus(id, status) {
       return updateTask(id, { status }, agentSupabase);
     },
+    updateTask: (id, updates) => updateTask(id, updates, agentSupabase),
     listPeers: () => listPeerOrganizations(undefined, agentSupabase),
     getPeer: (id) => getPeerByIdOrLegacy(id, agentSupabase),
     listPeerFundingRecords: (peerOrganizationId) => listPeerFundingRecords(peerOrganizationId, agentSupabase),

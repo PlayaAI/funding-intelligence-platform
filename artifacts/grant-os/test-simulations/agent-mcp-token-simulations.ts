@@ -206,19 +206,18 @@ async function run() {
       },
     },
 
-    // ── 5. write_safe_dry_run token forces dryRun true even if caller sends false ─
+    // ── 5. Explicit real-write intent is rejected for preview-only tokens ─
     {
-      name: "V2.11H: write_safe_dry_run token + dryRun:false → dryRun forced true",
+      name: "V2.12: write_safe_dry_run token + dryRun:false → dry_run_required",
       fn: async () => {
         const before = repository.snapshot().tasks.length;
         const result = await adapter.handleCall(
           { authorization: `Bearer ${writeSafeDryRunToken}` },
           { name: "create_task", arguments: { title: "Test task", dryRun: false } }
         );
-        assert(result.status === 200, `expected 200, got ${result.status}: ${JSON.stringify(result.body)}`);
-        const body = result.body as { dryRun?: boolean; writeDisposition?: string };
-        assert(body.dryRun === true, `expected dryRun=true, got ${body.dryRun}`);
-        assert(body.writeDisposition === "dry_run", `expected dry_run disposition, got ${body.writeDisposition}`);
+        assert(result.status === 403, `expected 403, got ${result.status}: ${JSON.stringify(result.body)}`);
+        const body = result.body as { error?: { code?: string } };
+        assert(body.error?.code === "dry_run_required", `expected dry_run_required, got ${body.error?.code}`);
         const after = repository.snapshot().tasks.length;
         assert(before === after, "dryRun forced: no task should be created in repository");
       },
@@ -371,35 +370,33 @@ async function run() {
       },
     },
 
-    // ── 17. mcp:write_safe_execute scope downgraded to dry_run ─────────────
+    // ── 17. Legacy execute scope cannot authorize a real write ─────────────
     {
-      name: "V2.11H: token with mcp:write_safe_execute scope downgraded → dryRun forced",
+      name: "V2.12: legacy execute scope cannot authorize real write",
       fn: async () => {
         const { plaintext: futureScopeToken } = tokenStore.addToken({ scopes: ["mcp:write_safe_execute"] });
         const result = await adapter.handleCall(
           { authorization: `Bearer ${futureScopeToken}` },
           { name: "create_task", arguments: { title: "Future scope test", dryRun: false } }
         );
-        // mcp:write_safe_execute normalised to mcp:write_safe_dry_run
-        assert(result.status === 200, `expected 200, got ${result.status}: ${JSON.stringify(result.body)}`);
-        const body = result.body as { dryRun?: boolean; writeDisposition?: string };
-        assert(body.dryRun === true, "expected dryRun=true (execute scope downgraded)");
-        assert(body.writeDisposition === "dry_run", "expected dry_run disposition");
+        assert(result.status === 403, `expected 403, got ${result.status}: ${JSON.stringify(result.body)}`);
+        const body = result.body as { error?: { code?: string } };
+        assert(body.error?.code === "dry_run_required", `expected dry_run_required, got ${body.error?.code}`);
       },
     },
 
     // ── 18. save_agent_match defaults to dry-run through agent token ────────
     {
-      name: "V2.11H: save_agent_match via write_safe_dry_run token → dryRun forced true",
+      name: "V2.12: save_agent_match explicit real write is rejected",
       fn: async () => {
         const before = repository.snapshot().grantMatches.length;
         const result = await adapter.handleCall(
           { authorization: `Bearer ${writeSafeDryRunToken}` },
           { name: "save_agent_match", arguments: validAgentMatchArgs({ dryRun: false }) }
         );
-        assert(result.status === 200, `expected 200, got ${result.status}: ${JSON.stringify(result.body)}`);
-        const body = result.body as { dryRun?: boolean };
-        assert(body.dryRun === true, "expected dryRun=true forced by agent token");
+        assert(result.status === 403, `expected 403, got ${result.status}: ${JSON.stringify(result.body)}`);
+        const body = result.body as { error?: { code?: string } };
+        assert(body.error?.code === "dry_run_required", `expected dry_run_required, got ${body.error?.code}`);
         assert(repository.snapshot().grantMatches.length === before, "no mutation should have occurred");
       },
     },
