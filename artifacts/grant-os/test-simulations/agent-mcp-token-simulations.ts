@@ -235,8 +235,8 @@ async function run() {
         );
         assert(result.status === 403, `expected 403, got ${result.status}`);
         assert(
-          JSON.stringify(result.body).includes("approval_required_or_not_enabled"),
-          "expected approval_required_or_not_enabled error"
+          JSON.stringify(result.body).includes("unsupported_operation"),
+          "expected unsupported_operation error"
         );
       },
     },

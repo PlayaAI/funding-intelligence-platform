@@ -145,14 +145,14 @@ async function run() {
       },
     },
     {
-      name: "archive_record returns approval_required_or_not_enabled",
+      name: "archive_record returns unsupported_operation",
       fn: async () => {
         const result = await adapter.handleCall(authHeaders(), {
           name: "archive_record",
           arguments: { recordType: "grant", recordId: "grant-1", reason: "test" },
         });
         assert(result.status === 403, "expected forbidden status");
-        assert(JSON.stringify(result.body).includes("approval_required_or_not_enabled"), "expected approval_required_or_not_enabled error");
+        assert(JSON.stringify(result.body).includes("unsupported_operation"), "expected unsupported_operation error");
       },
     },
     {

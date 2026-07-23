@@ -91,7 +91,7 @@ async function run() {
           arguments: { recordType: "grant", recordId: "grant-1", reason: "test" },
         });
         assert(result.status === 403, "expected forbidden status");
-        assert(JSON.stringify(result.body).includes("approval_required_or_not_enabled"), "expected structured blocked error");
+        assert(JSON.stringify(result.body).includes("unsupported_operation"), "expected structured blocked error");
       },
     },
     {
@@ -155,7 +155,7 @@ async function run() {
         const blocked = result.body.blocked as boolean | undefined;
         const error = (result.body.error ?? {}) as { code?: string; message?: string };
         assert(blocked === true, "expected blocked true");
-        assert(error.code === "approval_required_or_not_enabled", "expected approval_required_or_not_enabled code");
+        assert(error.code === "unsupported_operation", "expected unsupported_operation code");
         assert(typeof error.message === "string" && error.message.length > 0, "expected error message");
       },
     },

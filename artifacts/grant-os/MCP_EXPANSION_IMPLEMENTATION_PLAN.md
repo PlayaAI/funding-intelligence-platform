@@ -1,7 +1,7 @@
 # Grant OS MCP Expansion Implementation Plan
 
-Status: implemented and validated  
-Branch: `agent/expand-mcp-tools`  
+Status: implemented and validated
+Branch: `agent/expand-mcp-tools`
 Scope: `artifacts/grant-os` only
 
 ## 1. Current-state audit
