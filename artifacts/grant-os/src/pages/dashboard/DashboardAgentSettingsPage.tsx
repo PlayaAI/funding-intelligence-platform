@@ -18,8 +18,8 @@ const endpoints = [
   "POST /api/agent/tool",
 ];
 
-const readTools = ["list_grants", "search_grants", "get_grant", "get_dashboard_summary", "get_deadline_report", "generate_application_readiness_report"];
-const writeSafeTools = ["create_task", "create_application_from_grant", "generate_application_checklist", "save_agent_match"];
+const readTools = ["get_agent_token_self", "list_mcp_capabilities", "get_next_best_grant_target", "get_cleanup_preview", "get_deadline_brief", "get_missing_evidence_report"];
+const writeSafeTools = ["batch_archive_expired_grants", "create_application_from_grant", "bulk_create_tasks_from_checklist", "update_task_status", "propose_agent_knowledge_update"];
 const blockedTools = ["archive_record", "run_scraping_job", "submission or outreach tools"];
 
 const selectableScopes = [
@@ -33,7 +33,9 @@ const selectableScopes = [
   ["mcp:tasks:create", "Preview task/checklist creation"],
   ["mcp:tasks:update", "Preview task updates"],
   ["mcp:proof:read", "Read proof metadata"],
+  ["mcp:proof:update", "Preview proof updates"],
   ["mcp:knowledge:read", "Read Agent Knowledge"],
+  ["mcp:knowledge:propose", "Propose knowledge changes for review"],
   ["mcp:audit:read", "Read audit metadata"],
 ] as const;
 

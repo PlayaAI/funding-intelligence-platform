@@ -18,6 +18,16 @@ export interface AgentAuthContext {
    * Never present for normal Supabase JWT paths.
    */
   agentTokenScopes?: string[] | null;
+  /** Safe token metadata only. Never store plaintext or token hashes here. */
+  agentTokenMetadata?: {
+    id: string;
+    label: string;
+    tokenPrefix: string;
+    createdAt: string | null;
+    expiresAt: string | null;
+    revokedAt: string | null;
+    lastUsedAt: string | null;
+  } | null;
 }
 
 export type AgentAuthMode = "anonymous" | "authenticated";

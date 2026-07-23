@@ -64,6 +64,8 @@ function makeTokenStore() {
       scopes: overrides.scopes,
       expires_at: overrides.expires_at ?? null,
       revoked_at: overrides.revoked_at ?? null,
+      created_at: "2026-07-23T00:00:00.000Z",
+      last_used_at: null,
     };
     Object.assign(record, overrides);
     store.set(hash, record);
@@ -313,6 +315,22 @@ async function run() {
         assert(result.body.ok === true, "expected ok true");
       },
     },
+    {
+      name: "V2.13: authenticated user JWT can commit an explicitly approved safe write",
+      fn: async () => {
+        const before = repository.snapshot().tasks.length;
+        const result = await adapter.handleCall(
+          jwtHeaders(normalUserJwt),
+          { name: "create_task", arguments: { title: "Authenticated RLS write simulation", relatedGrantId: "grant-1", dryRun: false } }
+        );
+        assert(result.status === 200, `expected 200, got ${result.status}: ${JSON.stringify(result.body)}`);
+        const body = result.body as { mutationPerformed?: boolean; writeDisposition?: string; affectedRecordIds?: string[] };
+        assert(body.mutationPerformed === true, "expected committed mutation");
+        assert(body.writeDisposition === "committed", `expected committed disposition, got ${body.writeDisposition}`);
+        assert(Array.isArray(body.affectedRecordIds) && body.affectedRecordIds.length === 1, "expected affected task ID");
+        assert(repository.snapshot().tasks.length === before + 1, "expected one in-memory task");
+      },
+    },
 
     // ── 13. service_role JWT still rejected (regression) ───────────────────
     {
@@ -423,6 +441,48 @@ async function run() {
         );
         assert(result.status === 200, `expected 200, got ${result.status}: ${JSON.stringify(result.body)}`);
         assert(result.body.ok === true, "expected ok true");
+      },
+    },
+    {
+      name: "V2.13: get_agent_token_self returns safe metadata without token or hash",
+      fn: async () => {
+        const result = await adapter.handleCall(
+          { authorization: `Bearer ${writeSafeDryRunToken}` },
+          { name: "get_agent_token_self", arguments: {} }
+        );
+        assert(result.status === 200, `expected 200, got ${result.status}`);
+        const serialized = JSON.stringify(result.body);
+        assert(!serialized.includes(writeSafeDryRunToken), "response must not contain plaintext token");
+        assert(!serialized.includes(hashAgentToken(writeSafeDryRunToken)), "response must not contain token hash");
+        assert(serialized.includes("write_safe_dry_run"), "expected effective permission level");
+        assert(serialized.includes("canPreviewWrites"), "expected capability booleans");
+      },
+    },
+    {
+      name: "V2.13: list_mcp_capabilities is token-aware and compact",
+      fn: async () => {
+        const result = await adapter.handleCall(
+          { authorization: `Bearer ${readOnlyToken}` },
+          { name: "list_mcp_capabilities", arguments: {} }
+        );
+        assert(result.status === 200, `expected 200, got ${result.status}`);
+        const serialized = JSON.stringify(result.body);
+        assert(serialized.includes("create_task"), "expected create_task capability");
+        assert(serialized.includes("currentlyAllowed"), "expected allow/deny state");
+        assert(!serialized.includes("inputSchema"), "compact capabilities must omit full schemas");
+      },
+    },
+    {
+      name: "V2.13: opaque token with real scope still requires RLS-safe approval",
+      fn: async () => {
+        const { plaintext } = tokenStore.addToken({ scopes: ["mcp:read", "mcp:write_safe_dry_run", "mcp:write_safe_real", "mcp:tasks:create"] });
+        const result = await adapter.handleCall(
+          { authorization: `Bearer ${plaintext}` },
+          { name: "create_task", arguments: { title: "Blocked opaque real write", dryRun: false } }
+        );
+        assert(result.status === 403, `expected 403, got ${result.status}`);
+        const body = result.body as { error?: { code?: string } };
+        assert(body.error?.code === "approval_required", `expected approval_required, got ${body.error?.code}`);
       },
     },
 

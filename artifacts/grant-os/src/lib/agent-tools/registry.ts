@@ -9,6 +9,7 @@ import { createMutationTools } from "./mutationsTools";
 import { createPeerTools } from "./peersTools";
 import { createProjectTools } from "./projectsTools";
 import { createKnowledgeTools } from "./knowledgeTools";
+import { createOperationsTools } from "./operationsTools";
 import { createLiveGrantOsRepository, type GrantOsRepository } from "./repository";
 import { createReportTools } from "./reportsTools";
 import { makeAuditPayload, normalizeError, summarizeOutput } from "./safety";
@@ -32,6 +33,7 @@ export function buildToolDefinitions(repository: GrantOsRepository): Array<ToolD
     ...createMatchTools(repository),
     ...createReportTools(repository),
     ...createAgentPlanningTools(repository),
+    ...createOperationsTools(repository),
     ...createMutationTools(repository),
     ...createKnowledgeTools(repository),
   ];

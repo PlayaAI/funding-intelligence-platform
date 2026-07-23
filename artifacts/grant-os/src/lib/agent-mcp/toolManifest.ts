@@ -66,6 +66,19 @@ export const MCP_ENABLED_TOOL_NAMES = new Set<string>([
   "get_agent_knowledge_item",
   "get_grant_decision_brief",
   "get_application_prep_context",
+  "get_cleanup_preview",
+  "batch_archive_expired_grants",
+  "list_active_priority_grants_compact",
+  "get_deadline_brief",
+  "get_application_readiness_report",
+  "bulk_create_tasks_from_checklist",
+  "list_proof_items_compact",
+  "get_missing_evidence_report",
+  "list_agent_knowledge_items_compact",
+  "propose_agent_knowledge_update",
+  "get_next_best_grant_target",
+  "get_grant_application_action_plan",
+  "update_grant_priority_fields",
 ]);
 
 const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonRecord }> = {
@@ -133,6 +146,19 @@ const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonR
   // Composite tools — PREFERRED for narrow tasks
   get_grant_decision_brief: { schemaSummary: "{ grantId: string, projectId?: string, projectIds?: string[], maxProjects?: number (max 5) } — PREFERRED for grant-ranking/fit/deadline decisions. Use before any report or export.", exampleInput: { grantId: "grant-1" } },
   get_application_prep_context: { schemaSummary: "{ applicationId: string, includeSuggestedTasks?: boolean (default false) } — PREFERRED for application-prep tasks. Use before any report or export.", exampleInput: { applicationId: "app-1" } },
+  get_cleanup_preview: { schemaSummary: "{ limitPerGroup?: number (default 25, max 100) } — compact, read-only cleanup analysis." },
+  batch_archive_expired_grants: { schemaSummary: "{ grantIds?: string[], includeWithOpenApplications?: boolean, reason?: string, limit?: number, dryRun?: boolean (default true) }" },
+  list_active_priority_grants_compact: { schemaSummary: "{ limit?: number (default 10), includeUnknownDeadline?: boolean, includeClosed?: boolean, projectId?: string }" },
+  get_deadline_brief: { schemaSummary: "{ daysWindow?: number (default 30), limit?: number, includeExpired?: boolean, includeArchived?: boolean, projectId?: string }" },
+  get_application_readiness_report: { schemaSummary: "{ applicationId: string, taskLimit?: number (default 20) } — compact application-centric readiness." },
+  bulk_create_tasks_from_checklist: { schemaSummary: "{ applicationId: string, titles?: string[], dryRun?: boolean (default true) }" },
+  list_proof_items_compact: { schemaSummary: "{ projectId?: string, limit?: number (default 25) } — metadata only." },
+  get_missing_evidence_report: { schemaSummary: "{ grantId?: string, applicationId?: string, projectId?: string } — provide at least one ID." },
+  list_agent_knowledge_items_compact: { schemaSummary: "{ category?: string, status?: string, limit?: number (default 25) }" },
+  propose_agent_knowledge_update: { schemaSummary: "{ proposal_type, title, category, proposed_content, rationale, source_type, source_excerpt?, dryRun?: boolean (default true) } — proposal only; never approves knowledge." },
+  get_next_best_grant_target: { schemaSummary: "{ limit?: number (default 3), includeUnknownDeadline?: boolean } — compact risk-penalized ranking." },
+  get_grant_application_action_plan: { schemaSummary: "{ grantId: string, projectId?: string, limit?: number (default 10) }" },
+  update_grant_priority_fields: { schemaSummary: "{ grantId, priority?, fitScore?, priorityScore?, proofReadiness?, applicationReadiness?, priorityNote?, dryRun?: boolean (default true) }" },
 };
 
 export function buildMcpToolManifest(tools: ToolMetadata[]): McpToolManifestEntry[] {

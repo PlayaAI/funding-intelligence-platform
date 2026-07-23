@@ -65,10 +65,37 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
             archived_at: null,
           },
         };
-        if (dryRun) return buildDryRunPlan(plannedMutation, ["applications"], { created: false });
-        if (duplicate) return { dryRun: false, created: false, application: duplicate, duplicateOf: duplicate.id };
+        if (dryRun) return {
+          ...buildDryRunPlan(plannedMutation, ["applications"], { created: false }),
+          affectedRecordIds: [],
+          duplicate: duplicate ? { code: "duplicate_record", existingApplicationId: duplicate.id } : null,
+          applicationPath: duplicate ? `/dashboard/applications/${duplicate.id}` : null,
+          warnings: duplicate ? ["An application already exists for this grant/project pair."] : [],
+        };
+        if (duplicate) return {
+          dryRun: false,
+          mutationPerformed: false,
+          created: false,
+          affectedRecordIds: [duplicate.id],
+          application: duplicate,
+          duplicate: { code: "duplicate_record", existingApplicationId: duplicate.id },
+          applicationPath: `/dashboard/applications/${duplicate.id}`,
+          warnings: ["No new application was created."],
+        };
         const application = await repository.createApplication(plannedMutation.values);
-        return { dryRun: false, created: true, application };
+        return {
+          dryRun: false,
+          mutationPerformed: true,
+          created: true,
+          affectedRecordIds: [application.id],
+          appliedMutation: { ...plannedMutation, created_id: application.id },
+          application,
+          applicationId: application.id,
+          applicationPath: `/dashboard/applications/${application.id}`,
+          before: null,
+          after: { id: application.id, grant_id: application.grant_id, project_id: application.project_id, status: application.status },
+          warnings: [],
+        };
       },
     },
     {
@@ -91,13 +118,22 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
         ]);
         if (!grant) throw makeToolError("grant_not_found", `Application ${applicationId} has no linked grant.`);
         const template = buildChecklistTemplate(grant, project);
-        const missing = template.filter((item) => !existingTasks.some((task) => task.title === item.title));
+        const existingTitles = new Set(existingTasks.map((task) => task.title.trim().toLowerCase()));
+        const missing = template.filter((item) => !existingTitles.has(item.title.trim().toLowerCase()));
+        const skipped = template
+          .filter((item) => existingTitles.has(item.title.trim().toLowerCase()))
+          .map((item) => ({ title: item.title, reason: "duplicate_task" }));
         if (dryRun) {
-          return buildDryRunPlan(
-            { action: "create_many", table: "tasks", count: missing.length, items: missing },
+          return {
+            ...buildDryRunPlan(
+            { action: "create_many", table: "tasks", count: missing.length, items: missing.map((item) => ({ ...item, due_date: grant.deadline ?? grant.next_deadline, related_application_id: application.id, related_grant_id: grant.id, related_project_id: application.project_id })) },
             ["tasks"],
             { createdTasks: missing }
-          );
+            ),
+            affectedRecordIds: [],
+            skipped,
+            warnings: [],
+          };
         }
         const createdTasks = [];
         for (const item of missing) {
@@ -116,7 +152,18 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
             archived_at: null,
           }));
         }
-        return { dryRun: false, createdTasks: createdTasks.length ? createdTasks : existingTasks.filter((task) => template.some((item) => item.title === task.title)) };
+        return {
+          dryRun: false,
+          mutationPerformed: createdTasks.length > 0,
+          affectedRecordIds: createdTasks.map((task) => task.id),
+          appliedMutation: { table: "tasks", action: "create_many", created_ids: createdTasks.map((task) => task.id) },
+          createdTasks: createdTasks.length ? createdTasks : existingTasks.filter((task) => template.some((item) => item.title === task.title)),
+          newlyCreatedTasks: createdTasks,
+          skipped,
+          before: { taskCount: existingTasks.length },
+          after: { taskCount: existingTasks.length + createdTasks.length },
+          warnings: [],
+        };
       },
     },
     {
@@ -129,7 +176,7 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
         ownerName: z.string().optional(),
         status: taskStatusSchema.default("Not Started"),
         priority: taskPrioritySchema.default("Medium"),
-        dueDate: z.string().optional(),
+        dueDate: z.string().date().optional(),
         relatedProjectId: z.string().optional(),
         relatedGrantId: z.string().optional(),
         relatedApplicationId: z.string().optional(),
@@ -142,6 +189,21 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
       relatedTables: ["tasks"],
       touchesRealDb: true,
       async execute(input) {
+        const [grant, application, project, existingTasks] = await Promise.all([
+          input.relatedGrantId ? repository.getGrant(input.relatedGrantId) : Promise.resolve(null),
+          input.relatedApplicationId ? repository.getApplication(input.relatedApplicationId) : Promise.resolve(null),
+          input.relatedProjectId ? repository.getProject(input.relatedProjectId) : Promise.resolve(null),
+          repository.listTasks(),
+        ]);
+        if (input.relatedGrantId && !grant) throw makeToolError("record_not_found", `Grant ${input.relatedGrantId} was not found.`);
+        if (input.relatedApplicationId && !application) throw makeToolError("record_not_found", `Application ${input.relatedApplicationId} was not found.`);
+        if (input.relatedProjectId && !project) throw makeToolError("record_not_found", `Project ${input.relatedProjectId} was not found.`);
+        const duplicate = existingTasks.find((task) =>
+          task.title.trim().toLowerCase() === input.title.trim().toLowerCase() &&
+          task.related_application_id === (input.relatedApplicationId ?? null) &&
+          task.related_grant_id === (input.relatedGrantId ?? null)
+        );
+        if (duplicate) throw makeToolError("duplicate_record", `Task already exists as ${duplicate.id}.`);
         const plannedMutation = {
           table: "tasks",
           action: "create",
@@ -160,9 +222,18 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
             archived_at: null,
           },
         };
-        if (input.dryRun) return buildDryRunPlan(plannedMutation, ["tasks"]);
+        if (input.dryRun) return { ...buildDryRunPlan(plannedMutation, ["tasks"]), affectedRecordIds: [], warnings: [] };
         const task = await repository.createTask(plannedMutation.values);
-        return { dryRun: false, task };
+        return {
+          dryRun: false,
+          mutationPerformed: true,
+          affectedRecordIds: [task.id],
+          appliedMutation: { ...plannedMutation, created_id: task.id },
+          task,
+          before: null,
+          after: { id: task.id, title: task.title, status: task.status, due_date: task.due_date },
+          warnings: [],
+        };
       },
     },
     {
@@ -178,9 +249,20 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
       async execute({ taskId, status, dryRun }) {
         const task = await repository.getTask(taskId);
         if (!task) throw makeToolError("task_not_found", `Task ${taskId} was not found.`);
+        const previousStatus = task.status;
         const plannedMutation = { table: "tasks", action: "update", id: taskId, values: { status } };
-        if (dryRun) return buildDryRunPlan(plannedMutation, ["tasks"], { previousStatus: task.status });
-        return { dryRun: false, task: await repository.updateTaskStatus(taskId, status) };
+        if (dryRun) return { ...buildDryRunPlan(plannedMutation, ["tasks"], { previousStatus }), affectedRecordIds: [], warnings: [] };
+        const updated = await repository.updateTaskStatus(taskId, status);
+        return {
+          dryRun: false,
+          mutationPerformed: updated.status !== previousStatus,
+          affectedRecordIds: [taskId],
+          appliedMutation: plannedMutation,
+          task: updated,
+          before: { id: taskId, status: previousStatus },
+          after: { id: taskId, status: updated.status },
+          warnings: updated.status === previousStatus ? ["Task already had the requested status."] : [],
+        };
       },
     },
     {
@@ -402,9 +484,20 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
       async execute({ taskId, dueDate, dryRun }) {
         const task = await repository.getTask(taskId);
         if (!task) throw makeToolError("task_not_found", `Task ${taskId} was not found.`);
+        const previousDueDate = task.due_date;
         const plannedMutation = { table: "tasks", action: "update", id: taskId, values: { due_date: dueDate } };
-        if (dryRun) return buildDryRunPlan(plannedMutation, ["tasks"], { previousDueDate: task.due_date });
-        return { dryRun: false, mutationPerformed: true, affectedRecordIds: [taskId], task: await repository.updateTask(taskId, { due_date: dueDate }) };
+        if (dryRun) return { ...buildDryRunPlan(plannedMutation, ["tasks"], { previousDueDate }), affectedRecordIds: [], warnings: [] };
+        const updated = await repository.updateTask(taskId, { due_date: dueDate });
+        return {
+          dryRun: false,
+          mutationPerformed: updated.due_date !== previousDueDate,
+          affectedRecordIds: [taskId],
+          appliedMutation: plannedMutation,
+          task: updated,
+          before: { id: taskId, due_date: previousDueDate },
+          after: { id: taskId, due_date: updated.due_date },
+          warnings: updated.due_date === previousDueDate ? ["Task already had the requested due date."] : [],
+        };
       },
     },
     {

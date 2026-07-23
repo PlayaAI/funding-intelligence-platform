@@ -12,7 +12,10 @@ const RISKY_KEYWORDS = [
   "machine with soul",
   "pure human data",
   "global consciousness",
-  "superintelligence born from burners"
+  "superintelligence born from burners",
+  "playa ai is a 501(c)(3)",
+  "playa ai nonprofit",
+  "official partner of burning man",
 ];
 
 export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolDefinition<any, any>> {
@@ -241,9 +244,9 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
         title: z.string().min(3),
         category: z.string().min(2),
         proposed_content: z.string().min(10),
-        rationale: z.string().optional(),
+        rationale: z.string().min(5),
         risk_level: z.enum(["low", "medium", "high"]).optional(),
-        source_type: z.enum(["user_instruction", "agent_observation", "notebooklm", "uploaded_doc", "meeting_note", "grant_review", "manual"]).optional(),
+        source_type: z.enum(["user_instruction", "agent_observation", "notebooklm", "uploaded_doc", "meeting_note", "grant_review", "manual"]),
         source_excerpt: z.string().optional(),
         conflict_summary: z.string().optional(),
         dryRun: z.boolean().optional().default(true),
@@ -271,6 +274,8 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
               status: "pending_review",
             },
             review_required: true,
+            affectedRecordIds: [],
+            warnings: risk_level === "high" ? ["High-risk proposal requires human review and cannot become approved automatically."] : [],
             safety_note: "This proposal is not active knowledge until an Admin approves it in the dashboard.",
           };
         }
@@ -313,8 +318,13 @@ export function createKnowledgeTools(repository: GrantOsRepository): Array<ToolD
           ok: true,
           dryRun: false,
           mutationPerformed: true,
+          affectedRecordIds: [proposal.id],
+          appliedMutation: { table: "agent_knowledge_updates", action: "create_pending_proposal", id: proposal.id },
+          before: null,
+          after: { id: proposal.id, status: proposal.status, risk_level: proposal.risk_level },
           proposal,
           review_required: true,
+          warnings: proposal.risk_level === "high" ? ["High-risk proposal requires human review."] : [],
           safety_note: "This proposal is not active knowledge until an Admin approves it in the dashboard.",
         };
       },

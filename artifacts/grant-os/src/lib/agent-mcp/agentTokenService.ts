@@ -105,6 +105,8 @@ export type AgentTokenRecord = {
   revoked_at: string | null;
   label: string;
   token_prefix: string;
+  created_at?: string | null;
+  last_used_at?: string | null;
 };
 
 export type AgentTokenValidationResult =
@@ -136,12 +138,13 @@ export type ScopeCheckResult =
   | { allowed: true; forceDryRun: boolean; requiredScope: AgentTokenScope | null }
   | { allowed: false; code: "scope_insufficient" | "dry_run_required" | "approval_required"; message: string; requiredScope: AgentTokenScope | null };
 
-const TOOL_SCOPES: Record<string, AgentTokenScope> = {
+export const TOOL_REQUIRED_SCOPES: Record<string, AgentTokenScope> = {
   archive_grant: "mcp:grants:archive",
   batch_archive_expired_grants: "mcp:grants:archive",
   mark_grant_status: "mcp:grants:update_status",
   update_grant_status: "mcp:grants:update_status",
   update_grant_notes: "mcp:grants:update_status",
+  update_grant_priority_fields: "mcp:grants:update_status",
   set_top_three_grant: "mcp:grants:top_three",
   remove_top_three_grant: "mcp:grants:top_three",
   create_application_from_grant: "mcp:applications:create",
@@ -160,7 +163,7 @@ const TOOL_SCOPES: Record<string, AgentTokenScope> = {
 };
 
 export function requiredScopeForTool(toolName: string): AgentTokenScope | null {
-  return TOOL_SCOPES[toolName] ?? null;
+  return TOOL_REQUIRED_SCOPES[toolName] ?? null;
 }
 
 /**
@@ -169,7 +172,8 @@ export function requiredScopeForTool(toolName: string): AgentTokenScope | null {
  *
  * Rules:
  *  - "read" tools: allowed for mcp:read (and above).
- *  - "write_safe" tools: requires mcp:write_safe_dry_run; dryRun always forced true.
+ *  - "write_safe" previews require mcp:write_safe_dry_run.
+ *  - explicit real-write intent is rejected; it is never silently downgraded.
  *  - "approval_required" / "dangerous": never allowed (handled upstream by
  *    MCP_BLOCKED_TOOL_NAMES / MCP_ENABLED_TOOL_NAMES before we get here).
  */
@@ -189,7 +193,7 @@ export function checkAgentTokenScope(
 
   if (permissionLevel === "write_safe") {
     const requiredScope = requiredScopeForTool(toolName);
-    const granularScopes = Object.values(TOOL_SCOPES);
+    const granularScopes = Object.values(TOOL_REQUIRED_SCOPES);
     const hasAnyGranularScope = scopes.some((scope) => granularScopes.includes(scope as AgentTokenScope));
     if (requiredScope && hasAnyGranularScope && !scopes.includes(requiredScope)) {
       return { allowed: false, code: "scope_insufficient", message: `This tool requires ${requiredScope}.`, requiredScope };
