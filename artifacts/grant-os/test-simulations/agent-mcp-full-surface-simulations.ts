@@ -91,7 +91,7 @@ async function run() {
           arguments: { recordType: "grant", recordId: "grant-1", reason: "test" },
         });
         assert(result.status === 403, "expected forbidden status");
-        assert(JSON.stringify(result.body).includes("approval_required_or_not_enabled"), "expected structured blocked error");
+        assert(JSON.stringify(result.body).includes("unsupported_operation"), "expected structured blocked error");
       },
     },
     {
@@ -155,7 +155,7 @@ async function run() {
         const blocked = result.body.blocked as boolean | undefined;
         const error = (result.body.error ?? {}) as { code?: string; message?: string };
         assert(blocked === true, "expected blocked true");
-        assert(error.code === "approval_required_or_not_enabled", "expected approval_required_or_not_enabled code");
+        assert(error.code === "unsupported_operation", "expected unsupported_operation code");
         assert(typeof error.message === "string" && error.message.length > 0, "expected error message");
       },
     },
@@ -310,12 +310,12 @@ async function run() {
       },
     },
     {
-      name: "V2.11C: knowledge proposal/write tools NOT in MCP manifest",
+      name: "V2.13: knowledge proposal tool is exposed as write_safe while proposal listing remains private",
       fn: async () => {
         const result = await adapter.handleTools(authHeaders());
         assert(result.status === 200, "expected success");
-        const tools = (result.body.tools ?? []) as Array<{ name?: string }>;
-        assert(!tools.some((t) => t.name === "propose_agent_knowledge_update"), "propose_agent_knowledge_update must not be in MCP");
+        const tools = (result.body.tools ?? []) as Array<{ name?: string; permissionLevel?: string }>;
+        assert(tools.some((t) => t.name === "propose_agent_knowledge_update" && t.permissionLevel === "write_safe"), "propose_agent_knowledge_update must be write_safe");
         assert(!tools.some((t) => t.name === "list_agent_knowledge_proposals"), "list_agent_knowledge_proposals must not be in MCP");
       },
     },
@@ -550,7 +550,7 @@ async function run() {
         assert(names.includes("get_application_prep_context"), "get_application_prep_context must still be exposed");
         assert(names.includes("list_agent_knowledge_items"), "list_agent_knowledge_items must still be exposed");
         assert(names.includes("get_agent_knowledge_item"), "get_agent_knowledge_item must still be exposed");
-        assert(!names.includes("propose_agent_knowledge_update"), "write knowledge tools must not be exposed");
+        assert(names.includes("propose_agent_knowledge_update"), "safe proposal-only knowledge tool must be exposed");
       },
     },
     {

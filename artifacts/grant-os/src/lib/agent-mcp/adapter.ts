@@ -21,6 +21,7 @@ import {
   normaliseScopes,
   checkAgentTokenScope,
   maskAgentToken,
+  requiredScopeForTool,
   type AgentTokenRecord,
 } from "./agentTokenService";
 
@@ -61,6 +62,13 @@ function jsonError(status: number, code: string, message: string): McpAdapterRes
       error: { code, message },
     },
   };
+}
+
+function canonicalToolErrorCode(code: string): string {
+  if (code === "invalid_input") return "validation_failed";
+  if (code.endsWith("_not_found") || code === "grant_not_found" || code === "project_not_found" || code === "task_not_found" || code === "application_not_found") return "record_not_found";
+  if (code === "grant_expired") return "deadline_passed";
+  return code;
 }
 
 function authError(code: string, message: string): McpAdapterResponse {
@@ -172,8 +180,17 @@ async function authenticateAgentToken(
     actorType: "mcp_agent",
     source: "agent-token",
     userId: validRecord.user_id,
-    userAccessToken: null, // no Supabase JWT; service-role used downstream
+    userAccessToken: null, // opaque token has no delegated Supabase user JWT
     agentTokenScopes: scopes,
+    agentTokenMetadata: {
+      id: validRecord.id,
+      label: validRecord.label,
+      tokenPrefix: validRecord.token_prefix,
+      createdAt: validRecord.created_at ?? null,
+      expiresAt: validRecord.expires_at,
+      revokedAt: validRecord.revoked_at,
+      lastUsedAt: validRecord.last_used_at ?? null,
+    },
   };
 }
 
@@ -211,7 +228,7 @@ function blockedToolResponse(): McpAdapterResponse {
       ok: false,
       blocked: true,
       error: {
-        code: "approval_required_or_not_enabled",
+        code: "unsupported_operation",
         message: "This tool is not enabled for direct MCP execution.",
       },
     },
@@ -229,6 +246,9 @@ function scopeDeniedResponse(code: "scope_insufficient" | "dry_run_required" | "
         message,
       },
       requiredScope,
+      dryRun: null,
+      mutationPerformed: false,
+      writeDisposition: "rejected",
       do_not_retry: true,
     },
   };
@@ -291,7 +311,7 @@ function normalizeCallSuccess(tool: ToolMetadata, input: JsonRecord, data: unkno
     ? "read"
     : dryRun
       ? "dry_run"
-      : "real_write";
+      : "committed";
   const resultData = data && typeof data === "object" ? data as JsonRecord : {};
   const affectedRecordIds = Array.isArray(resultData.affectedRecordIds) ? resultData.affectedRecordIds : [];
   const plannedMutation = resultData.plannedMutation ?? (resultData.planned_mutation ?? null);
@@ -308,6 +328,9 @@ function normalizeCallSuccess(tool: ToolMetadata, input: JsonRecord, data: unkno
     plannedMutation: dryRun ? plannedMutation : null,
     appliedMutation: mutationPerformed ? appliedMutation : null,
     requiredScopeForRealWrite: tool.permissionLevel === "write_safe" ? "mcp:write_safe_real" : null,
+    data,
+    truncated: Boolean(resultData.truncated),
+    warnings: Array.isArray(resultData.warnings) ? resultData.warnings : [],
     content: [
       {
         type: "json",
@@ -320,6 +343,119 @@ function normalizeCallSuccess(tool: ToolMetadata, input: JsonRecord, data: unkno
       },
     ],
     audit,
+  };
+}
+
+const VIRTUAL_TOOL_NAMES = new Set(["get_agent_token_self", "list_mcp_capabilities"]);
+
+function toolAllowedForContext(
+  authContext: AgentAuthContext,
+  metadata: ToolMetadata,
+): { allowed: boolean; reason: string | null; requiredScope: string | null } {
+  if (authContext.source !== "agent-token") {
+    return { allowed: true, reason: null, requiredScope: null };
+  }
+  const check = checkAgentTokenScope(
+    authContext.agentTokenScopes ?? [],
+    metadata.permissionLevel,
+    metadata.name,
+    true,
+  );
+  return check.allowed
+    ? { allowed: true, reason: null, requiredScope: check.requiredScope }
+    : { allowed: false, reason: check.message, requiredScope: check.requiredScope };
+}
+
+function buildCapabilities(authContext: AgentAuthContext, tools: ToolMetadata[]) {
+  return tools
+    .filter((tool) => MCP_ENABLED_TOOL_NAMES.has(tool.name))
+    .map((tool) => {
+      const access = toolAllowedForContext(authContext, tool);
+      return {
+        name: tool.name,
+        permissionLevel: tool.permissionLevel,
+        requiredScopes: [
+          tool.permissionLevel === "read" ? "mcp:read" : "mcp:write_safe_dry_run",
+          requiredScopeForTool(tool.name),
+        ].filter(Boolean),
+        supportsDryRun: tool.dryRunSupported,
+        canMutate: tool.permissionLevel === "write_safe",
+        responseMode: tool.name.includes("compact") || tool.name.includes("brief") ? "compact" : "standard",
+        currentlyAllowed: access.allowed,
+        reason: access.reason,
+      };
+    });
+}
+
+function virtualToolResponse(
+  name: string,
+  authContext: AgentAuthContext,
+  tools: ToolMetadata[],
+): McpAdapterResponse {
+  const capabilities = buildCapabilities(authContext, tools);
+  const scopes = authContext.agentTokenScopes ?? ["authenticated_user"];
+  const metadata = authContext.agentTokenMetadata;
+  const data = name === "get_agent_token_self"
+    ? {
+        token: metadata
+          ? {
+              fingerprint: `${metadata.tokenPrefix}…`,
+              label: metadata.label,
+              created_at: metadata.createdAt,
+              expires_at: metadata.expiresAt,
+              revoked_at: metadata.revokedAt,
+              last_used_at: metadata.lastUsedAt,
+            }
+          : { fingerprint: "user-session", label: "Authenticated user session" },
+        actor: { type: authContext.actorType, userId: authContext.userId ?? null, source: authContext.source },
+        scopes,
+        permissionLevel: scopes.includes("mcp:write_safe_real") ? "write_safe_real" : scopes.includes("mcp:write_safe_dry_run") ? "write_safe_dry_run" : "read",
+        canRead: authContext.source !== "agent-token" || scopes.includes("mcp:read"),
+        canPreviewWrites: authContext.source !== "agent-token" || scopes.includes("mcp:write_safe_dry_run"),
+        canRealWrite: authContext.source !== "agent-token",
+        allowedToolNames: capabilities.filter((tool) => tool.currentlyAllowed).map((tool) => tool.name),
+        deniedToolNames: capabilities.filter((tool) => !tool.currentlyAllowed).map((tool) => tool.name),
+        warnings: authContext.source === "agent-token"
+          ? ["Opaque agent tokens cannot perform real writes until RLS-safe delegated authorization exists."]
+          : ["Real writes use the authenticated user session and remain subject to Supabase RLS."],
+      }
+    : {
+        groups: {
+          read: capabilities.filter((tool) => tool.permissionLevel === "read"),
+          write_safe: capabilities.filter((tool) => tool.permissionLevel === "write_safe"),
+          admin: [],
+          disabled: Array.from(MCP_BLOCKED_TOOL_NAMES).map((tool) => ({ name: tool, currentlyAllowed: false, reason: "blocked" })),
+        },
+        counts: {
+          read: capabilities.filter((tool) => tool.permissionLevel === "read").length,
+          write_safe: capabilities.filter((tool) => tool.permissionLevel === "write_safe").length,
+          disabled: MCP_BLOCKED_TOOL_NAMES.size,
+        },
+        warnings: ["Tool schemas and long examples are omitted to reduce token usage."],
+      };
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      tool: name,
+      permissionLevel: "read",
+      dryRun: null,
+      mutationPerformed: null,
+      writeDisposition: "read",
+      affectedRecordIds: [],
+      data,
+      truncated: false,
+      warnings: "warnings" in data ? data.warnings : [],
+      audit: {
+        tool_name: name,
+        actor_type: "agent",
+        actor_id: authContext.userId ?? null,
+        permission_level: "read",
+        dry_run: false,
+        status: "completed",
+        created_at: new Date().toISOString(),
+      },
+    },
   };
 }
 
@@ -371,11 +507,28 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
       // For agent-token paths, tool listing is always allowed regardless of scope
       // (listing is metadata-only, no data returned)
       const registry = createRegistryForRequest(authContext, createRepository, registryFactory, serviceRoleKey);
+      const registryTools = registry.listTools();
       return {
         status: 200,
         body: {
           ok: true,
-          tools: buildMcpToolManifest(registry.listTools()),
+          tools: [
+            {
+              name: "get_agent_token_self",
+              description: "Return safe metadata and effective capabilities for the current credential.",
+              permissionLevel: "read",
+              enabled: true,
+              schemaSummary: "{}",
+            },
+            {
+              name: "list_mcp_capabilities",
+              description: "Return a compact token-aware MCP capability manifest.",
+              permissionLevel: "read",
+              enabled: true,
+              schemaSummary: "{}",
+            },
+            ...buildMcpToolManifest(registryTools),
+          ],
           routing_policy: {
             version: "V2.11J",
             narrow_task_protocol: [
@@ -420,6 +573,11 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
 
       const request = parsed.data as McpCallRequest;
 
+      if (VIRTUAL_TOOL_NAMES.has(request.name)) {
+        const registry = createRegistryForRequest(authContext, createRepository, registryFactory, serviceRoleKey);
+        return virtualToolResponse(request.name, authContext, registry.listTools());
+      }
+
       // ── Guardrail 3: tool must be in enabled set ──────────────────────────
       if (MCP_BLOCKED_TOOL_NAMES.has(request.name)) {
         return blockedToolResponse();
@@ -431,7 +589,9 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
           body: {
             ok: false,
             blocked: true,
-            error: { code: "tool_not_allowed", message: "This tool is not enabled for the MCP-compatible adapter. Do not retry — check tool name and permissions." },
+            error: { code: "unsupported_operation", message: "This tool is not enabled for the MCP-compatible adapter. Do not retry — check tool name and permissions." },
+            mutationPerformed: false,
+            writeDisposition: "rejected",
             do_not_retry: true,
           },
         };
@@ -462,8 +622,8 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
         if (!scopeCheck.allowed) {
           return scopeDeniedResponse(scopeCheck.code, scopeCheck.message, scopeCheck.requiredScope);
         }
-        // For write_safe tools via agent token: dryRun is ALWAYS forced true,
-        // even if the caller explicitly sent dryRun: false.
+        // Accepted opaque-token mutations are preview-only. Explicit
+        // dryRun:false requests were rejected above and are never downgraded.
         if (scopeCheck.forceDryRun) {
           input = { ...input, dryRun: true };
         }
@@ -472,14 +632,19 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
       const result = await registry.execute(request.name, input);
 
       if (!result.ok) {
+        const errorCode = canonicalToolErrorCode(result.error.code);
         return {
-          status: result.error.code === "invalid_input" ? 400 : 403,
+          status: result.error.code === "invalid_input" ? 400 : result.error.code.includes("not_found") ? 404 : 403,
           body: {
             ok: false,
             tool: request.name,
             permissionLevel: metadata.permissionLevel,
             dryRun: inferDryRun(metadata, input),
-            error: result.error,
+            mutationPerformed: false,
+            writeDisposition: "rejected",
+            affectedRecordIds: [],
+            error: { ...result.error, code: errorCode },
+            requiredScope: metadata.permissionLevel === "write_safe" ? requiredScopeForTool(request.name) : null,
             audit: result.audit ?? null,
           },
         };

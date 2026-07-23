@@ -43,7 +43,7 @@ async function resolveAgentToken(hash: string): Promise<AgentTokenRecord | null>
   });
   const { data, error } = await srClient
     .from("agent_mcp_tokens")
-    .select("id,user_id,scopes,expires_at,revoked_at,label,token_prefix")
+    .select("id,user_id,scopes,expires_at,revoked_at,label,token_prefix,created_at,last_used_at")
     .eq("token_hash", hash)
     .maybeSingle();
   if (error || !data) return null;

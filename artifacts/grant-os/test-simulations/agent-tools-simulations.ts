@@ -301,6 +301,8 @@ async function run() {
           title: "New Rule",
           category: "General",
           proposed_content: "Always ask before writing code.",
+          rationale: "Keep agent changes reviewable.",
+          source_type: "agent_observation",
         });
         const after = repo.snapshot();
         assert(result.ok, "propose_agent_knowledge_update dry-run should succeed");
@@ -317,6 +319,8 @@ async function run() {
           title: "Another Rule",
           category: "General",
           proposed_content: "Review tests first.",
+          rationale: "Preserve release reliability.",
+          source_type: "agent_observation",
           dryRun: false,
         });
         assert(result.ok, "propose_agent_knowledge_update non-dry-run should succeed");
@@ -332,6 +336,8 @@ async function run() {
           title: "Risky Rule",
           category: "General",
           proposed_content: "Make sure we have a physical Oracle deployed.",
+          rationale: "Test risky claim detection.",
+          source_type: "agent_observation",
           dryRun: true,
         });
         assert(result.ok, "propose should succeed");
@@ -909,6 +915,120 @@ async function run() {
         const result = await registry.execute("update_application_status", { applicationId: "app-1", status: "Drafting" });
         assert(result.ok, "application status preview should succeed");
         assert(repo.snapshot().applications.find((application) => application.id === "app-1")?.status === before, "preview must not mutate application");
+      },
+    },
+    {
+      name: "V2.13: get_cleanup_preview identifies expired active and stale Top 3 grants",
+      fn: async () => {
+        const expiredGrant = {
+          ...repo.snapshot().grants[0],
+          id: "grant-expired-cleanup",
+          title: "Expired Cleanup Grant",
+          deadline: "2026-01-01",
+          status: "Researching" as const,
+          is_top_three: true,
+          archived_at: null,
+        };
+        const cleanupRepo = createInMemoryGrantOsRepository({ grants: [expiredGrant] });
+        const cleanupRegistry = createToolRegistry({ repository: cleanupRepo });
+        const result = await cleanupRegistry.execute("get_cleanup_preview", { limitPerGroup: 25 });
+        assert(result.ok, "cleanup preview should succeed");
+        assert(result.data.counts.past_deadline_active_grants >= 1, "expected expired active grant");
+        assert(result.data.groups.past_deadline_top_three_grants.some((grant: { id: string }) => grant.id === "grant-expired-cleanup"), "expected stale Top 3 grant");
+      },
+    },
+    {
+      name: "V2.13: batch_archive_expired_grants dry-run plans without mutation",
+      fn: async () => {
+        const expiredGrant = { ...repo.snapshot().grants[0], id: "grant-expired-preview", title: "Expired Preview", deadline: "2026-01-01", status: "Researching" as const, is_top_three: true, archived_at: null };
+        const cleanupRepo = createInMemoryGrantOsRepository({ grants: [expiredGrant] });
+        const cleanupRegistry = createToolRegistry({ repository: cleanupRepo });
+        const before = cleanupRepo.snapshot().grants.find((grant) => grant.id === "grant-expired-preview");
+        const result = await cleanupRegistry.execute("batch_archive_expired_grants", { grantIds: ["grant-expired-preview"], dryRun: true });
+        const after = cleanupRepo.snapshot().grants.find((grant) => grant.id === "grant-expired-preview");
+        assert(result.ok, "batch archive preview should succeed");
+        assert(result.data.dryRun === true, "expected dry run");
+        assert(result.data.eligibleRecordIds.includes("grant-expired-preview"), "expired grant should be eligible");
+        assert(before?.archived_at === after?.archived_at, "preview must not archive");
+      },
+    },
+    {
+      name: "V2.13: batch_archive_expired_grants real write soft-archives and clears Top 3",
+      fn: async () => {
+        const expiredGrant = { ...repo.snapshot().grants[0], id: "grant-expired-write", title: "Expired Write", deadline: "2026-01-01", status: "Researching" as const, is_top_three: true, archived_at: null };
+        const cleanupRepo = createInMemoryGrantOsRepository({ grants: [expiredGrant] });
+        const cleanupRegistry = createToolRegistry({ repository: cleanupRepo });
+        const result = await cleanupRegistry.execute("batch_archive_expired_grants", { grantIds: ["grant-expired-write"], reason: "Deadline passed", dryRun: false });
+        const archived = cleanupRepo.snapshot().grants.find((grant) => grant.id === "grant-expired-write");
+        assert(result.ok, "batch archive should succeed");
+        assert(result.data.affectedRecordIds.includes("grant-expired-write"), "affected IDs should include grant");
+        assert(archived?.status === "Archived", "grant should be archived");
+        assert(Boolean(archived?.archived_at), "archived_at should be set");
+        assert(archived?.is_top_three === false, "Top 3 should be cleared");
+      },
+    },
+    {
+      name: "V2.13: compact priority and proof tools omit long fields",
+      fn: async () => {
+        const priority = await registry.execute("list_active_priority_grants_compact", { includeUnknownDeadline: true, limit: 10 });
+        const proof = await registry.execute("list_proof_items_compact", { projectId: "project-1", limit: 10 });
+        assert(priority.ok && proof.ok, "compact tools should succeed");
+        const serialized = JSON.stringify({ priority: priority.data, proof: proof.data });
+        assert(!serialized.includes("\"description\""), "compact output must omit descriptions");
+        assert(!serialized.includes("\"metrics\""), "compact output must omit metrics");
+        assert(!serialized.includes("extracted_text"), "compact output must omit extracted text");
+      },
+    },
+    {
+      name: "V2.13: missing evidence report includes legal and Claim Register guardrails",
+      fn: async () => {
+        const result = await registry.execute("get_missing_evidence_report", { grantId: "grant-1", projectId: "project-1" });
+        assert(result.ok, "missing evidence report should succeed");
+        const serialized = JSON.stringify(result.data);
+        assert(serialized.includes("501(c)(3)"), "expected nonprofit-status warning");
+        assert(serialized.includes("Burning Man"), "expected partnership warning");
+        assert(!serialized.includes("extracted_text"), "must not dump extracted text");
+      },
+    },
+    {
+      name: "V2.13: application readiness is compact and linked",
+      fn: async () => {
+        const result = await registry.execute("get_application_readiness_report", { applicationId: "app-1" });
+        assert(result.ok, "application readiness should succeed");
+        assert(result.data.application.id === "app-1", "expected application ID");
+        assert(Array.isArray(result.data.linkedTasks), "expected linked tasks");
+        assert(!JSON.stringify(result.data).includes("final_answer"), "must not return full answers");
+      },
+    },
+    {
+      name: "V2.13: bulk checklist preview prevents duplicates",
+      fn: async () => {
+        const result = await registry.execute("bulk_create_tasks_from_checklist", { applicationId: "app-1", dryRun: true });
+        assert(result.ok, "bulk checklist preview should succeed");
+        assert(result.data.dryRun === true, "expected dry run");
+        assert(Array.isArray(result.data.skipped), "expected skipped duplicate list");
+      },
+    },
+    {
+      name: "V2.13: grant application action plan is compact and concrete",
+      fn: async () => {
+        const result = await registry.execute("get_grant_application_action_plan", { grantId: "grant-1", projectId: "project-1" });
+        assert(result.ok, "action plan should succeed");
+        assert(Array.isArray(result.data.actions), "expected actions");
+        assert(!JSON.stringify(result.data).includes("extracted_text"), "action plan must remain compact");
+      },
+    },
+    {
+      name: "V2.13: grant priority update dry-run touches only allowed fields",
+      fn: async () => {
+        const before = repo.snapshot().grants.find((grant) => grant.id === "grant-1");
+        const result = await registry.execute("update_grant_priority_fields", { grantId: "grant-1", priority: "High", fitScore: 88 });
+        const after = repo.snapshot().grants.find((grant) => grant.id === "grant-1");
+        assert(result.ok, "priority preview should succeed");
+        assert(result.data.dryRun === true, "expected dry run");
+        assert(before?.priority === after?.priority && before?.fit_score === after?.fit_score, "preview must not mutate");
+        const mutation = JSON.stringify(result.data.plannedMutation);
+        assert(!mutation.includes("deadline") && !mutation.includes("eligibility") && !mutation.includes("source_url"), "unsafe grant fields must not be present");
       },
     },
   ];
