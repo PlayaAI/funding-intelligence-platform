@@ -17,10 +17,11 @@
     "test:agent-mcp": "tsx --import ./test-simulations/setup.ts test-simulations/agent-mcp-simulations.ts",
     "test:agent-mcp-full": "tsx --import ./test-simulations/setup.ts test-simulations/agent-mcp-full-surface-simulations.ts",
     "test:agent-mcp-tokens": "tsx --import ./test-simulations/setup.ts test-simulations/agent-mcp-token-simulations.ts",
+    "test:agent-mcp-approvals": "tsx --import ./test-simulations/setup.ts test-simulations/agent-mcp-approval-simulations.ts",
     "test:agent-mcp-deadline-simulations": "tsx --import ./test-simulations/setup.ts test-simulations/agent-mcp-deadline-simulations.ts",
     "agent:tool": "tsx scripts/run-agent-tool.ts",
     "agent:doctor": "tsx scripts/agent-doctor.ts",
-    "validate": "pnpm run typecheck && pnpm run build && pnpm run test:simulations && pnpm run test:agent-tools && pnpm run test:agent-auth && pnpm run test:agent-api && pnpm run test:agent-mcp && pnpm run test:agent-mcp-full",
+    "validate": "pnpm run typecheck && pnpm run build && pnpm run test:simulations && pnpm run test:agent-tools && pnpm run test:agent-auth && pnpm run test:agent-api && pnpm run test:agent-mcp && pnpm run test:agent-mcp-full && pnpm run test:agent-mcp-tokens && pnpm run test:agent-mcp-approvals",
     "import:instrumentl-zips": "tsx ../../scripts/import-instrumentl-zips.ts"
   },
   "devDependencies": {

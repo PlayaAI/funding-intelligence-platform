@@ -55,6 +55,7 @@ const DashboardDocumentDetailPage = lazy(() => import("@/pages/dashboard/Dashboa
 const DashboardReportsPage = lazy(() => import("@/pages/dashboard/DashboardReportsPage"));
 const DashboardSettingsPage = lazy(() => import("@/pages/dashboard/DashboardSettingsPage"));
 const DashboardAgentSettingsPage = lazy(() => import("@/pages/dashboard/DashboardAgentSettingsPage"));
+const DashboardAgentApprovalsPage = lazy(() => import("@/pages/dashboard/DashboardAgentApprovalsPage"));
 const DashboardAgentKnowledgePage = lazy(() => import("@/pages/dashboard/DashboardAgentKnowledgePage"));
 const DashboardAgentReportsPage = lazy(() => import("@/pages/dashboard/DashboardAgentReportsPage"));
 const DashboardAgentActivityPage = lazy(() => import("@/pages/dashboard/DashboardAgentActivityPage"));
@@ -148,6 +149,7 @@ const ProtectedDashboardDocumentDetail = makeProtected(DashboardDocumentDetailPa
 const ProtectedDashboardReports = makeProtected(DashboardReportsPage);
 const ProtectedDashboardSettings = makeProtected(DashboardSettingsPage);
 const ProtectedDashboardAgentSettings = makeProtected(DashboardAgentSettingsPage);
+const ProtectedDashboardAgentApprovals = makeProtected(DashboardAgentApprovalsPage);
 const ProtectedDashboardAgentKnowledge = makeProtected(DashboardAgentKnowledgePage);
 const ProtectedDashboardAgentReports = makeProtected(DashboardAgentReportsPage);
 const ProtectedDashboardAgentActivity = makeProtected(DashboardAgentActivityPage);
@@ -211,6 +213,8 @@ function Router() {
           <Route path="/dashboard/agent-reports" component={ProtectedDashboardAgentReports} />
           <Route path="/dashboard/agent-activity" component={ProtectedDashboardAgentActivity} />
           <Route path="/dashboard/agent-import" component={ProtectedDashboardAgentImport} />
+          <Route path="/dashboard/agent-approvals/:id" component={ProtectedDashboardAgentApprovals} />
+          <Route path="/dashboard/agent-approvals" component={ProtectedDashboardAgentApprovals} />
           <Route path="/dashboard/settings/agents" component={ProtectedDashboardAgentSettings} />
           <Route path="/dashboard/settings" component={ProtectedDashboardSettings} />
           <Route component={ProtectedNotFound} />

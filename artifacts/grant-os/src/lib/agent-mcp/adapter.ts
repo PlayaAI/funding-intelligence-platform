@@ -24,6 +24,17 @@ import {
   requiredScopeForTool,
   type AgentTokenRecord,
 } from "./agentTokenService";
+import {
+  APPROVABLE_TOOL_NAMES,
+  buildMutationApprovalHash,
+  collectApprovalAffectedRecordIds,
+  collectApprovalWarnings,
+  extractApprovalPlan,
+  mutationApprovalPublicView,
+  stripApprovalControlArguments,
+  type MutationApprovalRecord,
+  type MutationApprovalStore,
+} from "./approvalService";
 
 const mcpCallSchema = z.object({
   name: z.string().trim().min(1),
@@ -50,6 +61,11 @@ type CreateMcpAdapterDependencies = {
   updateAgentTokenLastUsed?: (id: string) => Promise<void>;
   /** Service-role key, passed through to the repository for agent-token paths only. */
   serviceRoleKey?: string | null;
+  /**
+   * Approval-envelope persistence. Opaque tokens may create/read only their
+   * own envelopes; operational writes still require an authenticated user.
+   */
+  approvalStore?: MutationApprovalStore;
 };
 
 // ── Response helpers ────────────────────────────────────────────────────────
@@ -347,6 +363,67 @@ function normalizeCallSuccess(tool: ToolMetadata, input: JsonRecord, data: unkno
 }
 
 const VIRTUAL_TOOL_NAMES = new Set(["get_agent_token_self", "list_mcp_capabilities"]);
+const APPROVAL_TOOL_NAMES = new Set([
+  "request_mutation_approval",
+  "get_mutation_approval",
+  "list_pending_mutation_approvals",
+  "execute_approved_mutation",
+]);
+
+function approvalError(
+  status: number,
+  tool: string,
+  code: string,
+  message: string,
+  approvalId?: string
+): McpAdapterResponse {
+  return {
+    status,
+    body: {
+      ok: false,
+      tool,
+      approvalId: approvalId ?? null,
+      error: { code, message },
+      dryRun: null,
+      mutationPerformed: false,
+      writeDisposition: "rejected",
+      requiredApproval: true,
+    },
+  };
+}
+
+function approvalRequestedResponse(
+  targetTool: string,
+  approval: MutationApprovalRecord
+): McpAdapterResponse {
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      tool: targetTool,
+      permissionLevel: "write_safe",
+      dryRun: true,
+      mutationPerformed: false,
+      writeDisposition: "approval_requested",
+      approvalId: approval.id,
+      affectedRecordIds: approval.affected_record_ids,
+      plannedMutation: approval.planned_mutation,
+      requiredApproval: true,
+      approvalUrl: `/dashboard/agent-approvals/${approval.id}`,
+      expiresAt: approval.expires_at,
+      warnings: approval.risk_warnings,
+      audit: {
+        token_id: approval.requested_by_token_id,
+        token_label: approval.requested_by_agent_label,
+        tool_name: targetTool,
+        dry_run: true,
+        mutation_performed: false,
+        write_disposition: "approval_requested",
+        created_at: approval.created_at,
+      },
+    },
+  };
+}
 
 function toolAllowedForContext(
   authContext: AgentAuthContext,
@@ -392,8 +469,30 @@ function virtualToolResponse(
   authContext: AgentAuthContext,
   tools: ToolMetadata[],
 ): McpAdapterResponse {
-  const capabilities = buildCapabilities(authContext, tools);
   const scopes = authContext.agentTokenScopes ?? ["authenticated_user"];
+  const approvalCapabilities = [
+    {
+      name: "request_mutation_approval",
+      permissionLevel: "write_safe",
+      requiredScopes: ["mcp:write_safe_dry_run", "target tool granular scope"],
+      supportsDryRun: true,
+      canMutate: false,
+      responseMode: "compact",
+      currentlyAllowed: authContext.source === "agent-token" && scopes.includes("mcp:write_safe_dry_run"),
+      reason: authContext.source === "agent-token" ? null : "Use the dashboard approval API with a user session.",
+    },
+    ...["get_mutation_approval", "list_pending_mutation_approvals", "execute_approved_mutation"].map((toolName) => ({
+      name: toolName,
+      permissionLevel: "read",
+      requiredScopes: ["mcp:read"],
+      supportsDryRun: false,
+      canMutate: false,
+      responseMode: "compact",
+      currentlyAllowed: authContext.source === "agent-token" && scopes.includes("mcp:read"),
+      reason: authContext.source === "agent-token" ? null : "Use the Agent Approvals dashboard.",
+    })),
+  ];
+  const capabilities = [...approvalCapabilities, ...buildCapabilities(authContext, tools)];
   const metadata = authContext.agentTokenMetadata;
   const data = name === "get_agent_token_self"
     ? {
@@ -413,10 +512,11 @@ function virtualToolResponse(
         canRead: authContext.source !== "agent-token" || scopes.includes("mcp:read"),
         canPreviewWrites: authContext.source !== "agent-token" || scopes.includes("mcp:write_safe_dry_run"),
         canRealWrite: authContext.source !== "agent-token",
+        canRequestApprovals: authContext.source === "agent-token" && scopes.includes("mcp:write_safe_dry_run"),
         allowedToolNames: capabilities.filter((tool) => tool.currentlyAllowed).map((tool) => tool.name),
         deniedToolNames: capabilities.filter((tool) => !tool.currentlyAllowed).map((tool) => tool.name),
         warnings: authContext.source === "agent-token"
-          ? ["Opaque agent tokens cannot perform real writes until RLS-safe delegated authorization exists."]
+          ? ["Opaque tokens cannot commit directly. They may request a dashboard approval, then poll the committed result."]
           : ["Real writes use the authenticated user session and remain subject to Supabase RLS."],
       }
     : {
@@ -469,6 +569,20 @@ function makeNoopUpdateLastUsed(): (id: string) => Promise<void> {
   return async (_id) => { /* no-op */ };
 }
 
+function makeNoopApprovalStore(): MutationApprovalStore {
+  return {
+    async create() {
+      throw new Error("Mutation approval storage is not configured.");
+    },
+    async getForToken() {
+      return null;
+    },
+    async listForToken() {
+      return [];
+    },
+  };
+}
+
 // ── Adapter factory ─────────────────────────────────────────────────────────
 
 export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}) {
@@ -488,6 +602,36 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
   // Agent token resolvers — injected in tests, DB-backed in production
   const resolveAgentToken = dependencies.resolveAgentToken ?? makeNoopResolveToken();
   const updateAgentTokenLastUsed = dependencies.updateAgentTokenLastUsed ?? makeNoopUpdateLastUsed();
+  const approvalStore = dependencies.approvalStore ?? makeNoopApprovalStore();
+
+  async function persistApproval(
+    authContext: AgentAuthContext,
+    targetTool: string,
+    input: JsonRecord,
+    previewData: unknown,
+    expiresInMinutes = 60,
+    toolWarnings: string[] = []
+  ): Promise<MutationApprovalRecord> {
+    const token = authContext.agentTokenMetadata;
+    if (authContext.source !== "agent-token" || !token?.id || !authContext.userId) {
+      throw new Error("Opaque agent token metadata is required to request approval.");
+    }
+    const requestArguments = stripApprovalControlArguments(input);
+    const boundedExpiry = Math.min(1440, Math.max(5, Math.trunc(expiresInMinutes)));
+    return approvalStore.create({
+      requestedByUserId: authContext.userId,
+      requestedByTokenId: token.id,
+      requestedByAgentLabel: token.label,
+      requestedTool: targetTool,
+      requestArguments,
+      dryRunPayload: previewData && typeof previewData === "object" ? previewData as JsonRecord : {},
+      plannedMutation: extractApprovalPlan(previewData),
+      payloadHash: buildMutationApprovalHash(targetTool, requestArguments, previewData),
+      affectedRecordIds: collectApprovalAffectedRecordIds(requestArguments, previewData),
+      riskWarnings: [...new Set([...toolWarnings, ...collectApprovalWarnings(previewData)])].slice(0, 20),
+      expiresAt: new Date(Date.now() + boundedExpiry * 60_000).toISOString(),
+    });
+  }
 
   return {
     async handleTools(headers: McpAdapterHeaders): Promise<McpAdapterResponse> {
@@ -526,6 +670,35 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
               permissionLevel: "read",
               enabled: true,
               schemaSummary: "{}",
+            },
+            {
+              name: "request_mutation_approval",
+              description: "Validate a write-safe dry-run and create a human approval request without mutating operational data.",
+              permissionLevel: "write_safe",
+              enabled: true,
+              defaultDryRun: true,
+              schemaSummary: "{ toolName: string, arguments: object, expiresInMinutes?: number }",
+            },
+            {
+              name: "get_mutation_approval",
+              description: "Poll one mutation approval owned by the current opaque token.",
+              permissionLevel: "read",
+              enabled: true,
+              schemaSummary: "{ approvalId: string }",
+            },
+            {
+              name: "list_pending_mutation_approvals",
+              description: "List compact pending/executing approvals owned by the current opaque token.",
+              permissionLevel: "read",
+              enabled: true,
+              schemaSummary: "{ limit?: number }",
+            },
+            {
+              name: "execute_approved_mutation",
+              description: "Return the committed result after dashboard approval; opaque tokens never execute operational writes directly.",
+              permissionLevel: "read",
+              enabled: true,
+              schemaSummary: "{ approvalId: string }",
             },
             ...buildMcpToolManifest(registryTools),
           ],
@@ -572,6 +745,195 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
       }
 
       const request = parsed.data as McpCallRequest;
+
+      if (APPROVAL_TOOL_NAMES.has(request.name)) {
+        if (authContext.source !== "agent-token" || !authContext.agentTokenMetadata?.id) {
+          return approvalError(
+            403,
+            request.name,
+            "agent_token_required",
+            "Mutation approval MCP tools require an opaque agent token. Dashboard users should use the Agent Approvals page."
+          );
+        }
+        const tokenId = authContext.agentTokenMetadata.id;
+        const registry = createRegistryForRequest(authContext, createRepository, registryFactory, serviceRoleKey);
+
+        if (request.name === "request_mutation_approval") {
+          const approvalRequest = z.object({
+            toolName: z.string().min(1),
+            arguments: z.record(z.string(), z.unknown()).default({}),
+            expiresInMinutes: z.number().int().min(5).max(1440).default(60),
+          }).safeParse(request.arguments ?? {});
+          if (!approvalRequest.success) {
+            return approvalError(400, request.name, "validation_failed", approvalRequest.error.message);
+          }
+          const targetTool = approvalRequest.data.toolName;
+          if (!APPROVABLE_TOOL_NAMES.has(targetTool) || !MCP_ENABLED_TOOL_NAMES.has(targetTool)) {
+            return approvalError(
+              403,
+              request.name,
+              "unsupported_operation",
+              `${targetTool} is not allowlisted for delegated approval.`
+            );
+          }
+          const metadata = registry.listTools().find((tool) => tool.name === targetTool);
+          if (!metadata || metadata.permissionLevel !== "write_safe" || !metadata.dryRunSupported) {
+            return approvalError(403, request.name, "unsupported_operation", `${targetTool} is not an approval-capable write-safe tool.`);
+          }
+          const scopeCheck = checkAgentTokenScope(
+            authContext.agentTokenScopes ?? [],
+            metadata.permissionLevel,
+            targetTool,
+            true
+          );
+          if (!scopeCheck.allowed) {
+            return scopeDeniedResponse(scopeCheck.code, scopeCheck.message, scopeCheck.requiredScope);
+          }
+          const granularScope = requiredScopeForTool(targetTool);
+          if (granularScope && !(authContext.agentTokenScopes ?? []).includes(granularScope)) {
+            return scopeDeniedResponse(
+              "scope_insufficient",
+              `Requesting approval for ${targetTool} requires ${granularScope}.`,
+              granularScope
+            );
+          }
+          const previewInput = normalizeArguments(
+            targetTool,
+            { ...approvalRequest.data.arguments, dryRun: true },
+            metadata
+          );
+          const previewResult = await registry.execute(targetTool, previewInput);
+          if (!previewResult.ok) {
+            return approvalError(
+              previewResult.error.code.includes("not_found") ? 404 : 400,
+              request.name,
+              canonicalToolErrorCode(previewResult.error.code),
+              previewResult.error.message
+            );
+          }
+          try {
+            const approval = await persistApproval(
+              authContext,
+              targetTool,
+              previewInput,
+              previewResult.data,
+              approvalRequest.data.expiresInMinutes,
+              metadata.risks
+            );
+            return approvalRequestedResponse(targetTool, approval);
+          } catch {
+            return approvalError(
+              503,
+              request.name,
+              "approval_not_configured",
+              "Mutation approval storage is unavailable. Apply the approval migration and verify server configuration."
+            );
+          }
+        }
+
+        const lookup = z.object({ approvalId: z.string().uuid() }).safeParse(request.arguments ?? {});
+        if (!lookup.success && request.name !== "list_pending_mutation_approvals") {
+          return approvalError(400, request.name, "validation_failed", lookup.error.message);
+        }
+
+        if (request.name === "list_pending_mutation_approvals") {
+          const listInput = z.object({ limit: z.number().int().min(1).max(50).default(20) }).safeParse(request.arguments ?? {});
+          if (!listInput.success) return approvalError(400, request.name, "validation_failed", listInput.error.message);
+          const approvals = await approvalStore.listForToken(tokenId, ["pending", "executing"]);
+          return {
+            status: 200,
+            body: {
+              ok: true,
+              tool: request.name,
+              permissionLevel: "read",
+              dryRun: null,
+              mutationPerformed: null,
+              writeDisposition: "read",
+              affectedRecordIds: [],
+              data: {
+                items: approvals.slice(0, listInput.data.limit).map(mutationApprovalPublicView),
+                total: approvals.length,
+                limit: listInput.data.limit,
+              },
+              truncated: approvals.length > listInput.data.limit,
+              warnings: [],
+            },
+          };
+        }
+
+        const approval = await approvalStore.getForToken(lookup.data!.approvalId, tokenId);
+        if (!approval) {
+          return approvalError(404, request.name, "record_not_found", "Mutation approval was not found for this token.", lookup.data!.approvalId);
+        }
+
+        if (request.name === "get_mutation_approval") {
+          return {
+            status: 200,
+            body: {
+              ok: true,
+              tool: request.name,
+              permissionLevel: "read",
+              dryRun: null,
+              mutationPerformed: null,
+              writeDisposition: "read",
+              affectedRecordIds: approval.affected_record_ids,
+              data: mutationApprovalPublicView(approval),
+              truncated: false,
+              warnings: approval.risk_warnings,
+            },
+          };
+        }
+
+        if (approval.status === "executed") {
+          const result = approval.result_payload ?? {};
+          return {
+            status: 200,
+            body: {
+              ok: true,
+              tool: request.name,
+              approvalId: approval.id,
+              dryRun: false,
+              mutationPerformed: true,
+              writeDisposition: "committed",
+              affectedRecordIds: approval.affected_record_ids,
+              appliedMutation: result.appliedMutation ?? null,
+              before: result.before ?? null,
+              after: result.after ?? null,
+              data: mutationApprovalPublicView(approval),
+              audit: {
+                token_id: approval.requested_by_token_id,
+                approved_by_user_id: approval.approved_by_user_id,
+                tool_name: approval.requested_tool,
+                mutation_performed: true,
+                write_disposition: "committed",
+                executed_at: approval.executed_at,
+              },
+            },
+          };
+        }
+        if (approval.status === "expired") {
+          return approvalError(409, request.name, "approval_expired", "This approval expired and must be requested again.", approval.id);
+        }
+        if (approval.status === "rejected") {
+          return approvalError(403, request.name, "approval_required", "This mutation was rejected by the dashboard operator.", approval.id);
+        }
+        if (approval.status === "failed") {
+          return approvalError(
+            409,
+            request.name,
+            approval.error_code ?? "validation_failed",
+            approval.error_message ?? "The approved mutation failed safely.",
+            approval.id
+          );
+        }
+        return approvalError(
+          403,
+          request.name,
+          "approval_required",
+          "This mutation requires authenticated dashboard approval and execution.",
+          approval.id
+        );
+      }
 
       if (VIRTUAL_TOOL_NAMES.has(request.name)) {
         const registry = createRegistryForRequest(authContext, createRepository, registryFactory, serviceRoleKey);
@@ -650,6 +1012,48 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
         };
       }
 
+      if (
+        authContext.source === "agent-token" &&
+        metadata.permissionLevel === "write_safe" &&
+        request.arguments?.requestApproval === true
+      ) {
+        if (!APPROVABLE_TOOL_NAMES.has(request.name)) {
+          return approvalError(
+            403,
+            request.name,
+            "unsupported_operation",
+            "This write-safe tool is not allowlisted for delegated approval."
+          );
+        }
+        const granularScope = requiredScopeForTool(request.name);
+        if (granularScope && !(authContext.agentTokenScopes ?? []).includes(granularScope)) {
+          return scopeDeniedResponse(
+            "scope_insufficient",
+            `Requesting approval for ${request.name} requires ${granularScope}.`,
+            granularScope
+          );
+        }
+        const requestedExpiry = request.arguments.approvalExpiresInMinutes;
+        try {
+          const approval = await persistApproval(
+            authContext,
+            request.name,
+            input,
+            result.data,
+            typeof requestedExpiry === "number" ? requestedExpiry : 60,
+            metadata.risks
+          );
+          return approvalRequestedResponse(request.name, approval);
+        } catch {
+          return approvalError(
+            503,
+            request.name,
+            "approval_not_configured",
+            "Mutation approval storage is unavailable. Apply the approval migration and verify server configuration."
+          );
+        }
+      }
+
       return {
         status: 200,
         body: normalizeCallSuccess(metadata, input, result.data, (result.audit ?? null) as JsonRecord | null),
@@ -680,6 +1084,12 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
           alternative_auth: "Authenticated browser session or Supabase user bearer token (JWT).",
           do_not_store: "Never store email or password in agent memory.",
           if_token_fails: "If token is expired or revoked, create a new one from Grant OS via POST /api/agent/tokens.",
+          approved_write_workflow: [
+            "Call the target write-safe tool with dryRun:true and requestApproval:true, or call request_mutation_approval.",
+            "Give the user approvalUrl and wait for an Admin or Grant Lead to approve and execute in the dashboard.",
+            "Poll get_mutation_approval or execute_approved_mutation for committed readback.",
+            "Never retry dryRun:false with an opaque token and never request a user JWT.",
+          ],
           login_url: "/login",
           mcp_tools_url: "/api/mcp/tools",
           mcp_call_url: "/api/mcp/call",
@@ -722,6 +1132,9 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
             agent_token_revoked: "Token revoked — create a new token.",
             agent_token_not_allowed: "Agent token used on a non-MCP route — use a user session for that route.",
             scope_insufficient: "Token scope does not permit this tool — re-create token with required scope.",
+            approval_required: "A dashboard operator must approve and execute the immutable plan.",
+            approval_expired: "The approval expired — rerun the dry-run and request a new approval.",
+            approval_payload_changed: "Records changed after preview — rerun the dry-run and request a new approval.",
           },
           rules: [
             "Use MCP tools before inspecting raw data or running exports.",
@@ -730,6 +1143,7 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
             "Return top 3 results maximum for grant recommendations unless the user asks for more.",
             "For any grant-ranking or fit question, check get_agent_context_brief and list_agent_knowledge_items FIRST, then use get_grant_decision_brief.",
             "Prefer get_application_prep_context for any application readiness question.",
+            "For writes, request approval from the dry-run plan and poll the result. Opaque tokens never commit directly.",
           ],
         },
       };
