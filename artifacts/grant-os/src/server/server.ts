@@ -14,7 +14,8 @@ import {
 import { createSupabaseMutationApprovalStore } from "../lib/agent-mcp/supabaseApprovalStore";
 import {
   APPROVABLE_TOOL_NAMES,
-  buildMutationApprovalHash,
+  buildPayloadHashMismatchResponse,
+  verifyMutationApprovalPayload,
   type MutationApprovalRecord,
 } from "../lib/agent-mcp/approvalService";
 import { createLiveGrantOsRepository } from "../lib/agent-tools/repository";
@@ -654,12 +655,12 @@ function approvalApiView(record: MutationApprovalRecord) {
 }
 
 function approvalErrorCode(message: string | undefined): string {
+  if (message?.includes("approval_payload_changed")) return "payload_hash_mismatch";
   const known = [
     "approval_forbidden",
     "approval_not_found",
     "approval_not_pending",
     "approval_expired",
-    "approval_payload_changed",
     "approval_nonce_invalid",
     "approval_token_inactive",
     "approval_token_inactive_or_scope_changed",
@@ -667,6 +668,19 @@ function approvalErrorCode(message: string | undefined): string {
     "approval_execution_not_owned",
   ];
   return known.find((code) => message?.includes(code)) ?? "approval_operation_failed";
+}
+
+function approvalErrorMessage(code: string, fallback: string): string {
+  if (code === "payload_hash_mismatch") {
+    return "The current mutation plan differs from the approved preview. Request a new approval before writing.";
+  }
+  if (code === "approval_expired") return "This approval expired. Request a new approval.";
+  if (code === "approval_not_pending") return "This approval is no longer pending and cannot be executed.";
+  if (code === "approval_nonce_invalid") return "This approval failed replay protection and cannot be executed.";
+  if (code === "approval_token_inactive_or_scope_changed" || code === "approval_token_inactive") {
+    return "The requesting token is revoked, expired, or no longer has the required scope.";
+  }
+  return fallback;
 }
 
 // Delegated approval routes require a normal Supabase user JWT. Operational
@@ -843,24 +857,31 @@ async function handleAgentApprovals(request: IncomingMessage, response: ServerRe
     });
     return true;
   }
-  const currentHash = buildMutationApprovalHash(approval.requested_tool, approval.request_arguments, preview.data);
-  if (currentHash !== approval.payload_hash) {
-    sendJson(response, 409, {
-      ok: false,
-      error: { code: "approval_payload_changed", message: "The records or planned mutation changed after preview. Request a new approval." },
-      mutationPerformed: false,
-      writeDisposition: "rejected",
-    });
+  const payloadVerification = verifyMutationApprovalPayload(approval, preview.data);
+  if (!payloadVerification.ok) {
+    const mismatch = buildPayloadHashMismatchResponse(approval.id);
+    sendJson(response, mismatch.status, mismatch.body);
     return true;
   }
 
   const { data: claimed, error: claimError } = await userClient.rpc("claim_agent_mutation_approval", {
     p_approval_id: approval.id,
-    p_expected_payload_hash: currentHash,
+    p_expected_payload_hash: payloadVerification.expectedHashForClaim,
     p_execution_nonce: approval.execution_nonce,
   });
   if (claimError || !claimed) {
-    sendJson(response, 409, { ok: false, error: { code: approvalErrorCode(claimError?.message), message: claimError?.message ?? "Approval could not be claimed." } });
+    const code = approvalErrorCode(claimError?.message);
+    sendJson(response, 409, {
+      ok: false,
+      error: {
+        code,
+        message: approvalErrorMessage(code, claimError?.message ?? "Approval could not be claimed."),
+      },
+      approvalId: approval.id,
+      mutationPerformed: false,
+      writeDisposition: "rejected",
+      ...(code === "payload_hash_mismatch" ? { requiredAction: "request_new_approval" } : {}),
+    });
     return true;
   }
 

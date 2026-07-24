@@ -88,14 +88,22 @@ const OMITTED_HASH_KEYS = new Set([
   "execution_nonce",
 ]);
 
-function normalizeForHash(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(normalizeForHash);
+const RUNTIME_GENERATED_TIMESTAMP_KEYS = new Set([
+  "archived_at",
+]);
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function normalizeLegacyHash(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeLegacyHash);
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .filter(([key]) => !OMITTED_HASH_KEYS.has(key))
         .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, nested]) => [key, normalizeForHash(nested)])
+        .map(([key, nested]) => [key, normalizeLegacyHash(nested)])
     );
   }
   if (
@@ -103,6 +111,31 @@ function normalizeForHash(value: unknown): unknown {
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)
   ) {
     return "<timestamp>";
+  }
+  return value;
+}
+
+function normalizeForHash(value: unknown, parentKey?: string): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => normalizeForHash(item))
+      .sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !OMITTED_HASH_KEYS.has(key))
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => [key, normalizeForHash(nested, key)])
+    );
+  }
+  if (
+    parentKey &&
+    RUNTIME_GENERATED_TIMESTAMP_KEYS.has(parentKey) &&
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)
+  ) {
+    return "<runtime-generated-timestamp>";
   }
   return value;
 }
@@ -140,6 +173,104 @@ export function buildMutationApprovalHash(
     plan: extractApprovalPlan(previewData),
   });
   return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
+}
+
+/** Compatibility for approvals requested before deterministic array sorting. */
+export function buildLegacyMutationApprovalHash(
+  toolName: string,
+  requestArguments: JsonRecord,
+  previewData: unknown
+): string {
+  const payload = normalizeLegacyHash({
+    tool: toolName,
+    arguments: stripApprovalControlArguments(requestArguments),
+    plan: extractApprovalPlan(previewData),
+  });
+  return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
+}
+
+export type MutationApprovalPayloadVerification =
+  | {
+      ok: true;
+      currentHash: string;
+      expectedHashForClaim: string;
+      hashVersion: "canonical-v2" | "legacy-v1";
+    }
+  | {
+      ok: false;
+      currentHash: string;
+      error: {
+        code: "payload_hash_mismatch";
+        message: string;
+      };
+    };
+
+export function buildPayloadHashMismatchResponse(approvalId: string) {
+  return {
+    status: 409,
+    body: {
+      ok: false,
+      error: {
+        code: "payload_hash_mismatch",
+        message: "The current mutation plan differs from the approved preview. Request a new approval before writing.",
+      },
+      approvalId,
+      mutationPerformed: false,
+      writeDisposition: "rejected",
+      requiredAction: "request_new_approval",
+    },
+  } as const;
+}
+
+export function verifyMutationApprovalPayload(
+  approval: Pick<
+    MutationApprovalRecord,
+    "requested_tool" | "request_arguments" | "dry_run_payload" | "payload_hash"
+  >,
+  previewData: unknown
+): MutationApprovalPayloadVerification {
+  const currentHash = buildMutationApprovalHash(
+    approval.requested_tool,
+    approval.request_arguments,
+    previewData
+  );
+  if (currentHash === approval.payload_hash) {
+    return {
+      ok: true,
+      currentHash,
+      expectedHashForClaim: approval.payload_hash,
+      hashVersion: "canonical-v2",
+    };
+  }
+
+  const originalLegacyHash = buildLegacyMutationApprovalHash(
+    approval.requested_tool,
+    approval.request_arguments,
+    approval.dry_run_payload
+  );
+  if (originalLegacyHash === approval.payload_hash) {
+    const originalCanonicalHash = buildMutationApprovalHash(
+      approval.requested_tool,
+      approval.request_arguments,
+      approval.dry_run_payload
+    );
+    if (originalCanonicalHash === currentHash) {
+      return {
+        ok: true,
+        currentHash,
+        expectedHashForClaim: approval.payload_hash,
+        hashVersion: "legacy-v1",
+      };
+    }
+  }
+  return {
+    ok: false,
+    currentHash,
+    error: {
+      code: "payload_hash_mismatch",
+      message: "The current mutation plan differs from the approved preview. Request a new approval before writing.",
+    },
+  };
 }
 
 export function collectApprovalAffectedRecordIds(
