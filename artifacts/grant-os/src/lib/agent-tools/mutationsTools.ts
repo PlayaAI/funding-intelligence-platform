@@ -269,7 +269,12 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
       name: "add_application_note",
       description: "Add a non-destructive application note for human review.",
       permissionLevel: "write_safe",
-      inputSchema: z.object({ applicationId: z.string().min(1), title: z.string().min(1), content: z.string().min(1), dryRun: z.boolean().default(true) }),
+      inputSchema: z.object({
+        applicationId: z.string().min(1),
+        title: z.string().min(1).max(120),
+        content: z.string().min(1).max(5000),
+        dryRun: z.boolean().default(true),
+      }),
       dryRunSupported: true,
       auditAction: "note_created",
       risks: ["Notes become part of internal decision context."],
@@ -280,7 +285,17 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
         if (!application) throw makeToolError("application_not_found", `Application ${applicationId} was not found.`);
         const plannedMutation = { table: "agent_notes", action: "create", values: { applicationId, title, content } };
         if (dryRun) return buildDryRunPlan(plannedMutation, ["agent_notes"]);
-        return { dryRun: false, note: await repository.createApplicationNote({ applicationId, title, content }) };
+        const note = await repository.createApplicationNote({ applicationId, title, content });
+        return {
+          dryRun: false,
+          mutationPerformed: true,
+          affectedRecordIds: [note.id],
+          appliedMutation: { ...plannedMutation, created_id: note.id },
+          note,
+          before: null,
+          after: { id: note.id, application_id: note.related_application_id, title: note.title },
+          warnings: [],
+        };
       },
     },
     {
@@ -389,9 +404,30 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
       async execute({ grantId, status, dryRun }) {
         const grant = await repository.getGrant(grantId);
         if (!grant) throw makeToolError("grant_not_found", `Grant ${grantId} was not found.`);
-        const plannedMutation = { table: "grants", action: "update", id: grantId, values: { status } };
-        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { previousStatus: grant.status });
-        return { dryRun: false, grant: await repository.updateGrantStatus(grantId, status) };
+        const before = {
+          id: grantId,
+          status: grant.status,
+          archived_at: grant.archived_at,
+          is_top_three: grant.is_top_three,
+        };
+        const values = status === "Archived"
+          ? { status, archived_at: new Date().toISOString(), is_top_three: false }
+          : { status };
+        const plannedMutation = { table: "grants", action: status === "Archived" ? "soft_archive" : "update", id: grantId, values };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { previousStatus: before.status, before });
+        const updated = status === "Archived"
+          ? await repository.updateGrant(grantId, values)
+          : await repository.updateGrantStatus(grantId, status);
+        return {
+          dryRun: false,
+          mutationPerformed: updated.status !== before.status || (status === "Archived" && (before.archived_at === null || before.is_top_three)),
+          affectedRecordIds: [grantId],
+          appliedMutation: plannedMutation,
+          grant: updated,
+          before,
+          after: { id: grantId, status: updated.status, archived_at: updated.archived_at, is_top_three: updated.is_top_three },
+          warnings: updated.status === before.status && status !== "Archived" ? ["Grant already had the requested status."] : [],
+        };
       },
     },
     {
@@ -430,9 +466,20 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
         const deadline = grant.deadline ?? grant.next_deadline;
         if (deadline && new Date(`${deadline}T23:59:59Z`).getTime() < Date.now()) throw makeToolError("grant_expired", "Expired grants cannot be added to Top 3.");
         if (["Archived", "Rejected", "Not Eligible"].includes(grant.status)) throw makeToolError("grant_inactive", `A grant with status ${grant.status} cannot be added to Top 3.`);
+        const previousValue = grant.is_top_three;
         const plannedMutation = { table: "grants", action: "update", id: grantId, values: { is_top_three: true } };
-        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { previousValue: grant.is_top_three });
-        return { dryRun: false, mutationPerformed: true, affectedRecordIds: [grantId], grant: await repository.updateGrant(grantId, { is_top_three: true }) };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { previousValue });
+        const updated = await repository.updateGrant(grantId, { is_top_three: true });
+        return {
+          dryRun: false,
+          mutationPerformed: !previousValue,
+          affectedRecordIds: [grantId],
+          appliedMutation: plannedMutation,
+          grant: updated,
+          before: { id: grantId, is_top_three: previousValue },
+          after: { id: grantId, is_top_three: updated.is_top_three },
+          warnings: previousValue ? ["Grant was already in Top 3."] : [],
+        };
       },
     },
     {
@@ -448,9 +495,20 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
       async execute({ grantId, dryRun }) {
         const grant = await repository.getGrant(grantId);
         if (!grant) throw makeToolError("grant_not_found", `Grant ${grantId} was not found.`);
+        const previousValue = grant.is_top_three;
         const plannedMutation = { table: "grants", action: "update", id: grantId, values: { is_top_three: false } };
-        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { previousValue: grant.is_top_three });
-        return { dryRun: false, mutationPerformed: true, affectedRecordIds: [grantId], grant: await repository.updateGrant(grantId, { is_top_three: false }) };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["grants"], { previousValue });
+        const updated = await repository.updateGrant(grantId, { is_top_three: false });
+        return {
+          dryRun: false,
+          mutationPerformed: previousValue,
+          affectedRecordIds: [grantId],
+          appliedMutation: plannedMutation,
+          grant: updated,
+          before: { id: grantId, is_top_three: previousValue },
+          after: { id: grantId, is_top_three: updated.is_top_three },
+          warnings: previousValue ? [] : ["Grant was not in Top 3."],
+        };
       },
     },
     {
@@ -466,9 +524,20 @@ export function createMutationTools(repository: GrantOsRepository): Array<ToolDe
       async execute({ applicationId, status, dryRun }) {
         const application = await repository.getApplication(applicationId);
         if (!application) throw makeToolError("application_not_found", `Application ${applicationId} was not found.`);
+        const previousStatus = application.status;
         const plannedMutation = { table: "applications", action: "update", id: applicationId, values: { status } };
-        if (dryRun) return buildDryRunPlan(plannedMutation, ["applications"], { previousStatus: application.status });
-        return { dryRun: false, mutationPerformed: true, affectedRecordIds: [applicationId], application: await repository.updateApplication(applicationId, { status }) };
+        if (dryRun) return buildDryRunPlan(plannedMutation, ["applications"], { previousStatus });
+        const updated = await repository.updateApplication(applicationId, { status });
+        return {
+          dryRun: false,
+          mutationPerformed: updated.status !== previousStatus,
+          affectedRecordIds: [applicationId],
+          appliedMutation: plannedMutation,
+          application: updated,
+          before: { id: applicationId, status: previousStatus },
+          after: { id: applicationId, status: updated.status },
+          warnings: updated.status === previousStatus ? ["Application already had the requested status."] : [],
+        };
       },
     },
     {

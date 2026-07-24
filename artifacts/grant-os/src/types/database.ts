@@ -230,6 +230,62 @@ export type AgentActivityActionType =
 
 export type AgentActivityStatus = "completed" | "pending" | "failed";
 
+export type AgentMutationApprovalStatus =
+  | "pending"
+  | "executing"
+  | "executed"
+  | "rejected"
+  | "expired"
+  | "failed";
+
+export interface AgentMutationApprovalRow {
+  id: string;
+  requested_by_user_id: string;
+  requested_by_token_id: string;
+  requested_by_agent_label: string;
+  requested_tool: string;
+  requested_action: string;
+  status: AgentMutationApprovalStatus;
+  request_arguments: Json;
+  dry_run_payload: Json;
+  planned_mutation: Json;
+  payload_hash: string;
+  approved_payload_hash: string | null;
+  affected_record_ids: string[];
+  risk_warnings: string[];
+  expires_at: string;
+  approved_by_user_id: string | null;
+  approved_at: string | null;
+  execution_started_at: string | null;
+  executed_at: string | null;
+  rejected_at: string | null;
+  rejected_by_user_id: string | null;
+  rejection_reason: string | null;
+  result_payload: Json | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentMutationApprovalEventRow {
+  id: string;
+  approval_id: string;
+  event_type: string;
+  actor_type: string;
+  token_id: string | null;
+  user_id: string | null;
+  mutation_performed: boolean;
+  write_disposition: string;
+  affected_record_ids: string[];
+  before_summary: Json | null;
+  after_summary: Json | null;
+  error_code: string | null;
+  error_message: string | null;
+  metadata: Json;
+  created_at: string;
+}
+
 export interface AgentNoteRow {
   id: string;
   source: AgentSource;
@@ -1047,6 +1103,18 @@ export interface Database {
         Row: AgentReportRow;
         Insert: AgentReportInsert;
         Update: AgentReportUpdate;
+        Relationships: [];
+      };
+      agent_mutation_approvals: {
+        Row: AgentMutationApprovalRow;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      agent_mutation_approval_events: {
+        Row: AgentMutationApprovalEventRow;
+        Insert: never;
+        Update: never;
         Relationships: [];
       };
       projects: {

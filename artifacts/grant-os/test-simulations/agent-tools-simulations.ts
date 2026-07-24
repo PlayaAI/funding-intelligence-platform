@@ -207,7 +207,12 @@ async function run() {
     {
       name: "generate_application_readiness_report handles no proof documents applications",
       fn: async () => {
-        const result = await registry.execute("generate_application_readiness_report", { grantId: "grant-2", projectId: "project-2" });
+        // Use isolated state: an earlier archive simulation intentionally
+        // soft-archives grant-2, so sharing that state would make this read test
+        // order-dependent.
+        const sparseRepo = createInMemoryGrantOsRepository();
+        const sparseRegistry = createToolRegistry({ repository: sparseRepo });
+        const result = await sparseRegistry.execute("generate_application_readiness_report", { grantId: "grant-2", projectId: "project-2" });
         assert(result.ok, "sparse readiness report should succeed");
         assert(result.data.existingApplicationStatus === null, "expected no application status");
         assert(result.data.missingEvidence.length > 0, "expected missing evidence gap");

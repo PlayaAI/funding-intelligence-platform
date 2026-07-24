@@ -16,30 +16,31 @@ const endpoints = [
   "POST /api/mcp/call",
   "GET /api/agent/doctor",
   "POST /api/agent/tool",
+  "GET /api/agent/approvals",
 ];
 
 const readTools = ["get_agent_token_self", "list_mcp_capabilities", "get_next_best_grant_target", "get_cleanup_preview", "get_deadline_brief", "get_missing_evidence_report"];
-const writeSafeTools = ["batch_archive_expired_grants", "create_application_from_grant", "bulk_create_tasks_from_checklist", "update_task_status", "propose_agent_knowledge_update"];
+const writeSafeTools = ["request_mutation_approval", "get_mutation_approval", "execute_approved_mutation", "batch_archive_expired_grants", "create_application_from_grant", "bulk_create_tasks_from_checklist"];
 const blockedTools = ["archive_record", "run_scraping_job", "submission or outreach tools"];
 
 const selectableScopes = [
   ["mcp:read", "Read compact Grant OS context"],
-  ["mcp:write_safe_dry_run", "Preview safe mutations"],
-  ["mcp:grants:archive", "Preview grant archives"],
-  ["mcp:grants:update_status", "Preview grant status changes"],
-  ["mcp:grants:top_three", "Preview Top 3 changes"],
-  ["mcp:applications:create", "Preview application creation"],
-  ["mcp:applications:update", "Preview application updates"],
-  ["mcp:tasks:create", "Preview task/checklist creation"],
-  ["mcp:tasks:update", "Preview task updates"],
+  ["mcp:write_safe_dry_run", "Preview safe mutations and request approval"],
+  ["mcp:grants:archive", "Preview/request grant archives"],
+  ["mcp:grants:update_status", "Preview/request grant status changes"],
+  ["mcp:grants:top_three", "Preview/request Top 3 changes"],
+  ["mcp:applications:create", "Preview/request application creation"],
+  ["mcp:applications:update", "Preview/request application updates"],
+  ["mcp:tasks:create", "Preview/request task/checklist creation"],
+  ["mcp:tasks:update", "Preview/request task updates"],
   ["mcp:proof:read", "Read proof metadata"],
-  ["mcp:proof:update", "Preview proof updates"],
+  ["mcp:proof:update", "Preview/request proof updates"],
   ["mcp:knowledge:read", "Read Agent Knowledge"],
   ["mcp:knowledge:propose", "Propose knowledge changes for review"],
   ["mcp:audit:read", "Read audit metadata"],
 ] as const;
 
-const prompt = "Use Grant OS as the source of truth. Read grants, projects, deadlines, tasks, proof items, documents, and reports. Rank opportunities by fit, urgency, deadline, eligibility, funding relevance, effort, and evidence readiness. Use your own AI judgment. Do not mutate data unless I approve. Use dry-run first.";
+const prompt = "Use Grant OS as the source of truth. Read compact context first. Preview every mutation, request dashboard approval, then poll the approval result and verify readbacks. Never attempt a direct opaque-token write, submission, outreach, hard delete, or unsupported claim approval.";
 
 const curlCommands = [
   {
@@ -99,7 +100,7 @@ export default function DashboardAgentSettingsPage() {
     <div className="p-6 max-w-5xl mx-auto space-y-5">
       <div>
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2"><Bot size={18} />Agent Setup</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Connect external AI assistants to Grant OS through authenticated, dry-run-first tools.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Connect external AI assistants through compact tools and authenticated human-approved writes.</p>
       </div>
 
       <Card className="border-slate-200 shadow-sm">
@@ -129,7 +130,7 @@ export default function DashboardAgentSettingsPage() {
               </label>
             ))}
           </div>
-          <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><strong>Real-write scope is unavailable:</strong> opaque tokens cannot yet write under a human’s RLS identity. Approved real writes must use an authenticated user session.</div>
+          <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><strong>No direct real-write scope:</strong> opaque tokens request approval. An Admin or Grant Lead reviews the exact plan and executes it with their authenticated RLS session from <a className="underline font-medium" href="/dashboard/agent-approvals">Agent Approvals</a>.</div>
           <div className="space-y-2">
             {tokens.length === 0 && <div className="text-sm text-slate-500">No agent tokens created.</div>}
             {tokens.map((token) => {
@@ -160,8 +161,8 @@ export default function DashboardAgentSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-amber-950">
           <p><strong>Read-only token:</strong> may call read tools only. Write-safe calls return <code>scope_insufficient</code>.</p>
-          <p><strong>Write-safe dry-run token:</strong> may preview write-safe tools, but the server always forces <code>dryRun: true</code>, even if the caller sends false.</p>
-          <p><strong>Real writes:</strong> agent tokens do not support them. An approved user must execute through an authenticated dashboard or user-JWT workflow after reviewing the dry-run result.</p>
+          <p><strong>Write-safe dry-run token:</strong> may preview write-safe tools and create an approval request. Direct <code>dryRun: false</code> remains rejected.</p>
+          <p><strong>Approved writes:</strong> an Admin or Grant Lead reviews and executes the immutable plan through their authenticated RLS session. The token can then poll the committed result.</p>
         </CardContent>
       </Card>
 
@@ -183,7 +184,8 @@ export default function DashboardAgentSettingsPage() {
             {[
               "Read tools are allowed.",
               "Write-safe tools default to dry-run.",
-              "Agent-token writes are preview-only; real writes require an approved user session.",
+              "Opaque tokens request approvals; they never commit directly.",
+              "Approved writes execute with the approving user’s RLS session.",
               "Dangerous tools are blocked.",
               "Never use service-role keys.",
               "Never print or store tokens.",

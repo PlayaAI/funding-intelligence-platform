@@ -11,6 +11,15 @@ import {
   normaliseScopes,
   type AgentTokenRecord,
 } from "../lib/agent-mcp/agentTokenService";
+import { createSupabaseMutationApprovalStore } from "../lib/agent-mcp/supabaseApprovalStore";
+import {
+  APPROVABLE_TOOL_NAMES,
+  buildMutationApprovalHash,
+  type MutationApprovalRecord,
+} from "../lib/agent-mcp/approvalService";
+import { createLiveGrantOsRepository } from "../lib/agent-tools/repository";
+import { createToolRegistry } from "../lib/agent-tools/registry";
+import type { AgentAuthContext } from "../lib/agent-tools/authContext";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
@@ -29,6 +38,14 @@ const supabaseAnonKey = (
   ""
 ).trim();
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+const approvalServiceClient = supabaseServiceRoleKey && supabaseUrl
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+  : null;
+const mutationApprovalStore = approvalServiceClient
+  ? createSupabaseMutationApprovalStore(approvalServiceClient)
+  : undefined;
 
 const agentApi = createAgentApi();
 
@@ -65,6 +82,7 @@ const mcpAdapter = createMcpAdapter({
   resolveAgentToken,
   updateAgentTokenLastUsed,
   serviceRoleKey: supabaseServiceRoleKey || null,
+  approvalStore: mutationApprovalStore,
 });
 
 if (Number.isNaN(port) || port <= 0) {
@@ -630,6 +648,304 @@ async function handleAgentKnowledge(request: IncomingMessage, response: ServerRe
   return sendJson(response, 404, { ok: false, error: { message: "Route not found" } }), true;
 }
 
+function approvalApiView(record: MutationApprovalRecord) {
+  const { execution_nonce: _executionNonce, ...safe } = record;
+  return safe;
+}
+
+function approvalErrorCode(message: string | undefined): string {
+  const known = [
+    "approval_forbidden",
+    "approval_not_found",
+    "approval_not_pending",
+    "approval_expired",
+    "approval_payload_changed",
+    "approval_nonce_invalid",
+    "approval_token_inactive",
+    "approval_token_inactive_or_scope_changed",
+    "approval_tool_unsupported",
+    "approval_execution_not_owned",
+  ];
+  return known.find((code) => message?.includes(code)) ?? "approval_operation_failed";
+}
+
+// Delegated approval routes require a normal Supabase user JWT. Operational
+// writes execute with that JWT through the existing repository, so table RLS
+// remains authoritative. Opaque gos_mcp_* tokens cannot call these routes.
+async function handleAgentApprovals(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  if (!url.pathname.startsWith("/api/agent/approvals")) return false;
+
+  if (requestHasAgentToken(request)) {
+    sendJson(response, 401, {
+      ok: false,
+      error: {
+        code: "agent_token_not_allowed",
+        message: "Opaque tokens may request and poll approvals through MCP, but only an authenticated dashboard user may approve or execute them.",
+      },
+    });
+    return true;
+  }
+  if (!supabaseUrl || !supabaseAnonKey) {
+    sendJson(response, 500, { ok: false, error: { code: "supabase_not_configured", message: "Supabase is not configured." } });
+    return true;
+  }
+
+  const authResult = await getAuthenticatedProfile(request, false);
+  if (!authResult.body.ok || !("profile" in authResult.body)) {
+    sendJson(response, authResult.status, authResult.body);
+    return true;
+  }
+  const profile = authResult.body.profile as { id?: string; role?: string; access_status?: string };
+  const user = authResult.body.user as { id?: string } | undefined;
+  const accessToken = bearerTokenFrom(request);
+  if (!user?.id || !accessToken || profile.access_status !== "approved") {
+    sendJson(response, 403, { ok: false, error: { code: "approval_forbidden", message: "An approved Grant OS user session is required." } });
+    return true;
+  }
+
+  const canApprove = profile.role === "Admin" || profile.role === "Grant Lead";
+  const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+  });
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  const approvalId = pathParts[3];
+  const action = pathParts[4];
+
+  if (request.method === "GET" && !approvalId) {
+    const requestedStatus = url.searchParams.get("status");
+    let query = userClient
+      .from("agent_mutation_approvals")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (requestedStatus) query = query.eq("status", requestedStatus);
+    const { data, error } = await query;
+    if (error) {
+      sendJson(response, 500, { ok: false, error: { code: "fetch_error", message: error.message } });
+      return true;
+    }
+    sendJson(response, 200, {
+      ok: true,
+      approvals: (data ?? []).map((record) => approvalApiView(record as MutationApprovalRecord)),
+      canApprove,
+    });
+    return true;
+  }
+
+  if (request.method === "GET" && approvalId && !action) {
+    const [{ data, error }, events] = await Promise.all([
+      userClient.from("agent_mutation_approvals").select("*").eq("id", approvalId).maybeSingle(),
+      userClient.from("agent_mutation_approval_events").select("*").eq("approval_id", approvalId).order("created_at", { ascending: true }),
+    ]);
+    if (error || !data) {
+      sendJson(response, 404, { ok: false, error: { code: "record_not_found", message: "Approval was not found or is not accessible." } });
+      return true;
+    }
+    sendJson(response, 200, {
+      ok: true,
+      approval: approvalApiView(data as MutationApprovalRecord),
+      events: events.data ?? [],
+      canApprove,
+    });
+    return true;
+  }
+
+  if (request.method !== "POST" || !approvalId || !action) {
+    sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Method not allowed." } });
+    return true;
+  }
+  if (!canApprove) {
+    sendJson(response, 403, { ok: false, error: { code: "approval_forbidden", message: "Only an approved Admin or Grant Lead can approve MCP mutations." } });
+    return true;
+  }
+
+  if (action === "reject") {
+    const body = await readJsonBody(request);
+    const reason = isRecord(body) && typeof body.reason === "string" ? body.reason.trim().slice(0, 1000) : null;
+    const { data, error } = await userClient.rpc("reject_agent_mutation_approval", {
+      p_approval_id: approvalId,
+      p_reason: reason,
+    });
+    if (error || !data) {
+      sendJson(response, 409, { ok: false, error: { code: approvalErrorCode(error?.message), message: error?.message ?? "Approval could not be rejected." } });
+      return true;
+    }
+    sendJson(response, 200, { ok: true, approval: approvalApiView(data as MutationApprovalRecord) });
+    return true;
+  }
+
+  if (action === "expire") {
+    const { data, error } = await userClient.rpc("expire_agent_mutation_approval", {
+      p_approval_id: approvalId,
+    });
+    if (error || !data) {
+      sendJson(response, 409, { ok: false, error: { code: approvalErrorCode(error?.message), message: error?.message ?? "Approval could not be expired." } });
+      return true;
+    }
+    sendJson(response, 200, { ok: true, approval: approvalApiView(data as MutationApprovalRecord) });
+    return true;
+  }
+
+  if (action !== "approve") {
+    sendJson(response, 404, { ok: false, error: { code: "unsupported_operation", message: "Unknown approval action." } });
+    return true;
+  }
+
+  const { data: rawApproval, error: approvalFetchError } = await userClient
+    .from("agent_mutation_approvals")
+    .select("*")
+    .eq("id", approvalId)
+    .maybeSingle();
+  if (approvalFetchError || !rawApproval) {
+    sendJson(response, 404, { ok: false, error: { code: "record_not_found", message: "Approval was not found or is not accessible." } });
+    return true;
+  }
+  const approval = rawApproval as MutationApprovalRecord;
+  if (!APPROVABLE_TOOL_NAMES.has(approval.requested_tool)) {
+    sendJson(response, 403, { ok: false, error: { code: "unsupported_operation", message: "The requested tool is not allowlisted for approval." } });
+    return true;
+  }
+  if (approval.status !== "pending") {
+    sendJson(response, 409, { ok: false, error: { code: "approval_not_pending", message: `Approval is ${approval.status} and cannot be executed.` } });
+    return true;
+  }
+  if (new Date(approval.expires_at) <= new Date()) {
+    sendJson(response, 409, { ok: false, error: { code: "approval_expired", message: "Approval expired and must be requested again." } });
+    return true;
+  }
+
+  const authContext: AgentAuthContext = {
+    actorType: "dashboard_user",
+    source: "dashboard-approval",
+    userId: user.id,
+    userAccessToken: accessToken,
+  };
+  const registry = createToolRegistry({
+    repository: createLiveGrantOsRepository({ authContext }),
+    actor: { type: "human", id: user.id, source: "human" },
+  });
+  const metadata = registry.listTools().find((tool) => tool.name === approval.requested_tool);
+  if (!metadata || metadata.permissionLevel !== "write_safe" || !metadata.dryRunSupported) {
+    sendJson(response, 403, { ok: false, error: { code: "unsupported_operation", message: "The requested tool is no longer approval-capable." } });
+    return true;
+  }
+
+  const previewInput = { ...approval.request_arguments, dryRun: true };
+  const preview = await registry.execute(approval.requested_tool, previewInput);
+  if (!preview.ok) {
+    sendJson(response, 409, {
+      ok: false,
+      error: { code: preview.error.code, message: `Execution revalidation failed: ${preview.error.message}` },
+      mutationPerformed: false,
+      writeDisposition: "rejected",
+    });
+    return true;
+  }
+  const currentHash = buildMutationApprovalHash(approval.requested_tool, approval.request_arguments, preview.data);
+  if (currentHash !== approval.payload_hash) {
+    sendJson(response, 409, {
+      ok: false,
+      error: { code: "approval_payload_changed", message: "The records or planned mutation changed after preview. Request a new approval." },
+      mutationPerformed: false,
+      writeDisposition: "rejected",
+    });
+    return true;
+  }
+
+  const { data: claimed, error: claimError } = await userClient.rpc("claim_agent_mutation_approval", {
+    p_approval_id: approval.id,
+    p_expected_payload_hash: currentHash,
+    p_execution_nonce: approval.execution_nonce,
+  });
+  if (claimError || !claimed) {
+    sendJson(response, 409, { ok: false, error: { code: approvalErrorCode(claimError?.message), message: claimError?.message ?? "Approval could not be claimed." } });
+    return true;
+  }
+
+  let execution;
+  try {
+    execution = await registry.execute(approval.requested_tool, {
+      ...approval.request_arguments,
+      dryRun: false,
+    });
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "Approved mutation failed.";
+    await userClient.rpc("complete_agent_mutation_approval", {
+      p_approval_id: approval.id,
+      p_succeeded: false,
+      p_result_payload: {},
+      p_affected_record_ids: [],
+      p_error_code: "execution_failed",
+      p_error_message: message,
+    });
+    sendJson(response, 500, { ok: false, error: { code: "execution_failed", message }, mutationPerformed: false, writeDisposition: "failed" });
+    return true;
+  }
+
+  if (!execution.ok) {
+    await userClient.rpc("complete_agent_mutation_approval", {
+      p_approval_id: approval.id,
+      p_succeeded: false,
+      p_result_payload: {},
+      p_affected_record_ids: [],
+      p_error_code: execution.error.code,
+      p_error_message: execution.error.message,
+    });
+    sendJson(response, 409, {
+      ok: false,
+      error: execution.error,
+      mutationPerformed: false,
+      writeDisposition: "failed",
+      audit: execution.audit,
+    });
+    return true;
+  }
+
+  const resultData = execution.data && typeof execution.data === "object"
+    ? execution.data as Record<string, unknown>
+    : {};
+  const affectedRecordIds = Array.isArray(resultData.affectedRecordIds)
+    ? resultData.affectedRecordIds.filter((id): id is string => typeof id === "string")
+    : [];
+  const { data: completed, error: completeError } = await userClient.rpc("complete_agent_mutation_approval", {
+    p_approval_id: approval.id,
+    p_succeeded: true,
+    p_result_payload: resultData,
+    p_affected_record_ids: affectedRecordIds,
+    p_error_code: null,
+    p_error_message: null,
+  });
+  if (completeError || !completed) {
+    sendJson(response, 500, {
+      ok: false,
+      error: { code: "approval_audit_failed", message: "The mutation executed, but its approval completion audit failed. Stop and reconcile manually." },
+      mutationPerformed: true,
+      writeDisposition: "committed_unconfirmed",
+      affectedRecordIds,
+    });
+    return true;
+  }
+
+  sendJson(response, 200, {
+    ok: true,
+    tool: approval.requested_tool,
+    approvalId: approval.id,
+    dryRun: false,
+    mutationPerformed: true,
+    writeDisposition: "committed",
+    affectedRecordIds,
+    appliedMutation: resultData.appliedMutation ?? null,
+    before: resultData.before ?? null,
+    after: resultData.after ?? null,
+    data: resultData,
+    approval: approvalApiView(completed as MutationApprovalRecord),
+    audit: execution.audit,
+  });
+  return true;
+}
+
 // ── V2.11H: Agent token management routes ────────────────────────────────
 // All three endpoints require a normal Supabase user JWT.
 // A gos_mcp_* agent token CANNOT call these endpoints.
@@ -829,6 +1145,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse): Pr
   if (url.pathname.startsWith("/api/admin/users")) return handleAdminUsers(request, response);
   if (url.pathname.startsWith("/api/team/")) return handleTeamInvite(request, response);
   if (url.pathname.startsWith("/api/agent-knowledge/")) return handleAgentKnowledge(request, response);
+  if (url.pathname.startsWith("/api/agent/approvals")) return handleAgentApprovals(request, response);
   if (url.pathname.startsWith("/api/agent/tokens")) return handleAgentTokens(request, response);
   if (!url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/mcp/")) return false;
 
