@@ -2,8 +2,11 @@ import { readFileSync } from "node:fs";
 import { createMcpAdapter } from "../src/lib/agent-mcp/adapter";
 import {
   APPROVABLE_TOOL_NAMES,
+  buildLegacyMutationApprovalHash,
   buildMutationApprovalHash,
+  buildPayloadHashMismatchResponse,
   createInMemoryMutationApprovalStore,
+  verifyMutationApprovalPayload,
 } from "../src/lib/agent-mcp/approvalService";
 import {
   generateAgentToken,
@@ -235,11 +238,18 @@ async function run() {
       },
     },
     {
-      name: "approved batch archive execution soft-archives and clears Top 3",
+      name: "pending batch archive approval passes dashboard revalidation and executes",
       fn: async () => {
         const approval = approvalStore.snapshot().find((record) => record.requested_tool === "batch_archive_expired_grants");
         assert(approval, "archive approval missing");
         const registry = createToolRegistry({ repository, actor: { type: "human", id: "user-123", source: "human" } });
+        const preview = await registry.execute(
+          approval.requested_tool,
+          { ...approval.request_arguments, dryRun: true }
+        );
+        assert(preview.ok, "dashboard revalidation preview failed");
+        const verification = verifyMutationApprovalPayload(approval, preview.data);
+        assert(verification.ok, JSON.stringify(verification));
         const execution = await registry.execute(approval.requested_tool, { ...approval.request_arguments, dryRun: false });
         assert(execution.ok, "approved archive execution failed");
         const grant = repository.snapshot().grants.find((candidate) => candidate.id === "grant-expired-approval");
@@ -279,18 +289,128 @@ async function run() {
       },
     },
     {
-      name: "changed plan produces a different payload hash",
+      name: "batch archive hash ignores runtime timestamp and record ordering only",
+      fn: async () => {
+        const args = { grantIds: ["grant-a", "grant-b"], reason: "Deadline passed" };
+        const requested = buildMutationApprovalHash("batch_archive_expired_grants", args, {
+          plannedMutation: {
+            table: "grants",
+            action: "soft_archive_many",
+            records: [
+              {
+                id: "grant-a",
+                before: { status: "Researching", archived_at: null, is_top_three: true },
+                after: { status: "Archived", archived_at: "2026-07-24T12:00:00.000Z", is_top_three: false },
+              },
+              {
+                id: "grant-b",
+                before: { status: "Planned", archived_at: null, is_top_three: false },
+                after: { status: "Archived", archived_at: "2026-07-24T12:00:00.000Z", is_top_three: false },
+              },
+            ],
+          },
+          eligibleRecordIds: ["grant-a", "grant-b"],
+        });
+        const revalidated = buildMutationApprovalHash("batch_archive_expired_grants", args, {
+          plannedMutation: {
+            table: "grants",
+            action: "soft_archive_many",
+            records: [
+              {
+                id: "grant-b",
+                before: { status: "Planned", archived_at: null, is_top_three: false },
+                after: { status: "Archived", archived_at: "2026-07-24T12:05:00.000Z", is_top_three: false },
+              },
+              {
+                id: "grant-a",
+                before: { status: "Researching", archived_at: null, is_top_three: true },
+                after: { status: "Archived", archived_at: "2026-07-24T12:05:00.000Z", is_top_three: false },
+              },
+            ],
+          },
+          eligibleRecordIds: ["grant-b", "grant-a"],
+        });
+        assert(requested === revalidated, "runtime timestamps and DB row order must not change the approval hash");
+      },
+    },
+    {
+      name: "pending legacy batch archive approval survives deterministic hash upgrade",
+      fn: async () => {
+        const args = { grantIds: ["grant-a", "grant-b"], reason: "Deadline passed" };
+        const originalPreview = {
+          plannedMutation: {
+            table: "grants",
+            action: "soft_archive_many",
+            records: [
+              {
+                id: "grant-a",
+                before: { status: "Researching", archived_at: null, is_top_three: true },
+                after: { status: "Archived", archived_at: "2026-07-24T12:00:00.000Z", is_top_three: false },
+              },
+              {
+                id: "grant-b",
+                before: { status: "Planned", archived_at: null, is_top_three: false },
+                after: { status: "Archived", archived_at: "2026-07-24T12:00:00.000Z", is_top_three: false },
+              },
+            ],
+          },
+          eligibleRecordIds: ["grant-a", "grant-b"],
+        };
+        const legacyApproval = {
+          ...approvalStore.snapshot()[0],
+          requested_tool: "batch_archive_expired_grants",
+          request_arguments: args,
+          dry_run_payload: originalPreview,
+          payload_hash: buildLegacyMutationApprovalHash(
+            "batch_archive_expired_grants",
+            args,
+            originalPreview
+          ),
+        };
+        const revalidatedPreview = {
+          plannedMutation: {
+            table: "grants",
+            action: "soft_archive_many",
+            records: [...originalPreview.plannedMutation.records].reverse().map((record) => ({
+              ...record,
+              after: { ...record.after, archived_at: "2026-07-24T12:10:00.000Z" },
+            })),
+          },
+          eligibleRecordIds: ["grant-b", "grant-a"],
+        };
+        const verification = verifyMutationApprovalPayload(legacyApproval, revalidatedPreview);
+        assert(verification.ok, JSON.stringify(verification));
+        assert(verification.hashVersion === "legacy-v1", "legacy compatibility path was not used");
+        assert(
+          verification.expectedHashForClaim === legacyApproval.payload_hash,
+          "database claim must use the stored legacy hash"
+        );
+      },
+    },
+    {
+      name: "stale modified payload is rejected with explicit payload_hash_mismatch",
       fn: async () => {
         const args = { taskId: "task-1", status: "Complete" };
-        const first = buildMutationApprovalHash("update_task_status", args, {
+        const storedHash = buildMutationApprovalHash("update_task_status", args, {
           plannedMutation: { table: "tasks", id: "task-1", values: { status: "Complete" } },
           previousStatus: "In Progress",
         });
-        const changed = buildMutationApprovalHash("update_task_status", args, {
+        const approval = {
+          ...approvalStore.snapshot()[0],
+          requested_tool: "update_task_status",
+          request_arguments: args,
+          payload_hash: storedHash,
+        };
+        const verification = verifyMutationApprovalPayload(approval, {
           plannedMutation: { table: "tasks", id: "task-1", values: { status: "Complete" } },
           previousStatus: "Waiting",
         });
-        assert(first !== changed, "before-state drift must change the hash");
+        assert(!verification.ok, "before-state drift must fail verification");
+        assert(verification.error.code === "payload_hash_mismatch", "expected explicit payload_hash_mismatch");
+        const response = buildPayloadHashMismatchResponse("approval-stale");
+        assert(response.status === 409, "stale payload must return HTTP 409");
+        assert(response.body.error.code === "payload_hash_mismatch", "409 body must explain the mismatch");
+        assert(response.body.requiredAction === "request_new_approval", "409 body must explain the recovery action");
       },
     },
     {
@@ -395,7 +515,8 @@ async function run() {
         const approvalRoute = server.slice(start, end);
         assert(approvalRoute.includes("getAuthenticatedProfile(request, false)"), "approval route does not require user-scoped profile lookup");
         assert(approvalRoute.includes("createLiveGrantOsRepository({ authContext })"), "operational execution does not use user JWT repository");
-        assert(approvalRoute.includes("buildMutationApprovalHash"), "execution revalidation hash missing");
+        assert(approvalRoute.includes("verifyMutationApprovalPayload"), "execution revalidation hash missing");
+        assert(approvalRoute.includes("buildPayloadHashMismatchResponse"), "explicit payload mismatch response missing");
         assert(approvalRoute.includes("claim_agent_mutation_approval"), "atomic claim missing");
         assert(approvalRoute.includes("complete_agent_mutation_approval"), "completion audit missing");
         assert(approvalRoute.includes('profile.role === "Admin" || profile.role === "Grant Lead"'), "approver role check missing");
