@@ -89,9 +89,9 @@ create index if not exists idx_agent_mutation_approval_events_approval
 alter table public.agent_mutation_approvals enable row level security;
 alter table public.agent_mutation_approval_events enable row level security;
 
--- Approved users can read approval envelopes they own. Admins can inspect the
--- complete single-workspace queue. There are intentionally no direct client
--- insert, update, or delete policies.
+-- Approved users can read approval envelopes they own. Admins and Grant Leads
+-- can inspect the complete single-workspace queue. There are intentionally no
+-- direct client insert, update, or delete policies.
 drop policy if exists "agent_mutation_approvals_select" on public.agent_mutation_approvals;
 create policy "agent_mutation_approvals_select"
   on public.agent_mutation_approvals
@@ -100,7 +100,7 @@ create policy "agent_mutation_approvals_select"
     public.is_approved()
     and (
       requested_by_user_id = auth.uid()
-      or public.is_admin()
+      or public.current_user_role() in ('Admin', 'Grant Lead')
     )
   );
 
@@ -116,7 +116,7 @@ create policy "agent_mutation_approval_events_select"
       where approval.id = approval_id
         and (
           approval.requested_by_user_id = auth.uid()
-          or public.is_admin()
+          or public.current_user_role() in ('Admin', 'Grant Lead')
         )
     )
   );
@@ -150,7 +150,8 @@ begin
   if not found then
     raise exception using errcode = 'P0001', message = 'approval_not_found';
   end if;
-  if approval.requested_by_user_id <> auth.uid() and not public.is_admin() then
+  if approval.requested_by_user_id <> auth.uid()
+     and public.current_user_role() not in ('Admin', 'Grant Lead') then
     raise exception using errcode = 'P0001', message = 'approval_forbidden';
   end if;
   if approval.status <> 'pending' then
@@ -334,7 +335,8 @@ begin
   if not found then
     raise exception using errcode = 'P0001', message = 'approval_not_found';
   end if;
-  if approval.requested_by_user_id <> auth.uid() and not public.is_admin() then
+  if approval.requested_by_user_id <> auth.uid()
+     and public.current_user_role() not in ('Admin', 'Grant Lead') then
     raise exception using errcode = 'P0001', message = 'approval_forbidden';
   end if;
   if approval.status <> 'pending' then
@@ -388,7 +390,8 @@ begin
   if not found then
     raise exception using errcode = 'P0001', message = 'approval_not_found';
   end if;
-  if approval.requested_by_user_id <> auth.uid() and not public.is_admin() then
+  if approval.requested_by_user_id <> auth.uid()
+     and public.current_user_role() not in ('Admin', 'Grant Lead') then
     raise exception using errcode = 'P0001', message = 'approval_forbidden';
   end if;
   if approval.status <> 'pending' then

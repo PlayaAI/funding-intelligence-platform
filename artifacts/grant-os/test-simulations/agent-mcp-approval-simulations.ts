@@ -371,6 +371,8 @@ async function run() {
       fn: async () => {
         const sql = readFileSync(new URL("../supabase/migrations/021_agent_mutation_approvals.sql", import.meta.url), "utf8");
         assert(sql.includes("alter table public.agent_mutation_approvals enable row level security"), "approval RLS missing");
+        assert(sql.includes("public.current_user_role() in ('Admin', 'Grant Lead')"), "Admin/Grant Lead review policy missing");
+        assert(sql.includes("public.current_user_role() not in ('Admin', 'Grant Lead')"), "Admin/Grant Lead action guard missing");
         assert(sql.includes("claim_agent_mutation_approval"), "claim RPC missing");
         assert(sql.includes("p_execution_nonce"), "nonce guard missing");
         assert(sql.includes("approval_payload_changed"), "payload hash guard missing");

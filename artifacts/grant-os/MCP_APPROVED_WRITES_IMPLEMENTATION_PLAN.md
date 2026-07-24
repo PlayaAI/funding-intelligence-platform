@@ -49,8 +49,8 @@ the approved operational mutation.
 - No arbitrary table, field, SQL, delete, submission, or outreach operation.
 - Only explicitly allowlisted `write_safe` tools may request approval.
 - The approving user must be approved and have `Admin` or `Grant Lead` role.
-- Approval ownership is bound to the MCP token owner; Admin may review all
-  requests in the current single workspace.
+- Approval ownership is bound to the MCP token owner; Admins and Grant Leads
+  may review all requests in the current single workspace.
 - Payload hash, nonce, expiry, row lock, and terminal states prevent changed
   plans and replay.
 - Approval creation requires the target tool's granular token scope. The claim
@@ -68,7 +68,7 @@ Migration `021_agent_mutation_approvals.sql` adds:
 
 - `agent_mutation_approvals`
 - `agent_mutation_approval_events`
-- RLS select policies for the token owner and Admin
+- RLS select policies for the token owner, Admins, and Grant Leads
 - no client insert/update/delete policies
 - authenticated RPCs to claim, reject, expire, and complete requests
 
