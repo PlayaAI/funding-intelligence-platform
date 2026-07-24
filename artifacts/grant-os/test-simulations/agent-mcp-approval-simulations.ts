@@ -334,6 +334,48 @@ async function run() {
       },
     },
     {
+      name: "batch archive default limit selects deterministic IDs from reordered database rows",
+      fn: async () => {
+        const seed = createInMemoryGrantOsRepository().snapshot().grants[0];
+        const tiedDeadlineGrants = Array.from({ length: 55 }, (_, index) => ({
+          ...seed,
+          id: `grant-tied-${String(index).padStart(2, "0")}`,
+          title: `Tied Deadline Grant ${index}`,
+          deadline: "2026-01-01",
+          status: "Researching" as const,
+          archived_at: null,
+        }));
+        const stableRepository = createInMemoryGrantOsRepository({ grants: tiedDeadlineGrants });
+        let reverseRows = false;
+        const reorderedRepository = {
+          ...stableRepository,
+          async listGrants() {
+            reverseRows = !reverseRows;
+            const rows = await stableRepository.listGrants();
+            return reverseRows ? rows : [...rows].reverse();
+          },
+        };
+        const registry = createToolRegistry({
+          repository: reorderedRepository,
+          actor: { type: "human", id: "user-123", source: "human" },
+        });
+        const first = await registry.execute("batch_archive_expired_grants", { limit: 50, dryRun: true });
+        const second = await registry.execute("batch_archive_expired_grants", { limit: 50, dryRun: true });
+        assert(first.ok && second.ok, "batch archive previews failed");
+        const firstData = first.data as Record<string, unknown>;
+        const secondData = second.data as Record<string, unknown>;
+        assert(
+          JSON.stringify(firstData.eligibleRecordIds) === JSON.stringify(secondData.eligibleRecordIds),
+          "equal-deadline rows changed the limited candidate set"
+        );
+        assert(
+          buildMutationApprovalHash("batch_archive_expired_grants", {}, firstData) ===
+            buildMutationApprovalHash("batch_archive_expired_grants", {}, secondData),
+          "reordered database rows changed the approval hash"
+        );
+      },
+    },
+    {
       name: "pending legacy batch archive approval survives deterministic hash upgrade",
       fn: async () => {
         const args = { grantIds: ["grant-a", "grant-b"], reason: "Deadline passed" };
