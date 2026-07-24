@@ -177,7 +177,19 @@ export function createOperationsTools(repository: GrantOsRepository): Array<Tool
         const [grants, applications] = await Promise.all([repository.listGrants(), repository.listApplications()]);
         const requested: Set<string> | null = input.grantIds ? new Set(input.grantIds as string[]) : null;
         const openByGrant = new Set(applications.filter((app) => OPEN_APPLICATION_STATUSES.has(app.status) && app.grant_id).map((app) => app.grant_id as string));
-        const candidates = grants.filter((grant) => !requested || requested.has(grant.id)).slice(0, input.limit);
+        const candidates = grants
+          .filter((grant) => !requested || requested.has(grant.id))
+          .sort((left, right) => {
+            const leftDeadline = deadlineFor(left);
+            const rightDeadline = deadlineFor(right);
+            if (leftDeadline !== rightDeadline) {
+              if (leftDeadline === null) return 1;
+              if (rightDeadline === null) return -1;
+              return leftDeadline.localeCompare(rightDeadline);
+            }
+            return left.id.localeCompare(right.id);
+          })
+          .slice(0, input.limit);
         const eligible: GrantRow[] = [];
         const skipped: Array<{ id: string; title: string; reason: string }> = [];
         if (requested) {
