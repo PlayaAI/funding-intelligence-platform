@@ -11,6 +11,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
+import { AUTONOMOUS_TOOL_NAMES } from "./autonomyPolicy";
 
 // ── Scopes ─────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,9 @@ export const VALID_AGENT_TOKEN_SCOPES = [
   "mcp:read",
   "mcp:write_safe_dry_run",
   "mcp:write_safe_real",
+  "mcp:autonomy:execute",
+  "mcp:discovery:run",
+  "mcp:grants:create",
   "mcp:grants:archive",
   "mcp:grants:update_status",
   "mcp:grants:top_three",
@@ -56,6 +60,10 @@ export function normaliseScopes(raw: string[]): AgentTokenScope[] {
   }
   // Ensure at least mcp:read
   if (out.length === 0) out.push("mcp:read");
+  if (out.includes("mcp:autonomy:execute")) {
+    if (!out.includes("mcp:read")) out.unshift("mcp:read");
+    if (!out.includes("mcp:write_safe_dry_run")) out.push("mcp:write_safe_dry_run");
+  }
   return out;
 }
 
@@ -139,6 +147,12 @@ export type ScopeCheckResult =
   | { allowed: false; code: "scope_insufficient" | "dry_run_required" | "approval_required"; message: string; requiredScope: AgentTokenScope | null };
 
 export const TOOL_REQUIRED_SCOPES: Record<string, AgentTokenScope> = {
+  create_grant: "mcp:grants:create",
+  upsert_grant_from_source: "mcp:grants:create",
+  bulk_upsert_grants_from_sources: "mcp:grants:create",
+  refresh_grant_from_source: "mcp:grants:create",
+  run_autonomous_grant_ops_cycle: "mcp:discovery:run",
+  run_grant_discovery_cycle: "mcp:discovery:run",
   archive_grant: "mcp:grants:archive",
   batch_archive_expired_grants: "mcp:grants:archive",
   mark_grant_status: "mcp:grants:update_status",
@@ -199,6 +213,9 @@ export function checkAgentTokenScope(
       return { allowed: false, code: "scope_insufficient", message: `This tool requires ${requiredScope}.`, requiredScope };
     }
     if (!requestedDryRun) {
+      if (hasScope(scopes, "mcp:autonomy:execute") && AUTONOMOUS_TOOL_NAMES.has(toolName)) {
+        return { allowed: true, forceDryRun: false, requiredScope };
+      }
       if (!hasScope(scopes, "mcp:write_safe_real")) {
         return { allowed: false, code: "dry_run_required", message: "This token can preview writes only. Retry with dryRun: true.", requiredScope: "mcp:write_safe_real" };
       }

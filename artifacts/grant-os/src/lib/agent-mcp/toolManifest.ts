@@ -14,6 +14,16 @@ export const MCP_BLOCKED_TOOL_NAMES = new Set<string>([
 ]);
 
 export const MCP_ENABLED_TOOL_NAMES = new Set<string>([
+  "validate_grant_candidate",
+  "get_grant_discovery_brief",
+  "find_duplicate_grants",
+  "create_grant",
+  "upsert_grant_from_source",
+  "bulk_upsert_grants_from_sources",
+  "refresh_grant_from_source",
+  "run_autonomous_grant_ops_cycle",
+  "run_grant_discovery_cycle",
+  "get_agent_changes_since",
   "list_grants",
   "search_grants",
   "get_grant",
@@ -83,6 +93,16 @@ export const MCP_ENABLED_TOOL_NAMES = new Set<string>([
 
 const TOOL_DETAILS: Record<string, { schemaSummary: string; exampleInput?: JsonRecord }> = {
   // Grants
+  get_grant_discovery_brief: { schemaSummary: "{ projectLimit?: number (default 5) } — LOW COST: call before external grant search." },
+  validate_grant_candidate: { schemaSummary: "{ title, funderName, sourceUrl, sourceType, verificationStatus, deadline?, deadlineVerificationStatus, applicantPathStatus, ... }" },
+  find_duplicate_grants: { schemaSummary: "{ title, funderName, sourceUrl, applicationUrl?, deadline? } — normalized URL/fingerprint duplicate check." },
+  create_grant: { schemaSummary: "{ candidate: GrantCandidate, dryRun?: boolean (default true) } — creates Researching only; duplicate-safe." },
+  upsert_grant_from_source: { schemaSummary: "{ candidate: GrantCandidate, dryRun?: boolean (default true) } — safe create/refresh with provenance." },
+  bulk_upsert_grants_from_sources: { schemaSummary: "{ candidates: GrantCandidate[] (max 50), dryRun?: boolean (default true) }" },
+  refresh_grant_from_source: { schemaSummary: "{ candidate: GrantCandidate, dryRun?: boolean (default true) } — safe research fields only." },
+  run_autonomous_grant_ops_cycle: { schemaSummary: "{ candidates?: GrantCandidate[] (max 50), archiveExpired?, recalculateTopThree?, startEligibleApplications?, maxApplications?, dryRun?: boolean }" },
+  run_grant_discovery_cycle: { schemaSummary: "{ candidates?: GrantCandidate[] (max 50), querySummary?, sourcesChecked?, archiveExpired?, recalculateTopThree?, startEligibleApplications?, maxApplications?, dryRun?: boolean }" },
+  get_agent_changes_since: { schemaSummary: "{ since: ISO timestamp, limit?: number (default 50) } — compact delta read." },
   list_grants: { schemaSummary: "{ status?: string, funderId?: string, limit?: number }", exampleInput: {} },
   search_grants: { schemaSummary: "{ query: string }", exampleInput: { query: "Humanity AI" } },
   get_grant: { schemaSummary: "{ grantId: string }", exampleInput: { grantId: "grant-1" } },

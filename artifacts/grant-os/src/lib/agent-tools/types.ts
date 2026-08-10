@@ -27,6 +27,8 @@ export type PermissionLevel = "read" | "write_safe" | "approval_required";
 export type ToolActor = {
   type: "human" | "agent" | "system";
   id?: string | null;
+  tokenId?: string | null;
+  userId?: string | null;
   source?: AgentSource;
 };
 

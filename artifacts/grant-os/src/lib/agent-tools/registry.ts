@@ -1,6 +1,7 @@
 import { createAuditLogger } from "./audit";
 import { createAgentPlanningTools } from "./agentPlanningTools";
 import { createApplicationTools } from "./applicationsTools";
+import { createAutonomousGrantTools } from "./autonomousGrantTools";
 import { createDocumentTools } from "./documentsTools";
 import { createFunderTools } from "./fundersTools";
 import { createGrantTools } from "./grantsTools";
@@ -33,6 +34,7 @@ export function buildToolDefinitions(repository: GrantOsRepository): Array<ToolD
     ...createMatchTools(repository),
     ...createReportTools(repository),
     ...createAgentPlanningTools(repository),
+    ...createAutonomousGrantTools(repository),
     ...createOperationsTools(repository),
     ...createMutationTools(repository),
     ...createKnowledgeTools(repository),

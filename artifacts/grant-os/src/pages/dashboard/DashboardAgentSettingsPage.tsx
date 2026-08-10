@@ -20,12 +20,15 @@ const endpoints = [
 ];
 
 const readTools = ["get_agent_token_self", "list_mcp_capabilities", "get_next_best_grant_target", "get_cleanup_preview", "get_deadline_brief", "get_missing_evidence_report"];
-const writeSafeTools = ["request_mutation_approval", "get_mutation_approval", "execute_approved_mutation", "batch_archive_expired_grants", "create_application_from_grant", "bulk_create_tasks_from_checklist"];
+const writeSafeTools = ["run_autonomous_grant_ops_cycle", "create_grant", "bulk_upsert_grants_from_sources", "batch_archive_expired_grants", "create_application_from_grant", "bulk_create_tasks_from_checklist"];
 const blockedTools = ["archive_record", "run_scraping_job", "submission or outreach tools"];
 
 const selectableScopes = [
   ["mcp:read", "Read compact Grant OS context"],
   ["mcp:write_safe_dry_run", "Preview safe mutations and request approval"],
+  ["mcp:autonomy:execute", "Execute bounded internal operations without per-request approval"],
+  ["mcp:discovery:run", "Run the automated grant discovery/cleanup cycle"],
+  ["mcp:grants:create", "Create/deduplicate source-backed Researching grants"],
   ["mcp:grants:archive", "Preview/request grant archives"],
   ["mcp:grants:update_status", "Preview/request grant status changes"],
   ["mcp:grants:top_three", "Preview/request Top 3 changes"],
@@ -40,7 +43,9 @@ const selectableScopes = [
   ["mcp:audit:read", "Read audit metadata"],
 ] as const;
 
-const prompt = "Use Grant OS as the source of truth. Read compact context first. Preview every mutation, request dashboard approval, then poll the approval result and verify readbacks. Never attempt a direct opaque-token write, submission, outreach, hard delete, or unsupported claim approval.";
+const autonomousOperatorScopes = selectableScopes.map(([scope]) => scope).filter((scope) => !scope.startsWith("mcp:proof:") && !scope.startsWith("mcp:audit:"));
+
+const prompt = "Use Grant OS as the source of truth. Search official grant sources, validate and deduplicate candidates, then use run_autonomous_grant_ops_cycle for bounded internal operations. Verify every committed result with get_agent_changes_since. Never submit applications, send outreach, hard-delete records, or approve unsupported claims.";
 
 const curlCommands = [
   {
@@ -100,7 +105,7 @@ export default function DashboardAgentSettingsPage() {
     <div className="p-6 max-w-5xl mx-auto space-y-5">
       <div>
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2"><Bot size={18} />Agent Setup</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Connect external AI assistants through compact tools and authenticated human-approved writes.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Connect external AI assistants through compact tools, approval previews, or bounded autonomous internal operations.</p>
       </div>
 
       <Card className="border-slate-200 shadow-sm">
@@ -130,14 +135,18 @@ export default function DashboardAgentSettingsPage() {
               </label>
             ))}
           </div>
-          <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><strong>No direct real-write scope:</strong> opaque tokens request approval. An Admin or Grant Lead reviews the exact plan and executes it with their authenticated RLS session from <a className="underline font-medium" href="/dashboard/agent-approvals">Agent Approvals</a>.</div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setScopes([...autonomousOperatorScopes])}>Select Autonomous Grant Operator</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setScopes(["mcp:read"])}>Reset to read-only</Button>
+          </div>
+          <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><strong>Autonomous tokens are powerful:</strong> selecting <code>mcp:autonomy:execute</code> creates a token-bound, expiring policy with batch and daily limits. Only allowlisted internal tools can commit. Submission, outreach, hard delete, and claim approval remain blocked. Tokens without this scope continue to use <a className="underline font-medium" href="/dashboard/agent-approvals">Agent Approvals</a>.</div>
           <div className="space-y-2">
             {tokens.length === 0 && <div className="text-sm text-slate-500">No agent tokens created.</div>}
             {tokens.map((token) => {
               const expired = Boolean(token.expires_at && new Date(token.expires_at) <= new Date());
               const state = token.revoked_at ? "Revoked" : expired ? "Expired" : "Active";
               return <div key={token.id} className="flex flex-col gap-2 rounded border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0"><div className="font-medium text-sm">{token.label} <Badge variant={state === "Active" ? "outline" : "secondary"}>{state}</Badge></div><div className="text-xs text-slate-500">{token.token_prefix}… · created {new Date(token.created_at).toLocaleDateString()} · expires {token.expires_at ? new Date(token.expires_at).toLocaleDateString() : "never"} · last used {token.last_used_at ? new Date(token.last_used_at).toLocaleString() : "never"}</div><div className="mt-1 flex flex-wrap gap-1">{token.scopes.map((scope) => <Badge key={scope} variant="secondary" className="text-[10px]">{scope}</Badge>)}</div></div>
+                <div className="min-w-0"><div className="font-medium text-sm">{token.label} <Badge variant={state === "Active" ? "outline" : "secondary"}>{state}</Badge>{token.autonomy_policy && <Badge className="ml-1" variant={token.autonomy_policy.enabled ? "outline" : "secondary"}>Autonomy {token.autonomy_policy.enabled ? "enabled" : "disabled"}</Badge>}</div><div className="text-xs text-slate-500">{token.token_prefix}… · created {new Date(token.created_at).toLocaleDateString()} · expires {token.expires_at ? new Date(token.expires_at).toLocaleDateString() : "never"} · last used {token.last_used_at ? new Date(token.last_used_at).toLocaleString() : "never"}</div>{token.autonomy_policy && <div className="mt-1 text-[11px] text-slate-600">Policy: {token.autonomy_policy.allowed_tools.length} tools · {token.autonomy_policy.max_batch_size} records/run · {token.autonomy_policy.daily_write_limit} operations/day · primary source {token.autonomy_policy.require_primary_source ? "required" : "optional"}</div>}<div className="mt-1 flex flex-wrap gap-1">{token.scopes.map((scope) => <Badge key={scope} variant="secondary" className="text-[10px]">{scope}</Badge>)}</div></div>
                 {!token.revoked_at && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { setBusy(true); setError(null); try { await revokeAgentToken(token.id); await refreshTokens(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not revoke token."); } finally { setBusy(false); } }}>Revoke</Button>}
               </div>;
             })}
@@ -161,7 +170,7 @@ export default function DashboardAgentSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-amber-950">
           <p><strong>Read-only token:</strong> may call read tools only. Write-safe calls return <code>scope_insufficient</code>.</p>
-          <p><strong>Write-safe dry-run token:</strong> may preview write-safe tools and create an approval request. Direct <code>dryRun: false</code> remains rejected.</p>
+          <p><strong>Write-safe dry-run token:</strong> may preview tools and request approval. <strong>Autonomous operator token:</strong> may use <code>dryRun: false</code> only for policy-allowlisted, reversible internal actions.</p>
           <p><strong>Approved writes:</strong> an Admin or Grant Lead reviews and executes the immutable plan through their authenticated RLS session. The token can then poll the committed result.</p>
         </CardContent>
       </Card>
@@ -184,12 +193,12 @@ export default function DashboardAgentSettingsPage() {
             {[
               "Read tools are allowed.",
               "Write-safe tools default to dry-run.",
-              "Opaque tokens request approvals; they never commit directly.",
+              "Opaque tokens commit only when an enabled token-bound autonomy policy explicitly allows the tool.",
               "Approved writes execute with the approving user’s RLS session.",
               "Dangerous tools are blocked.",
-              "Never use service-role keys.",
+              "Never provide service-role keys to agents or browsers.",
               "Never print or store tokens.",
-              "Never submit applications or send outreach without approval.",
+              "Application submission, outreach, hard deletes, and direct knowledge approval are always blocked.",
             ].map((item) => <div key={item} className="flex gap-2"><CheckCircle2 size={14} className="mt-0.5 text-emerald-600" /><span>{item}</span></div>)}
           </CardContent>
         </Card>

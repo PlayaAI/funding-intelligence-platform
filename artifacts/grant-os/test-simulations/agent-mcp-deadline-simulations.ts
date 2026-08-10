@@ -26,6 +26,10 @@ const expiredDate = new Date();
 expiredDate.setDate(expiredDate.getDate() - 10);
 const upcomingDate = new Date();
 upcomingDate.setDate(upcomingDate.getDate() + 10);
+const isoExpiredDate = new Date();
+isoExpiredDate.setUTCDate(isoExpiredDate.getUTCDate() - 30);
+const isoUpcomingDate = new Date();
+isoUpcomingDate.setUTCDate(isoUpcomingDate.getUTCDate() + 30);
 
 async function run() {
   console.log("Starting V2.11I (patched) agent MCP deadline simulation tests...\n");
@@ -69,9 +73,9 @@ async function run() {
   const isoRepo = createInMemoryGrantOsRepository({
     grants: [
       // Past ISO timestamp — must be expired
-      { id: "grant-iso-expired", title: "ISO Expired Grant", deadline: "2026-06-16T23:59:00.000Z", application_url: "http://example.com", eligibility: "open" } as any,
+      { id: "grant-iso-expired", title: "ISO Expired Grant", deadline: isoExpiredDate.toISOString(), application_url: "http://example.com", eligibility: "open" } as any,
       // Future ISO timestamp — must be upcoming
-      { id: "grant-iso-upcoming", title: "ISO Upcoming Grant", deadline: "2026-07-16T06:59:00.000Z", application_url: "http://example.com", eligibility: "open" } as any,
+      { id: "grant-iso-upcoming", title: "ISO Upcoming Grant", deadline: isoUpcomingDate.toISOString(), application_url: "http://example.com", eligibility: "open" } as any,
     ],
     projects: [{ id: "proj-iso", name: "ISO Project" } as any],
     proofItems: [{ id: "proof-iso", project_id: "proj-iso" } as any],
@@ -237,7 +241,7 @@ async function run() {
     {
       name: "V2.11I ISO: computeUrgency correctly classifies past ISO timestamp as expired",
       fn: async () => {
-        // "2026-06-16T23:59:00.000Z" — in the past relative to 2026-06-28 — must be expired
+        // A full ISO timestamp in the past must be expired.
         const result = await callMcp("list_grant_matches", { grantId: "grant-iso-expired" }, mcpIso);
         assert(result.status === 200, `expected 200, got ${result.status}`);
         const json = result.body.content[0].json.data;
@@ -256,7 +260,7 @@ async function run() {
     {
       name: "V2.11I ISO: computeUrgency correctly classifies future ISO timestamp as upcoming",
       fn: async () => {
-        // "2026-07-16T06:59:00.000Z" — in the future — must be upcoming
+        // A full ISO timestamp in the future must be upcoming.
         const result = await callMcp("list_grant_matches", { grantId: "grant-iso-upcoming" }, mcpIso);
         assert(result.status === 200, `expected 200, got ${result.status}`);
         const json = result.body.content[0].json.data;

@@ -52,9 +52,10 @@ export async function getGrantById(
 }
 
 export async function createGrant(
-  input: Omit<GrantInsert, "id" | "created_at" | "updated_at">
+  input: Omit<GrantInsert, "id" | "created_at" | "updated_at">,
+  client?: GrantOsSupabaseClient
 ): Promise<GrantRow> {
-  const result: SupabaseResult<GrantRow> = await db.from("grants").insert(input).select().single();
+  const result: SupabaseResult<GrantRow> = await getDb(client).from("grants").insert(input).select().single();
 
   if (result.error) throw new Error(result.error.message);
   if (!result.data) throw new Error("No data returned from insert");

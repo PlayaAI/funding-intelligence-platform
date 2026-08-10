@@ -543,6 +543,17 @@ export interface GrantRow {
   eligibility: string | null;
   application_url: string | null;
   source_url: string | null;
+  /** Provenance for agent-discovered grants. Optional until migration 022 is applied. */
+  source_type?: "primary" | "secondary" | "unknown" | null;
+  verification_status?: "verified" | "needs_confirmation" | "unverified" | null;
+  deadline_verification_status?: "verified" | "needs_confirmation" | "rolling" | "unknown" | null;
+  applicant_path_status?: "verified" | "needs_confirmation" | "ineligible" | "unknown" | null;
+  last_verified_at?: string | null;
+  discovered_at?: string | null;
+  discovered_by_agent_token_id?: string | null;
+  source_fingerprint?: string | null;
+  discovery_run_id?: string | null;
+  risk_flags?: string[];
   required_documents: string[];
   application_questions: Json | null;
   status: GrantDbStatus;
@@ -576,6 +587,16 @@ export type GrantInsert = {
   eligibility?: string | null;
   application_url?: string | null;
   source_url?: string | null;
+  source_type?: "primary" | "secondary" | "unknown" | null;
+  verification_status?: "verified" | "needs_confirmation" | "unverified" | null;
+  deadline_verification_status?: "verified" | "needs_confirmation" | "rolling" | "unknown" | null;
+  applicant_path_status?: "verified" | "needs_confirmation" | "ineligible" | "unknown" | null;
+  last_verified_at?: string | null;
+  discovered_at?: string | null;
+  discovered_by_agent_token_id?: string | null;
+  source_fingerprint?: string | null;
+  discovery_run_id?: string | null;
+  risk_flags?: string[];
   required_documents?: string[];
   application_questions?: Json | null;
   status?: GrantDbStatus;

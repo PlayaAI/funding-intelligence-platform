@@ -19,7 +19,7 @@ import {
 } from "../documentsService";
 import { listAgentReports } from "../agentReportsService";
 import { getFunderByIdOrLegacy, listFunders } from "../fundersService";
-import { getGrantById, listGrants, updateGrant } from "../grantsService";
+import { createGrant, getGrantById, listGrants, updateGrant } from "../grantsService";
 import { getMatch, listMatches } from "../matching/matchesService";
 import {
   listAllPeerFundingRecords,
@@ -58,6 +58,7 @@ import type {
   DocumentRow,
   FunderRow,
   GrantDbStatus,
+  GrantInsert,
   GrantMatchInsert,
   GrantMatchRow,
   GrantRow,
@@ -75,10 +76,13 @@ import type { GrantMatchWithRelations } from "../matching/matchesService";
 import type { ToolAuditPayload } from "./types";
 
 export type GrantOsRepository = {
-  listGrants(): Promise<GrantRow[]>;
+  listGrants(opts?: { includeSoftArchived?: boolean }): Promise<GrantRow[]>;
   getGrant(id: string): Promise<GrantRow | null>;
+  createGrant(input: Omit<GrantInsert, "id" | "created_at" | "updated_at">): Promise<GrantRow>;
   updateGrantStatus(id: string, status: GrantDbStatus): Promise<GrantRow>;
   updateGrant(id: string, updates: GrantUpdate): Promise<GrantRow>;
+  createDiscoveryRun(input: { tokenId: string; userId: string; querySummary?: string | null }): Promise<{ id: string; status: string; started_at: string }>;
+  completeDiscoveryRun(id: string, input: { status: "completed" | "failed"; sourcesChecked: number; candidatesFound: number; grantsCreated: number; grantsUpdated: number; grantsSkipped: number; warnings: string[] }): Promise<void>;
   listFunders(): Promise<FunderRow[]>;
   getFunder(id: string): Promise<FunderRow | null>;
   listDocuments(filters?: {
@@ -256,10 +260,22 @@ export function createLiveGrantOsRepository(
   }
 
   return {
-    listGrants: () => listGrants(undefined, agentSupabase),
+    listGrants: (opts) => listGrants(opts, agentSupabase),
     getGrant: (id) => getGrantById(id, agentSupabase),
+    createGrant: (input) => createGrant(input, agentSupabase),
     updateGrantStatus: (id, status) => updateGrant(id, { status }, agentSupabase),
     updateGrant: (id, updates) => updateGrant(id, updates, agentSupabase),
+    async createDiscoveryRun(input) {
+      const db = await requireAgentSupabase();
+      const result = await db.from("agent_discovery_runs").insert({ token_id: input.tokenId, user_id: input.userId, query_summary: input.querySummary ?? null, status: "running" }).select("id,status,started_at").single();
+      if (result.error || !result.data) throw new Error(result.error?.message ?? "Discovery run creation failed.");
+      return result.data;
+    },
+    async completeDiscoveryRun(id, input) {
+      const db = await requireAgentSupabase();
+      const result = await db.from("agent_discovery_runs").update({ status: input.status, sources_checked: input.sourcesChecked, candidates_found: input.candidatesFound, grants_created: input.grantsCreated, grants_updated: input.grantsUpdated, grants_skipped: input.grantsSkipped, warnings: input.warnings, completed_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
+      if (result.error) throw new Error(result.error.message);
+    },
     listFunders: () => listFunders(agentSupabase),
     getFunder: (id) => getFunderByIdOrLegacy(id, agentSupabase),
     listDocuments: (filters) => listDocuments(filters, agentSupabase),
