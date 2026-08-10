@@ -908,6 +908,8 @@ async function run() {
     {
       name: "V2.12: set_top_three_grant safely mutates an active grant",
       fn: async () => {
+        const futureDeadline = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+        await repo.updateGrant("grant-1", { deadline: futureDeadline });
         const result = await registry.execute("set_top_three_grant", { grantId: "grant-1", dryRun: false });
         assert(result.ok, "set_top_three_grant should succeed");
         assert(repo.snapshot().grants.find((grant) => grant.id === "grant-1")?.is_top_three === true, "grant should be Top 3");

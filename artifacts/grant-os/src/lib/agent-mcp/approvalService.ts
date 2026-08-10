@@ -2,6 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import type { JsonRecord } from "./types";
 
 export const APPROVABLE_TOOL_NAMES = new Set([
+  "create_grant",
+  "upsert_grant_from_source",
+  "bulk_upsert_grants_from_sources",
+  "refresh_grant_from_source",
+  "run_autonomous_grant_ops_cycle",
+  "run_grant_discovery_cycle",
   "archive_grant",
   "batch_archive_expired_grants",
   "mark_grant_status",

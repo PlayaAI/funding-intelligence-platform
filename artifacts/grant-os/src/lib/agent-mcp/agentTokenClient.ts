@@ -9,6 +9,19 @@ export type AgentTokenMetadata = {
   revoked_at: string | null;
   created_at: string;
   last_used_at: string | null;
+  autonomy_policy?: {
+    id: string;
+    enabled: boolean;
+    allowed_tools: string[];
+    daily_write_limit: number;
+    max_batch_size: number;
+    minimum_fit_score: number;
+    minimum_deadline_days: number;
+    require_primary_source: boolean;
+    allow_internal_applications: boolean;
+    allow_task_management: boolean;
+    expires_at: string | null;
+  } | null;
 };
 
 async function request(path: string, init?: RequestInit) {

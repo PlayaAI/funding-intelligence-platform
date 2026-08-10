@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import {
   assertNormalUserAccessToken,
   type AgentAuthContext,
@@ -35,6 +36,10 @@ import {
   type MutationApprovalRecord,
   type MutationApprovalStore,
 } from "./approvalService";
+import {
+  checkAutonomyPolicy,
+  type AgentAutonomyStore,
+} from "./autonomyPolicy";
 
 const mcpCallSchema = z.object({
   name: z.string().trim().min(1),
@@ -66,6 +71,8 @@ type CreateMcpAdapterDependencies = {
    * own envelopes; operational writes still require an authenticated user.
    */
   approvalStore?: MutationApprovalStore;
+  /** Durable token-bound policy and replay/audit store for autonomous internal writes. */
+  autonomyStore?: AgentAutonomyStore;
 };
 
 // ── Response helpers ────────────────────────────────────────────────────────
@@ -295,7 +302,11 @@ function createRegistryForRequest(
   const actor: ToolActor = {
     type: "agent",
     source: "external_agent",
-    id: authContext.userId ?? "mcp-adapter",
+    id: authContext.source === "agent-token"
+      ? authContext.agentTokenMetadata?.id ?? "mcp-adapter"
+      : authContext.userId ?? "mcp-adapter",
+    tokenId: authContext.source === "agent-token" ? authContext.agentTokenMetadata?.id ?? null : null,
+    userId: authContext.userId ?? null,
   };
   return registryFactory({
     repository: createRepository(authContext, serviceRoleKey),
@@ -508,15 +519,18 @@ function virtualToolResponse(
           : { fingerprint: "user-session", label: "Authenticated user session" },
         actor: { type: authContext.actorType, userId: authContext.userId ?? null, source: authContext.source },
         scopes,
-        permissionLevel: scopes.includes("mcp:write_safe_real") ? "write_safe_real" : scopes.includes("mcp:write_safe_dry_run") ? "write_safe_dry_run" : "read",
+        permissionLevel: scopes.includes("mcp:autonomy:execute") ? "autonomous_bounded" : scopes.includes("mcp:write_safe_real") ? "write_safe_real" : scopes.includes("mcp:write_safe_dry_run") ? "write_safe_dry_run" : "read",
         canRead: authContext.source !== "agent-token" || scopes.includes("mcp:read"),
         canPreviewWrites: authContext.source !== "agent-token" || scopes.includes("mcp:write_safe_dry_run"),
-        canRealWrite: authContext.source !== "agent-token",
+        canRealWrite: authContext.source !== "agent-token" || scopes.includes("mcp:autonomy:execute"),
+        canAutonomousWrite: authContext.source === "agent-token" && scopes.includes("mcp:autonomy:execute"),
         canRequestApprovals: authContext.source === "agent-token" && scopes.includes("mcp:write_safe_dry_run"),
         allowedToolNames: capabilities.filter((tool) => tool.currentlyAllowed).map((tool) => tool.name),
         deniedToolNames: capabilities.filter((tool) => !tool.currentlyAllowed).map((tool) => tool.name),
         warnings: authContext.source === "agent-token"
-          ? ["Opaque tokens cannot commit directly. They may request a dashboard approval, then poll the committed result."]
+          ? scopes.includes("mcp:autonomy:execute")
+            ? ["This token may commit only token-policy-allowlisted, reversible internal operations. Submission, outreach, deletion, and claim approval remain blocked."]
+            : ["This token cannot commit directly. It may request dashboard approval and poll the committed result."]
           : ["Real writes use the authenticated user session and remain subject to Supabase RLS."],
       }
     : {
@@ -583,6 +597,43 @@ function makeNoopApprovalStore(): MutationApprovalStore {
   };
 }
 
+function makeNoopAutonomyStore(): AgentAutonomyStore {
+  return {
+    async resolvePolicy() { return null; },
+    async getUsage() { return { writesToday: 0 }; },
+    async claimExecution() { return { ok: false, code: "autonomy_audit_unavailable", message: "Autonomous operations are not configured." }; },
+    async completeExecution() { /* no-op */ },
+  };
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== "dryRun" && key !== "idempotencyKey" && key !== "requestApproval")
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, stableValue(nested)]));
+  }
+  return value;
+}
+
+function autonomyIdempotencyKey(tokenId: string, toolName: string, input: JsonRecord): string {
+  if (typeof input.idempotencyKey === "string" && input.idempotencyKey.trim().length >= 8 && input.idempotencyKey.length <= 160) {
+    return input.idempotencyKey.trim();
+  }
+  return createHash("sha256").update(JSON.stringify({ tokenId, toolName, input: stableValue(input) })).digest("hex");
+}
+
+function missingAutonomousSubScope(scopes: string[], toolName: string, input: JsonRecord): string | null {
+  if (toolName !== "run_autonomous_grant_ops_cycle" && toolName !== "run_grant_discovery_cycle") return null;
+  if (Array.isArray(input.candidates) && input.candidates.length > 0 && !scopes.includes("mcp:grants:create")) return "mcp:grants:create";
+  if (input.archiveExpired !== false && !scopes.includes("mcp:grants:archive")) return "mcp:grants:archive";
+  if (input.recalculateTopThree !== false && !scopes.includes("mcp:grants:top_three")) return "mcp:grants:top_three";
+  if (input.startEligibleApplications !== false && !scopes.includes("mcp:applications:create")) return "mcp:applications:create";
+  if (input.startEligibleApplications !== false && !scopes.includes("mcp:tasks:create")) return "mcp:tasks:create";
+  return null;
+}
+
 // ── Adapter factory ─────────────────────────────────────────────────────────
 
 export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}) {
@@ -603,6 +654,7 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
   const resolveAgentToken = dependencies.resolveAgentToken ?? makeNoopResolveToken();
   const updateAgentTokenLastUsed = dependencies.updateAgentTokenLastUsed ?? makeNoopUpdateLastUsed();
   const approvalStore = dependencies.approvalStore ?? makeNoopApprovalStore();
+  const autonomyStore = dependencies.autonomyStore ?? makeNoopAutonomyStore();
 
   async function persistApproval(
     authContext: AgentAuthContext,
@@ -976,6 +1028,8 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
       // Only applied when the request comes in via an agent token.
       // Normal JWT paths are not scope-restricted here.
       let input = normalizeArguments(request.name, request.arguments ?? {}, metadata);
+      let autonomyEventId: string | null = null;
+      let autonomyPolicyId: string | null = null;
 
       if (authContext.source === "agent-token") {
         const scopes = authContext.agentTokenScopes ?? [];
@@ -989,11 +1043,53 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
         if (scopeCheck.forceDryRun) {
           input = { ...input, dryRun: true };
         }
+        if (!requestedDryRun && scopes.includes("mcp:autonomy:execute")) {
+          const missingScope = missingAutonomousSubScope(scopes, request.name, input);
+          if (missingScope) {
+            return scopeDeniedResponse("scope_insufficient", `${request.name} requires ${missingScope} for the requested autonomous sub-operation.`, missingScope);
+          }
+          const tokenId = authContext.agentTokenMetadata?.id;
+          if (!tokenId || !authContext.userId) {
+            return scopeDeniedResponse("approval_required", "Autonomous execution requires a valid token owner and token metadata.", "mcp:autonomy:execute");
+          }
+          let policy;
+          let usage;
+          try {
+            [policy, usage] = await Promise.all([autonomyStore.resolvePolicy(tokenId), autonomyStore.getUsage(tokenId)]);
+          } catch {
+            return scopeDeniedResponse("approval_required", "The autonomous policy store is unavailable; no mutation was attempted.", "mcp:autonomy:execute");
+          }
+          const decision = checkAutonomyPolicy(policy, usage, request.name, input);
+          if (!decision.allowed) {
+            return {
+              status: 403,
+              body: { ok: false, tool: request.name, error: { code: decision.code, message: decision.message }, dryRun: false, mutationPerformed: false, writeDisposition: "rejected", requiredScope: "mcp:autonomy:execute", do_not_retry: true },
+            };
+          }
+          if (!policy) {
+            return scopeDeniedResponse("approval_required", "Autonomous policy resolution failed safely.", "mcp:autonomy:execute");
+          }
+          const claim = await autonomyStore.claimExecution({
+            tokenId,
+            userId: authContext.userId,
+            policyId: policy.id,
+            toolName: request.name,
+            idempotencyKey: autonomyIdempotencyKey(tokenId, request.name, input),
+          });
+          if (!claim.ok) {
+            return { status: claim.code === "replay_detected" ? 409 : 503, body: { ok: false, tool: request.name, error: { code: claim.code, message: claim.message }, dryRun: false, mutationPerformed: false, writeDisposition: "rejected", do_not_retry: claim.code === "replay_detected" } };
+          }
+          autonomyEventId = claim.eventId;
+          autonomyPolicyId = policy.id;
+        }
       }
 
       const result = await registry.execute(request.name, input);
 
       if (!result.ok) {
+        if (autonomyEventId) {
+          await autonomyStore.completeExecution(autonomyEventId, { mutationPerformed: false, affectedRecordIds: [], resultSummary: { tool: request.name }, errorCode: result.error.code }).catch(() => { /* operational error remains primary */ });
+        }
         const errorCode = canonicalToolErrorCode(result.error.code);
         return {
           status: result.error.code === "invalid_input" ? 400 : result.error.code.includes("not_found") ? 404 : 403,
@@ -1054,9 +1150,27 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
         }
       }
 
+      const normalized = normalizeCallSuccess(metadata, input, result.data, (result.audit ?? null) as JsonRecord | null);
+      if (autonomyEventId) {
+        const affectedRecordIds = Array.isArray(normalized.affectedRecordIds)
+          ? normalized.affectedRecordIds.filter((id): id is string => typeof id === "string")
+          : [];
+        try {
+          await autonomyStore.completeExecution(autonomyEventId, {
+            mutationPerformed: normalized.mutationPerformed === true,
+            affectedRecordIds,
+            resultSummary: { tool: request.name, writeDisposition: normalized.writeDisposition, affectedCount: affectedRecordIds.length },
+            errorCode: null,
+          });
+        } catch {
+          return { status: 500, body: { ok: false, tool: request.name, error: { code: "autonomy_audit_failed", message: "The mutation completed but its autonomy audit could not be finalized. Stop and reconcile using readbacks." }, dryRun: false, mutationPerformed: normalized.mutationPerformed, writeDisposition: "committed_unconfirmed", affectedRecordIds } };
+        }
+        normalized.requiredScopeForRealWrite = "mcp:autonomy:execute";
+        normalized.autonomy = { policyId: autonomyPolicyId, eventId: autonomyEventId, bounded: true };
+      }
       return {
         status: 200,
-        body: normalizeCallSuccess(metadata, input, result.data, (result.audit ?? null) as JsonRecord | null),
+        body: normalized,
       };
     },
 
@@ -1088,7 +1202,15 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
             "Call the target write-safe tool with dryRun:true and requestApproval:true, or call request_mutation_approval.",
             "Give the user approvalUrl and wait for an Admin or Grant Lead to approve and execute in the dashboard.",
             "Poll get_mutation_approval or execute_approved_mutation for committed readback.",
-            "Never retry dryRun:false with an opaque token and never request a user JWT.",
+            "For normal opaque tokens, never retry dryRun:false and never request a user JWT.",
+            "A separately issued autonomous token may use dryRun:false only for its fixed policy-allowlisted internal tools, with an idempotency key and readback.",
+          ],
+          autonomous_write_workflow: [
+            "Create an Autonomous Grant Operator token in Agent Settings; its server-side policy fixes allowed tools and limits.",
+            "Call get_grant_discovery_brief, verify candidates on primary funder sources, then call run_grant_discovery_cycle with dryRun:true.",
+            "If the preview is safe, call the same tool with dryRun:false and a unique idempotencyKey.",
+            "Use get_agent_changes_since to verify created, updated, archived, application, and task records.",
+            "Autonomy never permits hard deletion, external submission, outreach, or direct knowledge approval.",
           ],
           login_url: "/login",
           mcp_tools_url: "/api/mcp/tools",
@@ -1143,7 +1265,7 @@ export function createMcpAdapter(dependencies: CreateMcpAdapterDependencies = {}
             "Return top 3 results maximum for grant recommendations unless the user asks for more.",
             "For any grant-ranking or fit question, check get_agent_context_brief and list_agent_knowledge_items FIRST, then use get_grant_decision_brief.",
             "Prefer get_application_prep_context for any application readiness question.",
-            "For writes, request approval from the dry-run plan and poll the result. Opaque tokens never commit directly.",
+            "Normal opaque tokens request approval from a dry-run plan. Policy-bound autonomous tokens may commit only fixed allowlisted internal tools.",
           ],
         },
       };

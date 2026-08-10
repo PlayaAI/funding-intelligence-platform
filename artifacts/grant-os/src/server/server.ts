@@ -12,6 +12,8 @@ import {
   type AgentTokenRecord,
 } from "../lib/agent-mcp/agentTokenService";
 import { createSupabaseMutationApprovalStore } from "../lib/agent-mcp/supabaseApprovalStore";
+import { createSupabaseAutonomyStore } from "../lib/agent-mcp/supabaseAutonomyStore";
+import { defaultAllowedAutonomyTools } from "../lib/agent-mcp/autonomyPolicy";
 import {
   APPROVABLE_TOOL_NAMES,
   buildPayloadHashMismatchResponse,
@@ -47,13 +49,16 @@ const approvalServiceClient = supabaseServiceRoleKey && supabaseUrl
 const mutationApprovalStore = approvalServiceClient
   ? createSupabaseMutationApprovalStore(approvalServiceClient)
   : undefined;
+const autonomyStore = approvalServiceClient
+  ? createSupabaseAutonomyStore(approvalServiceClient)
+  : undefined;
 
 const agentApi = createAgentApi();
 
 // ── MCP Adapter (V2.11H): wire real DB resolvers for agent tokens ─────────
 // These closures are defined at startup. resolveAgentToken and updateAgentTokenLastUsed
-// use the service-role client to look up / update token records — the ONLY use
-// of the service-role key on this path, gated behind all auth + scope checks.
+// use the server-only service-role client to look up token metadata and verify
+// that the owning Grant OS profile is still approved. The key is never exposed.
 async function resolveAgentToken(hash: string): Promise<AgentTokenRecord | null> {
   if (!supabaseServiceRoleKey || !supabaseUrl) return null;
   const srClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
@@ -65,6 +70,13 @@ async function resolveAgentToken(hash: string): Promise<AgentTokenRecord | null>
     .eq("token_hash", hash)
     .maybeSingle();
   if (error || !data) return null;
+  const { data: profile, error: profileError } = await srClient
+    .from("profiles")
+    .select("access_status,role")
+    .eq("id", data.user_id)
+    .maybeSingle();
+  if (profileError || profile?.access_status !== "approved") return null;
+  if ((data.scopes as string[]).includes("mcp:autonomy:execute") && !["Admin", "Grant Lead"].includes(profile.role)) return null;
   return data as AgentTokenRecord;
 }
 
@@ -84,6 +96,7 @@ const mcpAdapter = createMcpAdapter({
   updateAgentTokenLastUsed,
   serviceRoleKey: supabaseServiceRoleKey || null,
   approvalStore: mutationApprovalStore,
+  autonomyStore,
 });
 
 if (Number.isNaN(port) || port <= 0) {
@@ -999,8 +1012,13 @@ async function handleAgentTokens(request: IncomingMessage, response: ServerRespo
     return true;
   }
   const user = (authResult.body as Record<string, unknown>).user as { id: string } | undefined;
+  const profile = (authResult.body as Record<string, unknown>).profile as { role?: string; access_status?: string } | undefined;
   if (!user?.id) {
     sendJson(response, 401, { ok: false, error: { code: "missing_user", message: "User identity could not be resolved." } });
+    return true;
+  }
+  if (profile?.access_status !== "approved") {
+    sendJson(response, 403, { ok: false, error: { code: "not_approved", message: "Only approved Grant OS users can manage agent tokens." } });
     return true;
   }
   const userId = user.id;
@@ -1030,7 +1048,18 @@ async function handleAgentTokens(request: IncomingMessage, response: ServerRespo
       sendJson(response, 500, { ok: false, error: { code: "fetch_error", message: error.message } });
       return true;
     }
-    sendJson(response, 200, { ok: true, tokens: data });
+    const tokenIds = (data ?? []).map((token) => token.id);
+    let policies: Array<Record<string, unknown>> = [];
+    if (approvalServiceClient && tokenIds.length > 0) {
+      const { data: policyRows } = await approvalServiceClient
+        .from("agent_autonomy_policies")
+        .select("id,token_id,enabled,allowed_tools,daily_write_limit,max_batch_size,minimum_fit_score,minimum_deadline_days,require_primary_source,allow_internal_applications,allow_task_management,expires_at")
+        .eq("user_id", userId)
+        .in("token_id", tokenIds);
+      policies = (policyRows ?? []) as Array<Record<string, unknown>>;
+    }
+    const policyByToken = new Map(policies.map((policy) => [policy.token_id, policy]));
+    sendJson(response, 200, { ok: true, tokens: (data ?? []).map((token) => ({ ...token, autonomy_policy: policyByToken.get(token.id) ?? null })) });
     return true;
   }
 
@@ -1059,6 +1088,11 @@ async function handleAgentTokens(request: IncomingMessage, response: ServerRespo
     }
     const scopes = normaliseScopes(rawScopes);
 
+    if (scopes.includes("mcp:autonomy:execute") && !["Admin", "Grant Lead"].includes(profile?.role ?? "")) {
+      sendJson(response, 403, { ok: false, error: { code: "autonomy_admin_required", message: "Only an approved Admin or Grant Lead can create an autonomous operator token." } });
+      return true;
+    }
+
     const expiresAt = expiryDays ? new Date(Date.now() + expiryDays * 86400 * 1000).toISOString() : null;
 
     const { plaintext, hash, prefix } = generateAgentToken();
@@ -1079,6 +1113,36 @@ async function handleAgentTokens(request: IncomingMessage, response: ServerRespo
     if (insertError || !inserted) {
       sendJson(response, 500, { ok: false, error: { code: "create_failed", message: insertError?.message ?? "Token creation failed." } });
       return true;
+    }
+
+    if (scopes.includes("mcp:autonomy:execute")) {
+      if (!approvalServiceClient) {
+        await dbClient.from("agent_mcp_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", inserted.id);
+        sendJson(response, 503, { ok: false, error: { code: "autonomy_not_configured", message: "Autonomous token creation requires the server-side policy store. The token was revoked and no plaintext was returned." } });
+        return true;
+      }
+      const allowedTools = defaultAllowedAutonomyTools(scopes);
+      const { error: policyError } = await approvalServiceClient
+        .from("agent_autonomy_policies")
+        .insert({
+          token_id: inserted.id,
+          user_id: userId,
+          enabled: true,
+          allowed_tools: allowedTools,
+          daily_write_limit: 100,
+          max_batch_size: 50,
+          minimum_fit_score: 80,
+          minimum_deadline_days: 14,
+          require_primary_source: true,
+          allow_internal_applications: scopes.includes("mcp:applications:create"),
+          allow_task_management: scopes.includes("mcp:tasks:create") || scopes.includes("mcp:tasks:update"),
+          expires_at: expiresAt,
+        });
+      if (policyError) {
+        await approvalServiceClient.from("agent_mcp_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", inserted.id);
+        sendJson(response, 500, { ok: false, error: { code: "autonomy_policy_create_failed", message: "The autonomous policy could not be created. The token was revoked and no plaintext was returned." } });
+        return true;
+      }
     }
 
     // Plaintext returned ONCE ONLY — never stored, never in subsequent list responses

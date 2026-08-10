@@ -13,6 +13,7 @@ import type {
   DocumentRow,
   FunderRow,
   GrantDbStatus,
+  GrantInsert,
   GrantRow,
   PeerFundingRecordRow,
   PeerOrganizationRow,
@@ -49,6 +50,7 @@ type SeedState = {
   audits: ToolAuditPayload[];
   agentKnowledgeItems: AgentKnowledgeItem[];
   agentKnowledgeUpdates: AgentKnowledgeUpdate[];
+  discoveryRuns: Array<Record<string, unknown>>;
 };
 
 function seed(): SeedState {
@@ -136,6 +138,7 @@ function seed(): SeedState {
       }
     ],
     agentKnowledgeUpdates: [],
+    discoveryRuns: [],
   };
 }
 
@@ -151,10 +154,59 @@ export function createInMemoryGrantOsRepository(overrides?: Partial<SeedState>, 
   let idCounter = 20;
 
   const repository: GrantOsRepository & { snapshot(): SeedState; auditTrail(): ToolAuditPayload[] } = {
-    async listGrants() { return state.grants.filter((grant) => !grant.archived_at); },
+    async listGrants(opts) { return state.grants.filter((grant) => opts?.includeSoftArchived || !grant.archived_at); },
     async getGrant(id) { return state.grants.find((grant) => grant.id === id && !grant.archived_at) ?? null; },
+    async createGrant(input) {
+      const normalized = input as Omit<GrantInsert, "id" | "created_at" | "updated_at">;
+      const row: GrantRow = {
+        id: makeId("grant", ++idCounter),
+        title: normalized.title,
+        funder_id: normalized.funder_id ?? null,
+        funder_name: normalized.funder_name ?? null,
+        related_project_id: normalized.related_project_id ?? null,
+        related_project_slug: normalized.related_project_slug ?? null,
+        deadline: normalized.deadline ?? null,
+        next_deadline: normalized.next_deadline ?? null,
+        amount_min: normalized.amount_min ?? null,
+        amount_max: normalized.amount_max ?? null,
+        amount_display: normalized.amount_display ?? null,
+        focus_areas: normalized.focus_areas ?? [],
+        geography: normalized.geography ?? null,
+        eligibility: normalized.eligibility ?? null,
+        application_url: normalized.application_url ?? null,
+        source_url: normalized.source_url ?? null,
+        source_type: normalized.source_type ?? null,
+        verification_status: normalized.verification_status ?? null,
+        deadline_verification_status: normalized.deadline_verification_status ?? null,
+        applicant_path_status: normalized.applicant_path_status ?? null,
+        last_verified_at: normalized.last_verified_at ?? null,
+        discovered_at: normalized.discovered_at ?? null,
+        discovered_by_agent_token_id: normalized.discovered_by_agent_token_id ?? null,
+        source_fingerprint: normalized.source_fingerprint ?? null,
+        discovery_run_id: normalized.discovery_run_id ?? null,
+        risk_flags: normalized.risk_flags ?? [],
+        required_documents: normalized.required_documents ?? [],
+        application_questions: normalized.application_questions ?? null,
+        status: normalized.status ?? "Researching",
+        priority: normalized.priority ?? null,
+        fit_score: normalized.fit_score ?? null,
+        priority_score: normalized.priority_score ?? null,
+        difficulty_score: normalized.difficulty_score ?? null,
+        proof_readiness: normalized.proof_readiness ?? null,
+        application_readiness: normalized.application_readiness ?? null,
+        is_top_three: normalized.is_top_three ?? false,
+        notes: normalized.notes ?? null,
+        archived_at: normalized.archived_at ?? null,
+        created_at: now(),
+        updated_at: now(),
+      };
+      state.grants.push(row);
+      return row;
+    },
     async updateGrantStatus(id, status: GrantDbStatus) { const grant = state.grants.find((item) => item.id === id); if (!grant) throw new Error("grant not found"); grant.status = status; grant.updated_at = now(); return grant; },
     async updateGrant(id, updates) { const grant = state.grants.find((item) => item.id === id); if (!grant) throw new Error("grant not found"); Object.assign(grant, updates, { updated_at: now() }); return grant; },
+    async createDiscoveryRun(input) { const row = { id: makeId("discovery", ++idCounter), token_id: input.tokenId, user_id: input.userId, query_summary: input.querySummary ?? null, status: "running", started_at: now(), created_at: now() }; state.discoveryRuns.push(row); return { id: row.id, status: row.status, started_at: row.started_at }; },
+    async completeDiscoveryRun(id, input) { const run = state.discoveryRuns.find((item) => item.id === id); if (!run) throw new Error("discovery run not found"); Object.assign(run, { status: input.status, sources_checked: input.sourcesChecked, candidates_found: input.candidatesFound, grants_created: input.grantsCreated, grants_updated: input.grantsUpdated, grants_skipped: input.grantsSkipped, warnings: input.warnings, completed_at: now() }); },
     async listFunders() { return state.funders.filter((funder) => !funder.archived_at); },
     async getFunder(id) { return state.funders.find((funder) => funder.id === id || funder.legacy_id === id) ?? null; },
     async listDocuments(filters) { return state.documents.filter((doc) => !doc.archived_at).filter((doc) => !filters?.relatedGrantId || doc.related_grant_id === filters.relatedGrantId).filter((doc) => !filters?.relatedApplicationId || doc.related_application_id === filters.relatedApplicationId).filter((doc) => !filters?.relatedProjectId || doc.related_project_id === filters.relatedProjectId).filter((doc) => !filters?.relatedFunderId || doc.related_funder_id === filters.relatedFunderId); },
